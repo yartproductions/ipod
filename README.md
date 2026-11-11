@@ -5,7 +5,8 @@ An iPod Classic–style music player: click wheel, clicker, haptics, menus. Ther
 | | Web (Safari / Home Screen) | Native iOS wrapper (`ios/`) |
 |---|---|---|
 | Ad-free local music | ✅ | ✅ |
-| YouTube (official embed) | ✅ | ✅ |
+| Ad-free streaming (Audius) — the default | ✅ | ✅ |
+| YouTube (official embed, **has ads**, off by default) | opt-in | opt-in |
 | Click-wheel haptics on iPhone | ❌ not supported by Safari | ✅ via Taptic Engine (needs a physical iPhone to confirm) |
 | Local music with the screen locked | Not guaranteed on iOS | Intended (`UIBackgroundModes: audio`); confirm on a device |
 | YouTube with the screen locked | ❌ | ❌ (YouTube's player rules) |
@@ -20,6 +21,31 @@ Main menu → **Ad-Free Local Music** (or **Add Music**) and pick audio files fr
 - Lock-screen and Control Center show the song title, artist, artwork and position (Media Session API).
 - Local files play with no third-party ads.
 - **Background playback in Safari or the Home Screen app is not guaranteed on iOS.** iOS may pause a web page when the screen locks or you switch apps. The native wrapper is the intended way to get reliable background audio, and it still needs testing on a device.
+
+## Audius (Ad-Free) — default streaming source
+Main menu → **Audius (Ad-Free)**:
+- **Trending**: this week's top tracks.
+- **Genres**: trending by genre.
+- **Top Playlists**.
+- **Search Songs** and **Search Playlists**.
+- **Saved**: songs and playlists you save.
+- **Recently Played**.
+- **Save Now Playing** appears while an Audius track is playing.
+
+How it works:
+- [Audius](https://audius.co) is a free streaming service where artists upload their own music and choose to make it streamable.
+- The app uses Audius's public read-only REST API (`https://api.audius.co/v1`), which needs no key, and identifies itself with `app_name=iPodClassicWeb`.
+- Tracks stream as plain audio through the same `<audio>` player as local files. There are **no ads to block**: Audius doesn't insert ads into API streams.
+- The wheel, Now Playing, scrubbing, volume, shuffle, repeat and lock-screen controls work exactly as they do for local music.
+- Artist names stay on screen, and Now Playing credits Audius, as Audius's API guidelines ask.
+
+**Catalog limitations:**
+- **Mostly independent and emerging artists.** Electronic, hip-hop, lo-fi and similar genres are strong. Most major-label releases and mainstream hits are **not** on Audius, so many popular songs won't be found.
+- **Free-to-stream tracks only.** Tracks that need a purchase, a follow or a tip (gated), or that are unlisted or deleted, are hidden. A playlist may show fewer songs than it has on audius.co.
+- **The catalog changes constantly.** Artists can remove or gate tracks at any time. If a track fails to stream, the player shows "Unavailable — skipping…" and moves on.
+- **Rate limits.** Unauthenticated requests share Audius's public limits. A free Audius API key raises them (not wired in yet).
+- **No personal account.** Saved and Recently Played live in this browser only. There's no Audius login, so your audius.co favorites and playlists aren't synced.
+- **Needs a connection.** Streams don't download for offline play. Use Ad-Free Local Music for offline listening.
 
 ## Haptics
 `click()` and `press()` call `triggerHaptic(kind)`, where `kind` is `selection`, `confirm` or `success`:
@@ -44,7 +70,8 @@ In Xcode, choose your team under **Signing & Capabilities**, connect your iPhone
 - `IPodWebView.swift`: the web view and haptics message handler. It only accepts messages from the **main frame** of the hosted origin (`https://yartproductions.github.io`). Messages from other sites or embedded frames, such as the YouTube player, are ignored.
 - `project.yml`: XcodeGen spec (iOS 16+, portrait, background audio mode).
 
-## YouTube
+## YouTube (optional, has ads)
+YouTube is **off by default** because its official player can show ads, and the app doesn't block or hide them. To turn it on, go to **Settings → YouTube (Has Ads) → On**. A **YouTube (Has Ads)** entry then appears on the main menu.
 - **Paste Link** takes any YouTube or YouTube Music video or playlist link.
 - **Search** needs a free YouTube Data API key:
   1. In Google Cloud Console, create a project.
@@ -70,8 +97,9 @@ These are headless Chrome tests, using generated tagged MP3s in `tests/fixtures/
 - Media Session metadata
 - Paste Link, and pausing the video when hidden
 - the race where a queued YouTube load must not autoplay after local music starts
+- Audius, against a local stand-in for its API (same JSON shape, real MP3 streams): trending with paging, gated tracks hidden, playback with artwork and lock-screen info, auto-advance, next and previous, broken streams skipped, song and playlist search, saving, Recently Played, genres, and YouTube staying hidden by default
 
-They can't verify real Taptic output, iOS background audio, the lock screen, or anything in the Swift code. Those need a physical iPhone; see the checklist in the pull request.
+They don't call the live Audius service (this test environment can't reach it), so check the live catalog on a device. They also can't verify real Taptic output, iOS background audio, the lock screen, or anything in the Swift code. Those need a physical iPhone; see the checklist in the pull request.
 
 ## Maintenance
 `apply_patch.py` applies the haptic bridge change to an older `index.html`. It's idempotent, and safe to rerun on the current file.
