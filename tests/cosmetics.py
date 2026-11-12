@@ -80,6 +80,7 @@ def main():
         ctx.route('https://musicbrainz.org/**', mb_route)
         ctx.route('https://coverartarchive.org/**', caa_route)
         pg = ctx.new_page(); pg.on('pageerror', lambda e: errors.append(str(e)))
+        pg.add_init_script("if(!localStorage.getItem('ipod.settings'))localStorage.setItem('ipod.settings',JSON.stringify({autoArt:false}))")
         pg.goto(url); pg.wait_for_timeout(1200)
 
         # ---- colours ----
@@ -468,6 +469,26 @@ def main():
         gaps = [b - a_ for a_, b in zip(mb_times, mb_times[1:])]
         check('MusicBrainz calls are spaced ≥1 s apart', len(gaps) >= 1 and min(gaps) >= 1.0, [round(g, 2) for g in gaps])
         home(pg); choose(pg, 'Settings'); choose(pg, 'Now Playing Style')
+
+        # ---- Auto Artwork: covers looked up automatically after an import ----
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Auto Artwork'); home(pg)
+        check('Auto Artwork can be switched on', pg.evaluate('JSON.parse(localStorage.getItem("ipod.settings")).autoArt') is True)
+        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', str(FIX / 'album-amber-days.mp3'), '-map', '0:a', '-c', 'copy', '-id3v2_version', '3',
+                        '-metadata', 'title=Auto Amber', '-metadata', 'artist=Fixture Artist', '-metadata', 'album=Amber Days', bare], check=True)
+        calls0 = len(mb_calls)
+        pg.set_input_files('#file', [bare]); pg.wait_for_timeout(300); wait_sync(pg)
+        pg.wait_for_function('document.getElementById("tasktl").textContent.startsWith("Found") || document.getElementById("tasktl").textContent.startsWith("No new")', timeout=30000)
+        rec = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();
+            q.onsuccess=()=>res(q.result.filter(s=>s.title==="Auto Amber").map(s=>[!!s.art,s.artSource||""]))}})''')
+        check('imported song gets its cover automatically', rec == [[True, 'coverartarchive']], rec)
+        check('no "Finding Artwork" screen interrupts you (runs quietly)', pg.text_content('#htitle') == 'iPod')
+        new_calls = mb_calls[calls0:]
+        check('Auto Artwork looked up the new album (and other albums still missing art)', any('amber days' in q.lower() for _, q in new_calls), new_calls)
+        check('each album looked up at most once per pass', len(new_calls) == len(set(new_calls)), new_calls)
+        calls1 = len(mb_calls)
+        pg.set_input_files('#file', [str(FIX / 'song1.mp3')]); pg.wait_for_timeout(300); wait_sync(pg); pg.wait_for_timeout(3500)
+        check('albums already tried are not looked up again', not any(c in mb_calls[calls0:calls1] for c in mb_calls[calls1:]), mb_calls[calls1:])
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Auto Artwork'); home(pg)
 
         check('no uncaught page errors', not errors, errors)
         ctx.close()

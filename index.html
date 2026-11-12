@@ -429,7 +429,7 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 const audio=new Audio(); audio.preload='auto';
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true},ls.get('ipod.settings',{}));
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
@@ -596,6 +596,7 @@ async function addFiles(files){
   }finally{importing=false}
   sortSongs();
   setHdrTask(failed?`Sync done · ${failed} failed`:'Sync Complete',1,true);
+  if(settings.autoArt&&n)setTimeout(()=>findMissingArtwork(true),2400);
   const v=top();if(v&&v.type==='list'||v&&v.type==='flow')render();
 }
 function sortSongs(){songs.sort((a,b)=>a.title.localeCompare(b.title))}
@@ -863,6 +864,7 @@ function settingsMenu(){
     {label:'Fast Scroll',val:settings.accel?'On':'Off',action:tog('accel',[true,false])},
     {label:'Menu Style',val:settings.menuStyle,action:tog('menuStyle',['List','Flow'])},
     {label:'Now Playing Style',val:settings.npStyle,action:tog('npStyle',['Standard','Flow'])},
+    {label:'Auto Artwork',val:settings.autoArt?'On':'Off',action:tog('autoArt',[true,false])},
     {label:'Find Missing Artwork',chev:1,action:()=>findMissingArtwork()},
     ...(settings.menuStyle==='List'?[{label:'Split Screen',val:settings.split,action:tog('split',['Album Art','Now Playing','Off'])}]:[]),
     {label:'YouTube Downloads',val:'Offline MP3'},
@@ -878,7 +880,7 @@ function aboutView(){return list('About',[
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
-  {label:'Version',val:'3.9'}])}
+  {label:'Version',val:'3.10'}])}
 function extrasMenu(){return list('Extras',[
   {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))}])}
@@ -1259,19 +1261,22 @@ async function getArtwork(s){
       {emptyText:'No covers found.'}));
   }catch(e){replaceTop(msgView('Artwork Search Failed',e.message||'Check your connection.'))}
 }
-let artBusy=false;
-async function findMissingArtwork(){
-  if(artBusy)return push(msgView('Already Running','Artwork search is in progress; watch the bar at the top.'));
-  const groups=[...new Map(songs.filter(s=>!s.art).map(s=>[s.album+'\u0000'+s.artist,s])).values()];
-  if(!groups.length)return push(msgView('All Set','Every song already has artwork.'));
-  if(!navigator.onLine)return push(msgView('You’re Offline','Connect to the internet to look up artwork.'));
-  artBusy=true;push(msgView('Finding Artwork',`Looking up ${groups.length} album${groups.length===1?'':'s'}. You can keep using the iPod; progress shows at the top.`));
+let artBusy=false,artAgain=false;
+const artTried=new Set();     // album+artist keys already looked up this session by Auto Artwork (no repeat lookups)
+async function findMissingArtwork(quiet){
+  if(artBusy){if(quiet)artAgain=true;else push(msgView('Already Running','Artwork search is in progress; watch the bar at the top.'));return}
+  const groups=[...new Map(songs.filter(s=>!s.art).map(s=>[s.album+'\u0000'+s.artist,s])).entries()]
+    .filter(([k,s])=>(known(s.album)||known(s.artist))&&!(quiet&&artTried.has(k))).map(([k,s])=>(quiet&&artTried.add(k),s));
+  if(!groups.length){if(!quiet)push(msgView('All Set','Every song already has artwork, or there’s nothing to search with.'));return}
+  if(!navigator.onLine){if(!quiet)push(msgView('You’re Offline','Connect to the internet to look up artwork.'));return}
+  artBusy=true;if(!quiet)push(msgView('Finding Artwork',`Looking up ${groups.length} album${groups.length===1?'':'s'}. You can keep using the iPod; progress shows at the top.`));
   let found=0;
   try{for(let i=0;i<groups.length;i++){const s=groups[i];setHdrTask(`Artwork ${i+1} of ${groups.length}`,i/groups.length);
     try{const c=(await artCandidates(s)).find(c=>confident(c,s));if(c){await saveArtwork(s,await fetchCover(c.full));found++}}catch(e){}
     setHdrTask(`Artwork ${i+1} of ${groups.length}`,(i+1)/groups.length)}}
   finally{artBusy=false}
   setHdrTask(found?`Found ${found} cover${found===1?'':'s'}`:'No new covers found',1,true);render();
+  if(artAgain){artAgain=false;setTimeout(()=>findMissingArtwork(true),2400)}
 }
 /* ---------- Modern Now Playing controls ---------- */
 const ACTS=['fav','more','lyrics','queue','out'];
