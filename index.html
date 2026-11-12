@@ -340,18 +340,17 @@ async function openPlaylist(list,title){
     replaceTop(ytListView(title||'Playlist',items,null,{list,title}));
   }catch(e){replaceTop(msgView('Playlist Unavailable',e.message||'Could not load playlist.'))}
 }
-const YTMP3_ENDPOINT='https://ytmp3.ge/api/convert';
+const IPOD_WORKER='https://ipod-audio-relay.kohlindersjohn.workers.dev';
 async function acquireYT(it){
  const id=it.id;if(!/^[A-Za-z0-9_-]{11}$/.test(id))throw new Error('Invalid video ID.');
  const existing=songs.find(s=>s.sourceId===id);if(existing)return existing;
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),300000);
- let r;try{r=await fetch(YTMP3_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({youtube_url:'https://www.youtube.com/watch?v='+id,quality:'320'}),signal:controller.signal})}
- catch(e){throw new Error('Converter unavailable or blocked by CORS.')}finally{clearTimeout(timer)}
- if(!r.ok)throw new Error('Conversion HTTP '+r.status);
- const data=await r.json();if(!data.success||!data.downloadUrl)throw new Error(data.error||'No MP3 link returned.');
- const u=new URL(data.downloadUrl);if(u.protocol!=='https:')throw new Error('Insecure download URL.');
- let response;try{response=await fetch(u.href)}catch(e){throw new Error('MP3 download blocked by CORS.')}
- if(!response.ok)throw new Error('MP3 download HTTP '+response.status);
+ let r;try{r=await fetch(IPOD_WORKER+'/convert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({videoId:id}),signal:controller.signal})}
+ catch(e){throw new Error('Cloudflare relay unavailable.')}finally{clearTimeout(timer)}
+ let data;try{data=await r.json()}catch(e){throw new Error('Relay returned invalid JSON (HTTP '+r.status+').')}
+ if(!r.ok||!data.success||!data.downloadPath)throw new Error(data.error||'Relay conversion failed (HTTP '+r.status+').');
+ let response;try{response=await fetch(IPOD_WORKER+data.downloadPath,{method:'POST'})}catch(e){throw new Error('Cloudflare audio download unavailable.')}
+ if(!response.ok){let message='Audio download HTTP '+response.status;try{const e=await response.json();message=e.error||message}catch{}throw new Error(message)}
  const blob=await response.blob(),type=(response.headers.get('content-type')||'').toLowerCase();
  if(!blob.size||type.includes('text/html')||type.includes('application/json'))throw new Error('Invalid audio response.');
  const rec={id:'yt-'+id,sourceId:id,blob,title:data.title||it.title||'Untitled',artist:it.artist||'Unknown Artist',album:'Offline Music',artworkUrl:data.thumbnail||'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'};
