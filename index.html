@@ -819,6 +819,37 @@ function ytListView(title,items,more,pl){
       {label:'Save Playlist',action:go(()=>{if(!saved.some(s=>s.list===pl.list)){saved.unshift({type:'playlist',list:pl.list,title:pl.title||title});ls.set('ipod.saved',saved)}return msgView('Saved','Playlist added to Saved.')})}]:[]),
     ...items.map((it,i)=>({label:it.title,ytid:it.id,action:()=>playYT(items,i)})),
     ...(more?[{label:'More Results…',action:more}]:[])])}
+function tornadoUsageView(){
+  const view=list('Tornado Usage',[{label:'Loading account usage…'}]);
+  const gb=value=>typeof value==='number'&&Number.isFinite(value)?value.toFixed(2)+' GB':'Unavailable';
+  (async()=>{
+    try{
+      const response=await fetch(IPOD_WORKER+'/tornado-usage',{
+        method:'POST',headers:{'Content-Type':'application/json'},body:'{}'
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(data.error||'Usage request failed (HTTP '+response.status+')');
+      view.items=[
+        {label:'Remaining',val:gb(data.remainingGB)},
+        {label:'Allowance',val:gb(data.limitGB)},
+        {label:'Quota Used',val:gb(data.effectiveUsedGB)},
+        {label:'Transferred',val:gb(data.usedGB)},
+        {label:'In Progress',val:gb(data.reservedGB)},
+        {label:'Billing Period',val:gb(data.billingPeriodUsedGB)},
+        {label:'Total Jobs',val:data.jobs==null?'Unavailable':String(data.jobs)},
+        {label:'Refresh',action:()=>replaceTop(tornadoUsageView())}
+      ];
+    }catch(e){
+      view.items=[
+        {label:'Usage unavailable'},
+        {label:String(e.message||'Unable to load usage')},
+        {label:'Retry',action:()=>replaceTop(tornadoUsageView())}
+      ];
+    }
+    if(top()===view)render();
+  })();
+  return view;
+}
 function settingsMenu(){
   const tog=(k,opts)=>()=>{const i=opts.indexOf(settings[k]);settings[k]=opts[(i+1)%opts.length];saveSettings();if(k==='theme'||k==='style'||k==='appearance')applyTheme();if(k==='backlight')wake();render()};
   return list('Settings',()=>[
@@ -839,6 +870,7 @@ function settingsMenu(){
     ...(settings.menuStyle==='List'?[{label:'Split Screen',val:settings.split,action:tog('split',['Album Art','Now Playing','Off'])}]:[]),
     {label:'YouTube Downloads',val:'Offline MP3'},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
+    {label:'Tornado Usage',chev:1,action:go(tornadoUsageView)},
     {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
     {label:'Clear Library',chev:1,action:go(()=>list('Clear Library?',[
       {label:'Cancel',action:()=>pop()},
