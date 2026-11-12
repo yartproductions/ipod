@@ -53,6 +53,8 @@ How it works:
 2. **Browsers with `navigator.vibrate`** (e.g. Android Chrome): a short vibration.
 3. **iPhone Safari / Home Screen:** no haptics. Safari offers no supported haptics API, and the old hidden-switch hack has been removed.
 
+**Customize in Settings:** **Haptic Strength** (Light / Medium / Strong / Max) and **Haptic Feel** (Crisp / Click / Soft / Thud). Each change plays a sample tap, and **Test Haptic** plays a double tap. The page sends `{kind, intensity, sharpness, count}` to the native app, which plays it with **Core Haptics**. That's stronger and more tunable than the standard system tick, and it falls back to `UIImpactFeedbackGenerator` if Core Haptics isn't available. On Android, the vibration length follows the strength setting.
+
 Haptics fired during the same input event collapse into one (strongest wins), and wheel ticks are throttled to one per 35 ms. Settings → About shows which mode is active (`Native`, `Vibrate` or `None`).
 
 ## Native iOS wrapper (`ios/`)
