@@ -219,6 +219,13 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .split .np .st{font-size:9px;font-weight:700;letter-spacing:.06em;color:#7a8494;text-transform:uppercase}
 .modern .split .np{background:linear-gradient(#141d29,#0d1520);color:#f2f5f9}.modern .split .np .a{color:#9aa8bb}.modern .split .np .pb{background:rgba(255,255,255,.18)}.modern .split .np .pb i{background:#fff}
 .modern.lightui .split .np{background:linear-gradient(#ffffff,#eef1f5);color:#111827}.modern.lightui .split .np .a{color:#6b7686}.modern.lightui .split .np .pb{background:rgba(17,24,39,.12)}.modern.lightui .split .np .pb i{background:#111827}
+
+/* ================= Flow menu (main menu as a 3D card shelf) ================= */
+.flow .cv.card{display:flex;align-items:center;justify-content:center;border-radius:18px;background:linear-gradient(150deg,var(--c1),var(--c2));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 3px 10px rgba(0,0,0,.4)}
+.flow .cv.card svg{width:44px;height:44px;fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}
+.flow .cv.card .chev{position:absolute;right:8px;bottom:6px;font-size:13px;font-weight:700;color:rgba(255,255,255,.75)}
+.flow.menu .cap b{font-size:14px}
 /* hold switch on the top edge */
 .hold{position:absolute;top:-7px;right:44px;width:34px;height:10px;border-radius:5px 5px 0 0;background:linear-gradient(#cfd2d7,#9ea3aa);box-shadow:inset 0 1px 0 #fff8,0 0 0 1px #0002;cursor:pointer;z-index:2}
 .hold::before{content:"";position:absolute;top:2px;left:3px;width:14px;height:6px;border-radius:3px;background:linear-gradient(#fafafa,#c9ccd1);box-shadow:0 0 0 1px #0003;transition:left .18s}
@@ -396,7 +403,7 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 const audio=new Audio(); audio.preload='auto';
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List'},ls.get('ipod.settings',{}));
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
@@ -828,7 +835,8 @@ function settingsMenu(){
     ...(settings.style==='Classic'?[{label:'Color',val:settings.theme,action:tog('theme',COLORS)}]:[]),
     {label:'Backlight',val:settings.backlight,action:tog('backlight',['10 sec','20 sec','1 min','Always On'])},
     {label:'Fast Scroll',val:settings.accel?'On':'Off',action:tog('accel',[true,false])},
-    {label:'Split Screen',val:settings.split,action:tog('split',['Album Art','Now Playing','Off'])},
+    {label:'Menu Style',val:settings.menuStyle,action:tog('menuStyle',['List','Flow'])},
+    ...(settings.menuStyle==='List'?[{label:'Split Screen',val:settings.split,action:tog('split',['Album Art','Now Playing','Off'])}]:[]),
     {label:'YouTube Downloads',val:'Offline MP3'},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
     {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
@@ -842,7 +850,7 @@ function aboutView(){return list('About',[
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
-  {label:'Version',val:'3.7'}])}
+  {label:'Version',val:'3.8'}])}
 function extrasMenu(){return list('Extras',[
   {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))}])}
@@ -947,9 +955,11 @@ function render(){
 
   renderHdr();
   screenEl.classList.remove('nowmod');
-  const wantSplit=!!(v.type==='list'&&v.split&&settings.split!=='Off'&&songs.length>0);   // must be a real boolean: classList.toggle(x, undefined) flips
+  const wantSplit=!!(v.type==='list'&&v.split&&settings.split!=='Off'&&songs.length>0&&!isFlowMenu(v));   // must be a real boolean: classList.toggle(x, undefined) flips
   screenEl.classList.toggle('splitmode',wantSplit);if(wantSplit)splitStart();else splitStop();
-  if(v.type==='list'){
+  if(v.type==='list'&&isFlowMenu(v)){
+    renderFlowMenu(v);
+  }else if(v.type==='list'){
     const it=itemsOf(v);
     if(!it.length){body.innerHTML=`<div class="list"><div class="empty"><b>Empty</b>${esc(v.emptyText||'Go to Add Music on the main menu to load songs.')}</div></div>`;return}
     v.sel=Math.max(0,Math.min(v.sel,it.length-1));
@@ -1080,6 +1090,38 @@ function splitStart(){
   if(splitTimer)return;splitShow();splitTimer=setInterval(splitShow,7000)}
 function splitStop(){if(!splitTimer)return;clearInterval(splitTimer);splitTimer=null}
 
+
+/* ---------- Flow menu: the main menu as a shelf of cards (Settings ▸ Menu Style ▸ Flow) ---------- */
+const isFlowMenu=v=>!!(v&&v.split&&settings.menuStyle==='Flow');
+const ICONS={
+  music:'<path d="M18 33V12l16-3v20"/><circle cx="14" cy="33" r="4"/><circle cx="30" cy="29" r="4"/>',
+  flow:'<rect x="15" y="11" width="18" height="22" rx="2"/><path d="M11 14l-4 2v16l4 2M37 14l4 2v16l4 2"/>',
+  download:'<path d="M24 9v20M16 21l8 8 8-8M11 36h26"/>',
+  shuffle:'<path d="M9 15h7l14 18h8M9 33h7l4-5M27 20l3-5h8M34 11l4 4-4 4M34 29l4 4-4 4"/>',
+  tray:'<path d="M9 28l4-15h22l4 15v8H9z"/><path d="M9 28h9l2 4h8l2-4h9"/>',
+  play:'<path d="M17 11l18 13-18 13z"/>',
+  add:'<circle cx="24" cy="24" r="14"/><path d="M24 17v14M17 24h14"/>',
+  settings:'<circle cx="24" cy="24" r="5"/><path d="M24 8v5M24 35v5M8 24h5M35 24h5M12.7 12.7l3.6 3.6M31.7 31.7l3.6 3.6M12.7 35.3l3.6-3.6M31.7 16.3l3.6-3.6"/><circle cx="24" cy="24" r="11"/>',
+  extras:'<path d="M24 9l4 9 10 1-7.5 7 2 10L24 31l-8.5 5 2-10L10 19l10-1z"/>',
+  about:'<circle cx="24" cy="24" r="14"/><path d="M24 22v10M24 16v.5"/>',
+  dot:'<circle cx="24" cy="24" r="8"/>'};
+const CARD_COLORS=[['#5aa9f5','#1f6ccb'],['#b07cf7','#6b3fd1'],['#ff8a65','#e0452f'],['#4fd1a5','#16936b'],['#ffcf5a','#e39a12'],
+  ['#ff6f9f','#d6336c'],['#7ad3f0','#2a8fbf'],['#9fb3c8','#5b6f86'],['#a6e36b','#4f9a2b'],['#c3a6ff','#7b5cd6']];
+function iconFor(label){const l=String(label).toLowerCase();
+  return l.includes('flow')?'flow':l.includes('shuffle')?'shuffle':l.includes('download')?'tray':l.includes('mp3')||l.includes('save')?'download':
+    l.includes('now playing')?'play':l.includes('add')?'add':l.includes('setting')?'settings':l.includes('extra')?'extras':l.includes('about')?'about':l.includes('music')?'music':'dot'}
+function renderFlowMenu(v){
+  const it=itemsOf(v);v.sel=Math.max(0,Math.min(v.sel,it.length-1));
+  body.innerHTML=`<div class="flow menu instant" id="flow"><div class="cnt" id="fcnt"></div><div class="stage">${
+    it.map((x,i)=>{const [c1,c2]=CARD_COLORS[i%CARD_COLORS.length];
+      return `<div class="cv card" data-i="${i}" style="--c1:${c1};--c2:${c2}"><svg viewBox="0 0 48 48">${ICONS[iconFor(x.label)]}</svg>${x.chev?'<span class="chev">›</span>':''}</div>`}).join('')}</div>
+    <div class="cap"><b id="fal"></b><span id="far"></span></div></div>`;
+  flowMenuUpdate(v);requestAnimationFrame(()=>{const f=$('#flow');if(f)f.classList.remove('instant')});
+}
+function flowMenuUpdate(v){
+  flowUpdate({...v,albums:itemsOf(v).map(x=>({album:x.label,artist:x.val!=null?String(x.val):''}))});
+  const x=itemsOf(v)[v.sel];$('#far').textContent=x&&x.val!=null?String(x.val):'';
+}
 /* ---------- Album Flow: 3D shelf of your albums ---------- */
 function flowAlbums(){
   const m=new Map();for(const s of songs){const k=s.album+'\u0000'+s.artist;if(!m.has(k))m.set(k,{album:s.album,artist:s.artist,songs:[]});m.get(k).songs.push(s)}
@@ -1205,6 +1247,7 @@ function scroll(dir){
   if(holdOn){showLock();return}
   const v=top();
   if(v.type==='brick'){brickInput(v,null,dir);return}
+  if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v)}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
   if(v.type==='list'){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}}
   else if(v.type==='flow'){const ns=Math.max(0,Math.min(v.albums.length-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowUpdate(v)}}
