@@ -33,6 +33,75 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .ipod.c-pink{background:linear-gradient(160deg,#f7b8d3 0%,#ec83b1 38%,#d9629a 66%,#f3a6c8 100%);box-shadow:inset 0 2px 1px rgba(255,255,255,.5),inset 0 -3px 6px rgba(0,0,0,.18),0 0 0 1px #b8517f}
 .ipod.c-gold{background:linear-gradient(160deg,#f6e7c8 0%,#e3c98f 38%,#c9a867 66%,#efdcb0 100%);box-shadow:inset 0 2px 1px rgba(255,255,255,.7),inset 0 -3px 6px rgba(0,0,0,.18),0 0 0 1px #a8884c}
 .ipod.c-graphite{background:linear-gradient(160deg,#6b6f76 0%,#4b4f55 40%,#36393e 70%,#5b5f66 100%);box-shadow:inset 0 2px 1px rgba(255,255,255,.2),0 0 0 1px #2c2e32}
+
+/* ================= Modern style (Settings ▸ Style) ================= */
+.ipod.modern,.ipod.modern[class*=" c-"]{border-radius:44px;background:linear-gradient(165deg,#646c78 0%,#4b525d 45%,#3e444e 75%,#535a66 100%);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.25),inset 0 -2px 5px rgba(0,0,0,.25),0 0 0 1px #2c3038}
+.modern .bezel{border-radius:20px;background:#08090b;padding:5px;box-shadow:0 0 0 1px rgba(255,255,255,.06),inset 0 0 0 1px #000}
+.modern .screen{border-radius:15px;background:#0d1520}
+.modern .screen::after{display:none}
+.modern .hdr{background:transparent;border:0;justify-content:flex-start;padding:0 40px 0 12px;color:#9aa8bb;font-weight:600;font-size:11px;height:22px}
+.modern .hdr #hclock{display:inline;color:#f2f5f9;font-weight:700;margin-right:6px}
+.hdr #hclock{display:none}
+.modern .hdr .pi,.modern .hdr .lk{display:none}
+.modern .hdr .bat{top:6px;right:10px;border-color:#cfd6df;background:transparent;border-radius:3px}
+.modern .hdr .bat::after{background:#cfd6df}
+.modern .hdr .bat i{background:#f2f5f9}
+.modern .list{top:22px;background:transparent}
+.modern .row{color:#e9eef5;font-weight:600;margin:0 6px;border-radius:7px;padding-left:9px}
+.modern .row.sel{background:rgba(255,255,255,.14);color:#fff;text-shadow:none}
+.modern .row .chev,.modern .row .val{color:#7f8da1;background:transparent}
+.modern .row.sel .chev,.modern .row.sel .val{color:#c9d3df}
+.modern .sb{background:transparent;border:0}.modern .sb i{background:rgba(255,255,255,.35);border-radius:3px;left:1px;right:1px}
+.modern .empty{color:#9aa8bb}.modern .empty b{color:#f2f5f9}
+.modern .inp,.modern .clock{background:#0d1520}.modern .inp .tip{color:#9aa8bb}
+.modern .clock .dig{color:#f2f5f9}.modern .clock .dt{color:#9aa8bb}
+/* wheel */
+.wheel .mod{display:none}
+.modern .wheel .classic{display:none}
+.modern .wheel .mod{display:block}
+.modern .wheel{width:226px;height:226px;margin-left:-113px;top:266px;background:radial-gradient(circle at 50% 30%,#2b2f36,#1d2026 62%,#17191e);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.08),0 1px 2px rgba(0,0,0,.4),0 0 0 1px #121418}
+.modern .center{width:86px;height:86px;margin:-43px 0 0 -43px;background:radial-gradient(circle at 50% 35%,#24282e,#1a1d22);box-shadow:inset 0 1px 1px rgba(255,255,255,.06),0 0 0 1px #111317}
+.modern .center.down{filter:brightness(1.25)}
+.wheel svg.mod{position:absolute;pointer-events:none;fill:none;stroke:#e6eaf0;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.wheel svg.mod.m{top:18px;left:103px;width:20px;height:20px}
+.wheel svg.mod.r{right:16px;top:102px;width:26px;height:20px}
+.wheel svg.mod.l{left:16px;top:102px;width:26px;height:20px}
+.wheel svg.mod.b{bottom:16px;left:101px;width:24px;height:20px}
+/* modern now playing */
+.mnp{position:absolute;inset:0;overflow:hidden;color:#fff;background:var(--tone,#1c2a3c)}
+.mnp .bg{position:absolute;left:0;top:0;width:62%;height:100%;background-size:cover;background-position:center;
+  -webkit-mask-image:linear-gradient(90deg,#000 45%,transparent 100%);mask-image:linear-gradient(90deg,#000 45%,transparent 100%)}
+.mnp .bg.fresh{animation:artIn .5s ease-out}
+.mnp .shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.28) 0%,transparent 22%,transparent 46%,var(--tone,#1c2a3c) 76%)}
+.mnp .meta{position:absolute;left:46%;right:10px;top:42px}
+.mnp .meta div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mnp .t{font-size:16px;font-weight:700;letter-spacing:-.01em;text-shadow:0 1px 6px rgba(0,0,0,.35)}
+.mnp .a{font-size:12.5px;color:rgba(255,255,255,.82);margin-top:3px}
+.mnp .al{font-size:12.5px;color:rgba(255,255,255,.55);margin-top:2px}
+.mnp .row2{position:absolute;left:12px;right:12px;top:122px;display:flex;align-items:center;gap:8px}
+.mnp .fmt{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:rgba(255,255,255,.88);display:flex;align-items:center;gap:4px}
+.mnp .fmt svg{width:13px;height:10px}
+.mnp .row2 .sp{flex:1}
+.mnp .ic{width:18px;height:18px;fill:none;stroke:rgba(255,255,255,.88);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.mnp .ic.on{fill:#fff}
+.mnp .times{left:12px;right:12px;bottom:auto;top:145px;color:rgba(255,255,255,.6);font-size:10px;font-weight:600}
+.mnp .bar{left:12px;right:12px;bottom:auto;top:160px;height:5px;border:0;border-radius:3px;background:rgba(255,255,255,.22)}
+.mnp .bar i{background:rgba(255,255,255,.85);border-radius:3px}
+.mnp .bar.scrub{overflow:visible}
+.mnp .bar.scrub::after{top:-4px;width:12px;height:12px;border:0;border-radius:50%;background:#fff;transform:translateX(-50%);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.mnp .row3{position:absolute;left:12px;right:12px;bottom:9px;display:flex;align-items:center;gap:6px;font-size:11px;color:rgba(255,255,255,.75);font-weight:500}
+.mnp .row3 .sp{flex:1}
+.mnp .row3 .ic{width:17px;height:17px}
+.mnp .vol{left:12px;right:12px;bottom:9px;background:var(--tone,#1c2a3c)}
+.mnp .vol svg path{fill:#fff;stroke:#fff}
+.mnp .vol .vb{height:5px;border:0;border-radius:3px;background:rgba(255,255,255,.22)}
+.mnp .vol .vb i{background:#fff;border-radius:3px}
+.mnp.showvol .row3{visibility:hidden}
+.mnp .cnt{position:absolute;left:46%;top:28px;font-size:9px;font-weight:700;letter-spacing:.08em;color:rgba(255,255,255,.5);text-transform:uppercase}
+.modern .screen.nowmod .hdr{position:relative;z-index:3;background:linear-gradient(rgba(0,0,0,.25),transparent)}
+.modern .screen.nowmod #body{position:absolute;inset:0}
 /* hold switch on the top edge */
 .hold{position:absolute;top:-7px;right:44px;width:34px;height:10px;border-radius:5px 5px 0 0;background:linear-gradient(#cfd2d7,#9ea3aa);box-shadow:inset 0 1px 0 #fff8,0 0 0 1px #0002;cursor:pointer;z-index:2}
 .hold::before{content:"";position:absolute;top:2px;left:3px;width:14px;height:6px;border-radius:3px;background:linear-gradient(#fafafa,#c9ccd1);box-shadow:0 0 0 1px #0003;transition:left .18s}
@@ -173,7 +242,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
   <div class="ipod" id="ipod">
     <div class="hold" id="hold" title="Hold"></div>
     <div class="bezel"><div class="screen" id="screen">
-      <div class="hdr"><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="bat"><i id="batlvl"></i></span></div>
+      <div class="hdr"><span id="hclock"></span><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="bat"><i id="batlvl"></i></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
       <div id="body"></div><div id="download-toast" class="download-toast" style="display:none"></div>
@@ -189,10 +258,14 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
       <div class="vhint" id="vhint">Tap the video once<br>to start playback</div>
     </div></div>
     <div class="wheel" id="wheel">
-      <div class="lbl m">MENU</div>
-      <svg class="ic r" viewBox="0 0 22 14"><path d="M1 1l8 6-8 6zM9 1l8 6-8 6zM18 1h3v12h-3z"/></svg>
-      <svg class="ic l" viewBox="0 0 22 14"><path d="M21 1l-8 6 8 6zM13 1l-8 6 8 6zM1 1h3v12H1z"/></svg>
-      <svg class="ic b" viewBox="0 0 22 14"><path d="M2 1l8 6-8 6zM13 1h3v12h-3zM18 1h3v12h-3z"/></svg>
+      <div class="lbl m classic">MENU</div>
+      <svg class="mod m" viewBox="0 0 20 20"><rect x="2" y="2" width="6.5" height="6.5" rx="1.6"/><rect x="11.5" y="2" width="6.5" height="6.5" rx="1.6"/><rect x="2" y="11.5" width="6.5" height="6.5" rx="1.6"/><rect x="11.5" y="11.5" width="6.5" height="6.5" rx="1.6"/></svg>
+      <svg class="mod r" viewBox="0 0 26 20"><path d="M2 4l9 6-9 6zM12 4l9 6-9 6z"/><path d="M24 4v12"/></svg>
+      <svg class="mod l" viewBox="0 0 26 20"><path d="M24 4l-9 6 9 6zM14 4l-9 6 9 6z"/><path d="M2 4v12"/></svg>
+      <svg class="mod b" viewBox="0 0 24 20"><path d="M2 4l9 6-9 6z"/><path d="M15 4v12M20 4v12"/></svg>
+      <svg class="ic r classic" viewBox="0 0 22 14"><path d="M1 1l8 6-8 6zM9 1l8 6-8 6zM18 1h3v12h-3z"/></svg>
+      <svg class="ic l classic" viewBox="0 0 22 14"><path d="M21 1l-8 6 8 6zM13 1l-8 6 8 6zM1 1h3v12H1z"/></svg>
+      <svg class="ic b classic" viewBox="0 0 22 14"><path d="M2 1l8 6-8 6zM13 1h3v12h-3zM18 1h3v12h-3z"/></svg>
       <div class="center" id="center"></div>
     </div>
   </div>
@@ -206,7 +279,7 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 const audio=new Audio(); audio.preload='auto';
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic'},ls.get('ipod.settings',{}));
 const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
 
@@ -214,7 +287,8 @@ let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
 function fit(){const s=Math.min(innerWidth/335,innerHeight/555,1.7);$('#stage').style.transform=`scale(${s})`}
 addEventListener('resize',fit);fit();
 const COLORS=['Silver','Black','Graphite','Red','Blue','Green','Pink','Gold'];
-function applyTheme(){const el=$('#ipod');COLORS.forEach(c=>el.classList.remove('c-'+c.toLowerCase()));
+function applyTheme(){$('#ipod').classList.toggle('modern',settings.style==='Modern');applyColor()}
+function applyColor(){const el=$('#ipod');COLORS.forEach(c=>el.classList.remove('c-'+c.toLowerCase()));
   el.classList.toggle('black',settings.theme==='Black'||settings.theme==='Graphite');
   if(settings.theme!=='Silver'&&settings.theme!=='Black')el.classList.add('c-'+settings.theme.toLowerCase())}
 applyTheme();
@@ -323,6 +397,20 @@ function genArt(album,artist){
   const url=c.toDataURL('image/jpeg',.88);genArtCache.set(key,url);return url;
 }
 const artFor=s=>s?(s.artUrl||genArt(s.album,s.artist)):null;
+// Average colour of the artwork, darkened, used as the Modern Now Playing background.
+const toneCache=new Map();
+function artTone(url,cb){
+  if(!url)return cb('#1c2a3c');if(toneCache.has(url))return cb(toneCache.get(url));
+  const im=new Image();im.onload=()=>{try{const c=document.createElement('canvas');c.width=c.height=12;const g=c.getContext('2d');g.drawImage(im,0,0,12,12);
+    const d=g.getImageData(0,0,12,12).data;let R=0,G=0,B=0,W=0;
+    for(let i=0;i<d.length;i+=4){const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]),w=1+(mx-mn)/40;R+=d[i]*w;G+=d[i+1]*w;B+=d[i+2]*w;W+=w}
+    let [r,g2,b]=[R/W,G/W,B/W];const lum=.2126*r+.7152*g2+.0722*b,k=Math.min(1,46/Math.max(1,lum));
+    const tone=`rgb(${Math.round(r*k)},${Math.round(g2*k)},${Math.round(b*k)})`;toneCache.set(url,tone);cb(tone)}catch(e){cb('#1c2a3c')}};
+  im.onerror=()=>cb('#1c2a3c');im.src=url;
+}
+const FMT={'audio/mpeg':'MP3','audio/mp3':'MP3','audio/mp4':'AAC','audio/x-m4a':'AAC','audio/aac':'AAC','audio/flac':'FLAC','audio/x-flac':'FLAC','audio/wav':'WAV','audio/x-wav':'WAV','audio/ogg':'OGG'};
+const fmtOf=s=>FMT[(s&&(s.mimeType||(s.blob&&s.blob.type)))||'']||'AUDIO';
+const outputName=()=>/iPhone/.test(navigator.userAgent)?'iPhone':/iPad/.test(navigator.userAgent)?'iPad':/Android/.test(navigator.userAgent)?'This Phone':'This Device';
 function hydrate(r){return {...r,kind:'file',url:URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):r.artworkUrl||null}}
 async function addFiles(files){
   let n=0;
@@ -579,7 +667,7 @@ function ytListView(title,items,more,pl){
     ...items.map((it,i)=>({label:it.title,ytid:it.id,action:()=>playYT(items,i)})),
     ...(more?[{label:'More Results…',action:more}]:[])])}
 function settingsMenu(){
-  const tog=(k,opts)=>()=>{const i=opts.indexOf(settings[k]);settings[k]=opts[(i+1)%opts.length];saveSettings();if(k==='theme')applyTheme();if(k==='backlight')wake();render()};
+  const tog=(k,opts)=>()=>{const i=opts.indexOf(settings[k]);settings[k]=opts[(i+1)%opts.length];saveSettings();if(k==='theme'||k==='style')applyTheme();if(k==='backlight')wake();render()};
   return list('Settings',()=>[
     {label:'Shuffle',val:settings.shuffle?'Songs':'Off',action:tog('shuffle',[false,true])},
     {label:'Repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
@@ -589,7 +677,8 @@ function settingsMenu(){
       {label:'Haptic Strength',val:settings.hapticStrength,action:()=>{tog('hapticStrength',Object.keys(HAPTIC_STRENGTHS))();setTimeout(()=>triggerHaptic('selection'),120)}},
       {label:'Haptic Feel',val:settings.hapticFeel,action:()=>{tog('hapticFeel',Object.keys(HAPTIC_FEELS))();setTimeout(()=>triggerHaptic('selection'),120)}},
       {label:'Test Haptic',action:()=>triggerHaptic('success')}]:[]),
-    {label:'Color',val:settings.theme,action:tog('theme',COLORS)},
+    {label:'Style',val:settings.style,action:tog('style',['Classic','Modern'])},
+    ...(settings.style==='Classic'?[{label:'Color',val:settings.theme,action:tog('theme',COLORS)}]:[]),
     {label:'Backlight',val:settings.backlight,action:tog('backlight',['10 sec','20 sec','1 min','Always On'])},
     {label:'Fast Scroll',val:settings.accel?'On':'Off',action:tog('accel',[true,false])},
     {label:'YouTube Downloads',val:'Offline MP3'},
@@ -605,7 +694,7 @@ function aboutView(){return list('About',[
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
-  {label:'Version',val:'3.2'}])}
+  {label:'Version',val:'3.3'}])}
 function extrasMenu(){return list('Extras',[
   {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))}])}
@@ -696,8 +785,10 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 const spk='<svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/></svg>';
 const fmt=t=>{if(!isFinite(t))t=0;t=Math.max(0,Math.floor(t));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=String(t%60).padStart(2,'0');return h?`${h}:${String(m).padStart(2,'0')}:${s}`:`${m}:${s}`};
 let lastArtId=null;
+function hdrClock(){const d=new Date();$('#hclock').textContent=d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}
+setInterval(hdrClock,10000);
 function renderHdr(){
-  const v=top();$('#htitle').textContent=v.title;
+  const v=top();$('#htitle').textContent=v.title;hdrClock();
   $('#pi').innerHTML=qi<0?'':!isPlaying()?'<svg viewBox="0 0 12 12"><rect x="2" y="2" width="3" height="8" fill="#2b7fde"/><rect x="7" y="2" width="3" height="8" fill="#2b7fde"/></svg>'
     :'<svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z" fill="#2b7fde"/></svg>';
 }
@@ -707,6 +798,7 @@ function render(){
   screenEl.classList.toggle('video',isVid);
 
   renderHdr();
+  screenEl.classList.remove('nowmod');
   if(v.type==='list'){
     const it=itemsOf(v);
     if(!it.length){body.innerHTML=`<div class="list"><div class="empty"><b>Empty</b>${esc(v.emptyText||'Go to Add Music on the main menu to load songs.')}</div></div>`;return}
@@ -734,6 +826,26 @@ function render(){
     renderClock();
   }else if(v.type==='brick'){
     brickMount(v);
+  }else if(v.type==='now'&&settings.style==='Modern'&&cur()){
+    const s=cur(),art=artFor(s);screenEl.classList.add('nowmod');
+    body.innerHTML=`<div class="mnp" id="np">
+      <div class="bg${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(art)}&quot;)"></div><div class="shade"></div>
+      <div class="cnt">${qi+1} of ${queue.length}</div>
+      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
+      <div class="row2"><span class="fmt"><svg viewBox="0 0 13 10"><rect x=".5" y=".5" width="12" height="9" rx="2" fill="none" stroke="currentColor"/><path d="M3 3v4M5.5 2v6M8 3.5v3M10.5 4.5v1" stroke="currentColor" stroke-linecap="round"/></svg>${fmtOf(s)}</span>
+        <span class="sp"></span>
+        <svg class="ic${s.favorite?' on':''}" viewBox="0 0 20 20"><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14.3l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z"/></svg>
+        <svg class="ic" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><circle cx="6.3" cy="10" r=".6" fill="#fff"/><circle cx="10" cy="10" r=".6" fill="#fff"/><circle cx="13.7" cy="10" r=".6" fill="#fff"/></svg></div>
+      <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
+      <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
+      <div class="row3"><svg class="ic" viewBox="0 0 20 20"><path d="M3 13a7 7 0 0114 0"/><rect x="2" y="12" width="3.5" height="5" rx="1.2"/><rect x="14.5" y="12" width="3.5" height="5" rx="1.2"/></svg>
+        <span>${esc(outputName())}</span><span class="sp"></span>
+        <svg class="ic" viewBox="0 0 20 20"><path d="M3.5 4.5h13a1.5 1.5 0 011.5 1.5v7a1.5 1.5 0 01-1.5 1.5H9l-3.5 3v-3H3.5A1.5 1.5 0 012 13V6a1.5 1.5 0 011.5-1.5z"/><path d="M7 8.3v1.6M7 8.3h1.2M11 8.3v1.6M11 8.3h1.2"/></svg>
+        <svg class="ic" viewBox="0 0 20 20"><path d="M7 5h11M7 10h11M7 15h11"/><circle cx="3.2" cy="5" r=".7" fill="#fff"/><circle cx="3.2" cy="10" r=".7" fill="#fff"/><circle cx="3.2" cy="15" r=".7" fill="#fff"/></svg></div>
+      <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/></svg><div class="vb"><i id="vbi"></i></div>
+        <svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/><path d="M8.5 3.5a3.5 3.5 0 010 5M10 2a5.5 5.5 0 010 8" fill="none"/></svg></div></div>`;
+    const np=$('#np');artTone(art,t=>{if(np&&np.isConnected)np.style.setProperty('--tone',t)});
+    lastArtId=s.id;tick();
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
     body.innerHTML=`<div class="np" id="np"><div class="cnt">${qi+1} of ${queue.length}</div>
