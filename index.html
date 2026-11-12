@@ -350,7 +350,7 @@ async function acquireYT(it){
  let data;try{data=await r.json()}catch(e){throw new Error('Relay returned invalid JSON (HTTP '+r.status+').')}
  if(!r.ok||!data.success||!data.downloadPath)throw new Error(data.error||'Relay conversion failed (HTTP '+r.status+').');
  let response;try{response=await fetch(IPOD_WORKER+data.downloadPath,{method:'POST'})}catch(e){throw new Error('Cloudflare audio download unavailable.')}
- if(!response.ok){let message='Audio download HTTP '+response.status;try{const e=await response.json();message=e.error||message}catch{}throw new Error(message)}
+ if(!response.ok){let message='Audio download HTTP '+response.status;try{const e=await response.json();message=e.error||message;const details=[e.contentType&&('type: '+e.contentType),e.upstreamHost&&('host: '+e.upstreamHost),typeof e.redirected==='boolean'&&('redirected: '+e.redirected)].filter(Boolean);if(details.length)message+=' ('+details.join(', ')+')'}catch{}throw new Error(message)}
  const blob=await response.blob(),type=(response.headers.get('content-type')||'').toLowerCase();
  if(!blob.size||type.includes('text/html')||type.includes('application/json'))throw new Error('Invalid audio response.');
  const rec={id:'yt-'+id,sourceId:id,blob,title:data.title||it.title||'Untitled',artist:it.artist||'Unknown Artist',album:'Offline Music',artworkUrl:data.thumbnail||'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'};
