@@ -31,7 +31,11 @@ export default {
     const response=await fetch(remote.href,{redirect:'follow',signal:AbortSignal.timeout(25000)});
     if(!response.ok)return json({error:'Audio download failed: HTTP '+response.status},502);
     const type=(response.headers.get('content-type')||'').toLowerCase();
-    if(type.includes('text/html')||type.includes('application/json'))return json({error:'Provider returned non-audio content'},502);
+    if(type.includes('text/html')||type.includes('application/json')){
+      const finalHost=new URL(response.url||remote.href).hostname;
+      const details={error:'Provider returned non-audio content',contentType:type.split(';')[0],upstreamHost:finalHost,redirected:response.redirected};
+      return json(details,502);
+    }
     return new Response(response.body,{status:200,headers:{'Content-Type':type||'audio/mpeg','Cache-Control':'no-store'}});
    }
    return json({error:'Not found'},404);
