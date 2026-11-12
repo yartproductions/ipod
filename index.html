@@ -344,27 +344,35 @@ const IPOD_WORKER='https://ipod-audio-relay.kohlindersjohn.workers.dev';
 async function acquireYT(it){
  const id=it.id;if(!/^[A-Za-z0-9_-]{11}$/.test(id))throw new Error('Invalid video ID.');
  const existing=songs.find(s=>s.sourceId===id);if(existing)return existing;
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),240000);
- let response;
- try{
-  response=await fetch(IPOD_WORKER+'/render-audio',{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({videoId:id,authorized:true}),
-   signal:controller.signal
-  });
- }catch(e){throw new Error(e.name==='AbortError'?'Audio conversion timed out.':'Cloudflare audio relay unavailable.')}
- finally{clearTimeout(timer)}
- if(!response.ok){
-  let message='Audio download HTTP '+response.status;
-  try{const error=await response.json();message=error.error||message}catch{}
-  throw new Error(message);
+ const relay=async(path,payload)=>{
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),95000);
+  let response;
+  try{response=await fetch(IPOD_WORKER+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:controller.signal})}
+  catch(e){throw new Error(e.name==='AbortError'?'Request timed out.':'Audio relay unavailable.')}
+  finally{clearTimeout(timer)}
+  return response;
+ };
+ const created=await relay('/tornado-create',{videoId:id,authorized:true});
+ const creation=await created.json().catch(()=>({}));
+ if(!created.ok||!creation.jobId)throw new Error(creation.error||'Tornado job could not be created.');
+ const jobId=creation.jobId;
+ let info;
+ for(let attempt=0;attempt<75;attempt++){
+  await new Promise(resolve=>setTimeout(resolve,3000));
+  const result=await relay('/tornado-status',{jobId});
+  info=await result.json().catch(()=>({}));
+  if(!result.ok)throw new Error(info.error||'Tornado status unavailable.');
+  if(info.status==='Completed')break;
+  if(['Failed','Warning','Skipped','Cancelled','CancelledByAdmin'].includes(info.status))throw new Error(info.error||'Tornado job '+info.status);
  }
+ if(info?.status!=='Completed')throw new Error('Tornado is still processing. Please try again later; do not repeatedly submit the same track.');
+ const response=await relay('/tornado-file',{jobId});
+ if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'Audio delivery failed.')}
  const type=(response.headers.get('content-type')||'').toLowerCase();
- if(!type.startsWith('audio/'))throw new Error('Audio backend returned invalid content ('+(type||'unknown')+').');
+ if(!type.startsWith('audio/'))throw new Error('Audio delivery returned invalid content.');
  const blob=await response.blob();
  if(blob.size<1024)throw new Error('Audio file was empty or incomplete.');
- const rec={id:'yt-'+id,sourceId:id,blob,title:it.title||'Untitled',artist:it.artist||'Unknown Artist',album:'Offline Music',artworkUrl:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'};
+ const rec={id:'yt-'+id,sourceId:id,blob,title:info.title||it.title||'Untitled',artist:it.artist||'Unknown Artist',album:'Offline Music',artworkUrl:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'};
  await dbPut(rec);const song=hydrate(rec);songs.push(song);sortSongs();return song;
 }
 async function playYT(items,i){
