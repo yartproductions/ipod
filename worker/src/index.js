@@ -28,7 +28,7 @@ export default {
     const target=url.searchParams.get('url')||'',token=url.searchParams.get('token')||'';
     if(!target||!token||!(await verify(target,token,env.DOWNLOAD_SIGNING_KEY)))return json({error:'Invalid download token'},403);
     const remote=new URL(target);if(remote.protocol!=='https:')return json({error:'Invalid URL'},400);
-    const response=await fetch(remote.href,{redirect:'manual',signal:AbortSignal.timeout(25000)});
+    const response=await fetch(remote.href,{redirect:'follow',signal:AbortSignal.timeout(25000)});
     if(!response.ok)return json({error:'Audio download failed: HTTP '+response.status},502);
     const type=(response.headers.get('content-type')||'').toLowerCase();
     if(type.includes('text/html')||type.includes('application/json'))return json({error:'Provider returned non-audio content'},502);
