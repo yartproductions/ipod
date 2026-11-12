@@ -4,6 +4,7 @@ const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:
 const cors=()=>({'Access-Control-Allow-Origin':ORIGIN,'Access-Control-Allow-Methods':'POST, OPTIONS','Access-Control-Allow-Headers':'Content-Type','Vary':'Origin','Cache-Control':'no-store'});
 export default {
  async fetch(request,env){
+  const respond=async()=>{
   const origin=request.headers.get('Origin');
   if(request.method==='OPTIONS')return new Response(null,{status:204,headers:cors()});
   if(origin!==ORIGIN)return json({error:'Origin not allowed'},403);
@@ -35,6 +36,10 @@ export default {
    }
    return json({error:'Not found'},404);
   }catch(e){return json({error:'Upstream request failed: '+(e?.name||'Error')},502)}
+  };
+  const response=await respond();
+  const headers=new Headers(response.headers);for(const [key,value] of Object.entries(cors()))headers.set(key,value);
+  return new Response(response.body,{status:response.status,headers});
  }
 };
 async function sign(message,secret){
