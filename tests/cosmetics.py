@@ -19,8 +19,9 @@ def serve():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, f'http://127.0.0.1:{srv.server_address[1]}/'
 
-rows = lambda pg: pg.eval_on_selector_all('#body .row', 'els=>els.map(e=>e.lastChild.nodeType===3?e.lastChild.textContent:e.childNodes[e.querySelector(".thumb")?1:0].textContent)')
-sel = lambda pg: pg.eval_on_selector('#body .row.sel', 'e=>[...e.childNodes].find(n=>n.nodeType===3).textContent')
+LABEL_JS = 'e=>{const l=e.querySelector(".lt");return l?l.textContent:[...e.childNodes].find(n=>n.nodeType===3).textContent}'
+rows = lambda pg: pg.eval_on_selector_all('#body .row', f'els=>els.map({LABEL_JS})')
+sel = lambda pg: pg.eval_on_selector('#body .row.sel', LABEL_JS)
 def key(pg, k, n=1, wait=40):
     for _ in range(n): pg.keyboard.press(k); pg.wait_for_timeout(wait)
 def selpos(pg): return pg.evaluate('(()=>{const r=[...document.querySelectorAll("#body .row")];const t=document.querySelector("#body .sb i");return r.findIndex(e=>e.classList.contains("sel"))+"|"+(t?t.style.top:"")+"|"+r.map(e=>e.textContent).join("/")})()')
@@ -245,9 +246,31 @@ def main():
         for _ in range(8):
             key(pg, 'ArrowUp', wait=60); flips.append('splitmode' in pg.get_attribute('#screen', 'class'))
         check('split screen never appears while scrolling Settings (regression)', not any(flips), flips)
-        choose(pg, 'Split Screen'); home(pg)
+        choose(pg, 'Split Screen')                    # Album Art -> Now Playing
+        check('Split Screen offers Now Playing mode', 'Now Playing' in pg.inner_text('#body'), pg.inner_text('#body'))
+        home(pg); choose(pg, music_label(pg)); choose(pg, 'Songs'); key(pg, 'Enter', wait=500); key(pg, ' ', wait=150)
+        home(pg); pg.wait_for_timeout(300)
+        check('Now Playing panel shows the playing song', 'npmode' in pg.get_attribute('#split', 'class') and pg.text_content('#splitnp .t') != '' and 'Paused' in pg.text_content('#splitnp .st'),
+              pg.inner_text('#splitnp'))
+        key(pg, ' ', wait=300)
+        check('Now Playing panel updates when playback resumes', 'Now Playing' in pg.text_content('#splitnp .st'))
+        key(pg, ' ', wait=150)
+        choose(pg, 'Settings'); choose(pg, 'Split Screen'); home(pg)   # -> Off
         check('Split Screen can be turned off', 'splitmode' not in pg.get_attribute('#screen', 'class'))
-        choose(pg, 'Settings'); choose(pg, 'Split Screen'); home(pg)
+        choose(pg, 'Settings'); choose(pg, 'Split Screen'); home(pg)   # -> Album Art
+        check('back to Album Art panel', 'splitmode' in pg.get_attribute('#screen', 'class') and 'npmode' not in pg.get_attribute('#split', 'class'))
+        # long labels scroll instead of staying cut off
+        for _ in range(15): pg.keyboard.press('ArrowUp')
+        found = False
+        for _ in range(12):
+            if pg.evaluate('(()=>{const l=document.querySelector("#body .row.sel .lb");return l&&l.firstElementChild.scrollWidth>l.clientWidth+2})()'):
+                found = True; break
+            key(pg, 'ArrowDown', wait=60)
+        pg.wait_for_timeout(200)
+        check('a cut-off selected label scrolls (marquee)', found and 'marq' in pg.get_attribute('#body .row.sel .lb', 'class')
+              and pg.evaluate('parseFloat(getComputedStyle(document.querySelector("#body .row.sel .lb")).getPropertyValue("--mx"))') > 0)
+        key(pg, 'ArrowDown', wait=200)
+        check('rows that fit don\'t scroll', pg.evaluate('(()=>{const l=document.querySelector("#body .row.sel .lb");return l.firstElementChild.scrollWidth<=l.clientWidth+2?!l.classList.contains("marq"):true})()'))
 
         choose(pg, 'Album Flow'); pg.wait_for_timeout(600)
         n_cov = pg.evaluate('document.querySelectorAll("#flow .cv").length')
