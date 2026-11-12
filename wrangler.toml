@@ -3,4 +3,3 @@ main = "worker/src/index.js"
 compatibility_date = "2026-11-12"
 workers_dev = true
 
-# Deployment trigger: synchronize Cloudflare Git integration with latest worker diagnostics.
