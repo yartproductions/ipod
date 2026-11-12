@@ -31,7 +31,7 @@ struct IPodWebView: UIViewRepresentable {
         #if DEBUG
         if #available(iOS 16.4, *) { webView.isInspectable = true }   // Safari ▸ Develop for on-device debugging
         #endif
-        webView.load(URLRequest(url: hostedURL))
+        webView.load(URLRequest(url: hostedURL, cachePolicy: .reloadRevalidatingCacheData))   // always pick up the latest site
         context.coordinator.prepare()
         return webView
     }
