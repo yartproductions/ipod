@@ -344,16 +344,27 @@ const IPOD_WORKER='https://ipod-audio-relay.kohlindersjohn.workers.dev';
 async function acquireYT(it){
  const id=it.id;if(!/^[A-Za-z0-9_-]{11}$/.test(id))throw new Error('Invalid video ID.');
  const existing=songs.find(s=>s.sourceId===id);if(existing)return existing;
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),300000);
- let r;try{r=await fetch(IPOD_WORKER+'/convert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({videoId:id}),signal:controller.signal})}
- catch(e){throw new Error('Cloudflare relay unavailable.')}finally{clearTimeout(timer)}
- let data;try{data=await r.json()}catch(e){throw new Error('Relay returned invalid JSON (HTTP '+r.status+').')}
- if(!r.ok||!data.success||!data.downloadPath)throw new Error(data.error||'Relay conversion failed (HTTP '+r.status+').');
- let response;try{response=await fetch(IPOD_WORKER+data.downloadPath,{method:'POST'})}catch(e){throw new Error('Cloudflare audio download unavailable.')}
- if(!response.ok){let message='Audio download HTTP '+response.status;try{const e=await response.json();message=e.error||message;const details=[e.contentType&&('type: '+e.contentType),e.upstreamHost&&('host: '+e.upstreamHost),typeof e.redirected==='boolean'&&('redirected: '+e.redirected)].filter(Boolean);if(details.length)message+=' ('+details.join(', ')+')'}catch{}throw new Error(message)}
- const blob=await response.blob(),type=(response.headers.get('content-type')||'').toLowerCase();
- if(!blob.size||type.includes('text/html')||type.includes('application/json'))throw new Error('Invalid audio response.');
- const rec={id:'yt-'+id,sourceId:id,blob,title:data.title||it.title||'Untitled',artist:it.artist||'Unknown Artist',album:'Offline Music',artworkUrl:data.thumbnail||'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'};
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),240000);
+ let response;
+ try{
+  response=await fetch(IPOD_WORKER+'/render-audio',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({videoId:id,authorized:true}),
+   signal:controller.signal
+  });
+ }catch(e){throw new Error(e.name==='AbortError'?'Audio conversion timed out.':'Cloudflare audio relay unavailable.')}
+ finally{clearTimeout(timer)}
+ if(!response.ok){
+  let message='Audio download HTTP '+response.status;
+  try{const error=await response.json();message=error.error||message}catch{}
+  throw new Error(message);
+ }
+ const type=(response.headers.get('content-type')||'').toLowerCase();
+ if(!type.startsWith('audio/'))throw new Error('Audio backend returned invalid content ('+(type||'unknown')+').');
+ const blob=await response.blob();
+ if(blob.size<1024)throw new Error('Audio file was empty or incomplete.');
+ const rec={id:'yt-'+id,sourceId:id,blob,title:it.title||'Untitled',artist:it.artist||'Unknown Artist',album:'Offline Music',artworkUrl:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'};
  await dbPut(rec);const song=hydrate(rec);songs.push(song);sortSongs();return song;
 }
 async function playYT(items,i){
