@@ -1,0 +1,12 @@
+<!DOCTYPE html><meta charset="utf-8"><title>seed</title>
+<script>
+// Creates the OLD (v1) iPod database with one song, exactly as iPod 1.x/2.x stored it, to test the v2 migration.
+(async()=>{
+  const blob=await fetch('song3.mp3').then(r=>r.blob());
+  const r=indexedDB.open('ipod',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('songs',{keyPath:'id'});
+  r.onsuccess=()=>{const d=r.result,tx=d.transaction('songs','readwrite');
+    tx.objectStore('songs').put({id:'legacy1',blob,title:'Legacy Song',artist:'Old Artist',album:'Old Album',track:1,art:null});
+    tx.oncomplete=()=>{d.close();document.title='done'}};
+})();
+</script>

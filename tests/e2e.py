@@ -40,10 +40,12 @@ from PIL import Image
 _buf = io.BytesIO(); Image.new('RGB', (48, 48), (200, 60, 90)).save(_buf, 'JPEG'); ART = _buf.getvalue()
 MP3 = [(FIX / f'song{i}.mp3').read_bytes() for i in (1, 2, 3)]
 
+DOWNLOADABLE = {'T1', 'T4', 'T101'}   # tracks whose artists allow downloads
 def au_track(n, genre='Electronic', **kw):
     t = {'id': f'T{n}', 'title': f'Stream Song {n}', 'duration': 2, 'genre': genre, 'is_streamable': True,
          'is_stream_gated': False, 'user': {'name': f'Artist {n}', 'handle': f'artist{n}'},
          'artwork': {'150x150': f'https://img.audius.test/{n}/150.jpg', '480x480': f'https://img.audius.test/{n}/480.jpg'}}
+    t['is_downloadable'] = f'T{n}' in DOWNLOADABLE
     t.update(kw); return t
 # 30 trending tracks; 3 of them can't be streamed for free and must be hidden
 TRENDING = [au_track(n) for n in range(1, 31)]
@@ -51,6 +53,7 @@ TRENDING[2]['is_stream_gated'] = True; TRENDING[5]['is_streamable'] = False; TRE
 PLAYLISTS = [{'id': 'P1', 'playlist_name': 'Chill Mix', 'user': {'name': 'Curator'}}, {'id': 'P2', 'playlist_name': 'Gym', 'user': {'name': 'Coach'}}]
 PL_TRACKS = {'P1': [au_track(101, title='Chill One'), au_track(102, title='Chill Two'), au_track(103, title='Chill Paid', is_stream_gated=True)]}
 au_requests = []
+DL_HOLD = []          # routes held open to test cancelling a download
 
 def audius_route(route):
     u = urllib.parse.urlparse(route.request.url); q = dict(urllib.parse.parse_qsl(u.query)); path = u.path[len('/v1'):]
@@ -58,6 +61,14 @@ def audius_route(route):
     def ok(data): return route.fulfill(status=200, content_type='application/json', body=json.dumps({'data': data}),
                                        headers={'Access-Control-Allow-Origin': '*'})
     off, lim = int(q.get('offset', 0)), int(q.get('limit', 25))
+    if path.endswith('/download'):
+        tid = path.split('/')[2]
+        if tid == 'T4': return route.fulfill(status=500, body='boom')
+        if tid == 'T101': DL_HOLD.append(route); return          # never answers until the test aborts it
+        if tid not in DOWNLOADABLE: return route.fulfill(status=403, body='not downloadable')
+        body = MP3[int(tid[1:]) % 3]
+        return route.fulfill(status=200, content_type='audio/mpeg', body=body,
+                             headers={'Access-Control-Allow-Origin': '*', 'Content-Length': str(len(body))})
     if path.endswith('/stream'):
         tid = path.split('/')[2]
         if tid == 'Tbroken': return route.fulfill(status=404, body='not found')
@@ -350,6 +361,118 @@ def main():
         back_to_main(pg); choose(pg, 'Ad-Free Local Music'); choose(pg, 'Songs'); choose(pg, 'Test Song 1'); pg.wait_for_timeout(500)
         check('local music still plays after streaming', pg.text_content('.np .t') == 'Test Song 1')
         pg.close()
+
+        # ---------- 7. offline library: migration, dedupe, delete, Save Offline, airplane mode, backup ----------
+        import zipfile
+        ctx2 = p.chromium.launch_persistent_context(tempfile.mkdtemp(), executable_path=CHROME, headless=True,
+               args=['--no-sandbox', '--autoplay-policy=no-user-gesture-required'], viewport={'width': 390, 'height': 844},
+               accept_downloads=True)
+        ctx2.route('https://api.audius.co/v1/**', audius_route)
+        ctx2.route('https://img.audius.test/**', lambda r: r.fulfill(status=200, content_type='image/jpeg', body=ART))
+        ctx2.route('https://www.youtube.com/iframe_api', lambda r: r.fulfill(status=200, content_type='text/javascript', body=YT_STUB))
+        pg = ctx2.new_page(); pg.on('pageerror', lambda e: errors.append(str(e)))
+        pg.goto(url + 'tests/fixtures/seed-v1.html'); pg.wait_for_function('document.title==="done"', timeout=10000)
+        pg.goto(url); pg.wait_for_timeout(2500)
+        dbinfo = lambda: pg.evaluate("""() => new Promise(res => { const r = indexedDB.open('ipod'); r.onsuccess = () => { const d = r.result, st = d.transaction('songs').objectStore('songs');
+            const q = st.getAll(); q.onsuccess = () => { res({version: d.version, indexes: [...st.indexNames],
+              songs: q.result.map(x => ({id: x.id, title: x.title, size: x.blob && x.blob.size, hash: !!x.hash, source: x.source, sourceId: x.sourceId, status: x.downloadStatus}))}); d.close(); } } })""")
+        info = dbinfo()
+        check('v1 → v2 upgrade keeps the existing song', [x['title'] for x in info['songs']] == ['Legacy Song'], info)
+        check('v2 adds sourceId + hash indexes', info['version'] == 2 and set(info['indexes']) == {'sourceId', 'hash'}, info)
+        check('legacy song gets its hash back-filled', info['songs'][0]['hash'], info)
+        choose(pg, 'Ad-Free Local Music'); choose(pg, 'Songs')
+        check('legacy song is listed and plays', rows(pg) == ['Legacy Song'])
+        choose(pg, 'Legacy Song'); pg.wait_for_timeout(500)
+        check('legacy song plays from its stored blob', pg.text_content('.np .t') == 'Legacy Song' and '<path' in pg.inner_html('#pi'))
+        back_to_main(pg)
+
+        pg.set_input_files('#file', [str(FIX / 'song3.mp3'), str(FIX / 'song1.mp3')]); pg.wait_for_timeout(1500)
+        check('duplicate import is skipped (same audio bytes)', '1 song added' in pg.inner_text('#body') and '1 already in your library' in pg.inner_text('#body'), pg.inner_text('#body'))
+        key(pg, 'Enter', wait=200)
+
+        # Save Offline from Audius (artist allows downloads)
+        choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Downloadable Songs'); pg.keyboard.type('chill'); key(pg, 'Enter', wait=600)
+        check('downloadable search asks Audius for only_downloadable', any(q.get('only_downloadable') == 'true' for _, q in au_requests))
+        back_to_main(pg); choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Trending'); pg.wait_for_timeout(500)
+        choose(pg, 'Stream Song 1'); pg.wait_for_timeout(500); key(pg, ' ', wait=100)   # pause so the 2-second test song doesn't advance
+        back_to_main(pg); choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Save Now Playing Offline'); pg.wait_for_timeout(1500)
+        check('Save Offline completes', 'Download Complete' in pg.inner_text('#body'), pg.inner_text('#body'))
+        info = dbinfo(); dl = [x for x in info['songs'] if x['source'] == 'audius-download']
+        check('downloaded song stored with real audio bytes + source id', len(dl) == 1 and dl[0]['sourceId'] == 'audius:T1' and dl[0]['size'] == len(MP3[1]) and dl[0]['status'] == 'complete', dl)
+        key(pg, 'Enter', wait=200); choose(pg, 'Save Now Playing Offline'); pg.wait_for_timeout(300)
+        check('saving again says it is already offline (no re-download)', 'Available Offline' in pg.inner_text('#body'))
+        key(pg, 'Enter', wait=200); back_to_main(pg)
+        choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Trending'); pg.wait_for_timeout(500)
+        check('saved track shows ✓ in Audius lists', '✓' in pg.inner_text('#body'))
+        choose(pg, 'Stream Song 2'); pg.wait_for_timeout(400); key(pg, ' ', wait=100)
+        back_to_main(pg); choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Save Now Playing Offline'); pg.wait_for_timeout(500)
+        check('non-downloadable track is refused', 'Not Downloadable' in pg.inner_text('#body'), pg.inner_text('#body'))
+        key(pg, 'Enter', wait=200); back_to_main(pg)
+        n_before = len(dbinfo()['songs'])
+        choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Trending'); pg.wait_for_timeout(500); choose(pg, 'Stream Song 4'); pg.wait_for_timeout(300); key(pg, ' ', wait=100)
+        back_to_main(pg); choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Save Now Playing Offline'); pg.wait_for_timeout(1200)
+        check('server error → Download Failed, nothing saved', 'Download Failed' in pg.inner_text('#body') and len(dbinfo()['songs']) == n_before, pg.inner_text('#body'))
+        key(pg, 'Enter', wait=200); back_to_main(pg)
+        choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Search Playlists'); pg.keyboard.type('x'); key(pg, 'Enter', wait=500)
+        choose(pg, 'Chill Mix'); pg.wait_for_timeout(400); choose(pg, 'Chill One'); pg.wait_for_timeout(300); key(pg, ' ', wait=100)
+        back_to_main(pg); choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Save Now Playing Offline'); pg.wait_for_timeout(600)
+        check('download shows progress state while waiting', 'Preparing audio' in pg.inner_text('#body') and 'MENU to cancel' in pg.inner_text('#body'), pg.inner_text('#body'))
+        key(pg, 'Escape', wait=500)
+        check('MENU cancels the download, nothing saved', 'Download Cancelled' in pg.inner_text('#body') and len(dbinfo()['songs']) == n_before, pg.inner_text('#body'))
+        for rt in DL_HOLD:
+            try: rt.abort()
+            except Exception: pass
+        key(pg, 'Enter', wait=200); back_to_main(pg)
+
+        # Delete a song
+        choose(pg, 'Settings'); choose(pg, 'Library & Storage')
+        check('Library & Storage shows usage', 'Storage Used' in pg.inner_text('#body'))
+        choose(pg, 'Delete Songs'); choose(pg, 'Test Song 1'); choose(pg, 'Delete “Test Song 1”'); pg.wait_for_timeout(300)
+        check('deleted song disappears from the list', 'Test Song 1' not in all_rows(pg), all_rows(pg))
+        check('deleted song is gone from IndexedDB', 'Test Song 1' not in [x['title'] for x in dbinfo()['songs']])
+        back_to_main(pg)
+
+        # Airplane mode: the app opens from the service worker and saved songs play
+        pg.evaluate('navigator.serviceWorker.ready.then(()=>true)'); pg.reload(); pg.wait_for_timeout(1500)
+        ctx2.set_offline(True)
+        pg.reload(); pg.wait_for_timeout(1500)
+        check('app opens with no network (service worker)', title(pg) == 'iPod' and 'Ad-Free Local Music' in rows(pg), rows(pg))
+        choose(pg, 'Ad-Free Local Music'); choose(pg, 'Songs'); choose(pg, 'Stream Song 1'); pg.wait_for_timeout(900)
+        check('downloaded song plays offline', pg.text_content('.np .t') == 'Stream Song 1' and '<path' in pg.inner_html('#pi'), pg.inner_html('#pi'))
+        back_to_main(pg); choose(pg, 'Audius (Ad-Free)'); choose(pg, 'Trending'); pg.wait_for_timeout(500)
+        check('Audius browsing explains it is offline', 'offline' in pg.inner_text('#body').lower(), pg.inner_text('#body'))
+        key(pg, 'Escape', wait=150); choose(pg, 'Recently Played'); choose(pg, 'Stream Song 2'); pg.wait_for_timeout(400)
+        check('unsaved stream says Unavailable Offline', 'Unavailable Offline' in pg.inner_text('#body'), pg.inner_text('#body'))
+        ctx2.set_offline(False); back_to_main(pg)
+
+        # Backup → clear → restore → restore again (duplicates skipped)
+        expected = sorted(x['title'] for x in dbinfo()['songs'])
+        choose(pg, 'Settings'); choose(pg, 'Library & Storage')
+        with pg.expect_download() as dlinfo: choose(pg, 'Back Up Library')
+        bk = tempfile.mktemp(suffix='.zip'); dlinfo.value.save_as(bk); pg.wait_for_timeout(300)
+        check('backup reports ready', 'Backup Ready' in pg.inner_text('#body'), pg.inner_text('#body'))
+        z = zipfile.ZipFile(bk); man = json.loads(z.read('manifest.json'))
+        check('backup ZIP is valid (CRC checks pass)', z.testzip() is None)
+        check('manifest is versioned and lists every song', man['format'] == 'ipod-library-backup' and man['version'] == 1 and sorted(s_['title'] for s_ in man['songs']) == expected, man.get('songs'))
+        check('backup holds the original audio bytes', z.read([s_ for s_ in man['songs'] if s_['title'] == 'Stream Song 1'][0]['audio']) == MP3[1])
+        check('backup includes Audius saved playlists/songs', isinstance(man['audius']['saved'], list))
+        key(pg, 'Enter', wait=200); choose(pg, 'Clear Library'); choose(pg, 'Erase All Songs'); pg.wait_for_timeout(500)
+        check('library cleared', dbinfo()['songs'] == [])
+        pg.set_input_files('#restore', bk); pg.wait_for_timeout(2500)
+        check('restore brings every song back', 'Restore Complete' in pg.inner_text('#body') and sorted(x['title'] for x in dbinfo()['songs']) == expected, (pg.inner_text('#body'), dbinfo()['songs']))
+        key(pg, 'Enter', wait=200)
+        pg.set_input_files('#restore', bk); pg.wait_for_timeout(2500)
+        check('restoring twice adds no duplicates', 'already in your library' in pg.inner_text('#body') and len(dbinfo()['songs']) == len(expected), pg.inner_text('#body'))
+        key(pg, 'Enter', wait=200)
+        junk = tempfile.mktemp(suffix='.zip'); Path(junk).write_bytes(b'not a zip at all' * 100)
+        pg.set_input_files('#restore', junk); pg.wait_for_timeout(800)
+        check('invalid backup is rejected without changes', 'Restore Failed' in pg.inner_text('#body') and len(dbinfo()['songs']) == len(expected), pg.inner_text('#body'))
+        key(pg, 'Enter', wait=200); back_to_main(pg)
+        choose(pg, 'Ad-Free Local Music'); choose(pg, 'Songs'); choose(pg, 'Stream Song 1'); pg.wait_for_timeout(700)
+        check('restored song plays', pg.text_content('.np .t') == 'Stream Song 1' and '<path' in pg.inner_html('#pi'))
+        pg.reload(); pg.wait_for_timeout(1500)
+        check('library survives a reload', sorted(x['title'] for x in dbinfo()['songs']) == expected)
+        pg.close(); ctx2.close()
 
         check('no uncaught page errors', not errors, errors)
         ctx.close()
