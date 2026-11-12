@@ -924,7 +924,7 @@ function render(){
 
   renderHdr();
   screenEl.classList.remove('nowmod');
-  const wantSplit=v.type==='list'&&v.split&&settings.split&&songs.length>0;
+  const wantSplit=!!(v.type==='list'&&v.split&&settings.split&&songs.length>0);   // must be a real boolean: classList.toggle(x, undefined) flips
   screenEl.classList.toggle('splitmode',wantSplit);if(wantSplit)splitStart();else splitStop();
   if(v.type==='list'){
     const it=itemsOf(v);

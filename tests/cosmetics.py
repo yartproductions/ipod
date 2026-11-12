@@ -239,6 +239,12 @@ def main():
         check('split art crossfades to another cover', bg2 and bg2 not in bg1, (bg1[:60], bg2[:60]))
         choose(pg, 'Settings')
         check('split screen only on the main menu', 'splitmode' not in pg.get_attribute('#screen', 'class'))
+        flips = []
+        for _ in range(8):
+            key(pg, 'ArrowDown', wait=60); flips.append('splitmode' in pg.get_attribute('#screen', 'class'))
+        for _ in range(8):
+            key(pg, 'ArrowUp', wait=60); flips.append('splitmode' in pg.get_attribute('#screen', 'class'))
+        check('split screen never appears while scrolling Settings (regression)', not any(flips), flips)
         choose(pg, 'Split Screen'); home(pg)
         check('Split Screen can be turned off', 'splitmode' not in pg.get_attribute('#screen', 'class'))
         choose(pg, 'Settings'); choose(pg, 'Split Screen'); home(pg)
