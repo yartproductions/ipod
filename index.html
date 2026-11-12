@@ -154,6 +154,34 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .lyr .none{padding:46px 18px;text-align:center;font-size:12px;opacity:.7;font-weight:500;line-height:1.5}
 .lyr .none b{display:block;font-size:14px;opacity:1;margin-bottom:4px}
 .screen:not(.nowmod) .lyr{top:20px}
+
+/* ================= split-screen main menu ================= */
+.split{position:absolute;top:20px;right:0;bottom:0;width:46%;overflow:hidden;display:none;background:#111;z-index:1}
+.splitmode .split{display:block}
+.splitmode .list{right:46%}
+.splitmode .list .sb{display:none}
+.split::before{content:"";position:absolute;left:0;top:0;bottom:0;width:10px;z-index:2;background:linear-gradient(90deg,rgba(0,0,0,.28),transparent)}
+.split .ken{position:absolute;inset:-18%;background-size:cover;background-position:center;opacity:0;transition:opacity 1.2s ease}
+.split .ken.on{opacity:1;animation:ken 16s ease-in-out infinite alternate}
+.split .ken.v1.on{animation-name:ken2}
+@keyframes ken{from{transform:scale(1) translate(-6%,-4%)}to{transform:scale(1.18) translate(6%,5%)}}
+@keyframes ken2{from{transform:scale(1.15) translate(5%,-5%)}to{transform:scale(1) translate(-5%,4%)}}
+.modern .split{top:22px}
+/* ================= Album Flow ================= */
+.flow{position:absolute;top:20px;left:0;right:0;bottom:0;overflow:hidden;background:radial-gradient(ellipse at 50% 30%,#2a2f38 0%,#0b0d11 70%);perspective:420px}
+.modern .flow{top:22px}
+.modern.lightui .flow{background:radial-gradient(ellipse at 50% 30%,#ffffff 0%,#d9dee6 75%)}
+.flow .stage{position:absolute;left:50%;top:22px;width:0;height:0;transform-style:preserve-3d}
+.flow .cv{position:absolute;left:-46px;top:0;width:92px;height:92px;background-size:cover;background-position:center;border-radius:2px;
+  transition:transform .32s cubic-bezier(.2,.8,.3,1),opacity .32s;backface-visibility:hidden;box-shadow:0 2px 8px rgba(0,0,0,.45);
+  -webkit-box-reflect:below 2px linear-gradient(transparent 55%,rgba(255,255,255,.28))}
+.flow.instant .cv{transition:none}
+.flow .cap{position:absolute;left:8px;right:8px;bottom:12px;text-align:center;color:#fff;line-height:1.3}
+.modern.lightui .flow .cap{color:#111827}
+.flow .cap b{display:block;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.flow .cap span{display:block;font-size:11px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.flow .cnt{position:absolute;right:9px;top:6px;font-size:9px;font-weight:700;color:#fff;opacity:.45;letter-spacing:.05em}
+.modern.lightui .flow .cnt{color:#111827}
 /* hold switch on the top edge */
 .hold{position:absolute;top:-7px;right:44px;width:34px;height:10px;border-radius:5px 5px 0 0;background:linear-gradient(#cfd2d7,#9ea3aa);box-shadow:inset 0 1px 0 #fff8,0 0 0 1px #0002;cursor:pointer;z-index:2}
 .hold::before{content:"";position:absolute;top:2px;left:3px;width:14px;height:6px;border-radius:3px;background:linear-gradient(#fafafa,#c9ccd1);box-shadow:0 0 0 1px #0003;transition:left .18s}
@@ -297,7 +325,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
       <div class="hdr"><span id="hclock"></span><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="bat"><i id="batlvl"></i></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
-      <div id="body"></div><div id="download-toast" class="download-toast" style="display:none"></div>
+      <div id="body"></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
       
       <div class="vo" id="vo">
         <div class="vt" id="vot"></div>
@@ -331,7 +359,7 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 const audio=new Audio(); audio.preload='auto';
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:true},ls.get('ipod.settings',{}));
 const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
 
@@ -670,6 +698,7 @@ const go=v=>()=>push(typeof v==='function'?v():v);
 function mainMenu(){
   return list('iPod',()=>[
     {label:'Offline Music',action:go(musicMenu),chev:1},
+    {label:'Album Flow',action:()=>openFlow(),chev:1},
 
     {label:'YouTube → Save MP3',action:go(youtubeMenu),chev:1},
     {label:'Shuffle Songs',action:()=>shuffleAll()},
@@ -679,7 +708,7 @@ function mainMenu(){
     {label:'Settings',action:go(settingsMenu),chev:1},
     {label:'Extras',action:go(extrasMenu),chev:1},
     {label:'About',action:go(aboutView),chev:1},
-  ]);
+  ],{split:true});
 }
 function downloadsMenu(){return list('Downloads',()=>{
  const jobs=[...downloadJobs.values()].reverse();
@@ -701,6 +730,7 @@ function youtubeMenu(){return list('YouTube',()=>[
 function keyView(){return inputView('YouTube Key','Paste API key',k=>{settings.ytKey=k.trim();saveSettings();replaceTop(msgView('Key Saved',settings.ytKey?'Search is ready.':'Key cleared.'))},settings.ytKey)}
 function musicMenu(){return list('Local Music',[
   {label:'Artists',action:go(artistsMenu),chev:1},
+  {label:'Album Flow',action:()=>openFlow(),chev:1},
   {label:'Albums',action:go(()=>albumsMenu(songs,'Albums')),chev:1},
   {label:'Songs',action:go(()=>songsMenu(songs,'Songs')),chev:1},
   {label:'Favorites',action:go(()=>{const f=songs.filter(s=>s.favorite);const v=songsMenu(f,'Favorites');v.emptyText='Tap ☆ on Now Playing to add favorites.';return v}),chev:1},
@@ -740,6 +770,7 @@ function settingsMenu(){
     ...(settings.style==='Classic'?[{label:'Color',val:settings.theme,action:tog('theme',COLORS)}]:[]),
     {label:'Backlight',val:settings.backlight,action:tog('backlight',['10 sec','20 sec','1 min','Always On'])},
     {label:'Fast Scroll',val:settings.accel?'On':'Off',action:tog('accel',[true,false])},
+    {label:'Split Screen',val:settings.split?'On':'Off',action:tog('split',[true,false])},
     {label:'YouTube Downloads',val:'Offline MP3'},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
     {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
@@ -753,7 +784,7 @@ function aboutView(){return list('About',[
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
-  {label:'Version',val:'3.4'}])}
+  {label:'Version',val:'3.5'}])}
 function extrasMenu(){return list('Extras',[
   {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))}])}
@@ -858,6 +889,8 @@ function render(){
 
   renderHdr();
   screenEl.classList.remove('nowmod');
+  const wantSplit=v.type==='list'&&v.split&&settings.split&&songs.length>0;
+  screenEl.classList.toggle('splitmode',wantSplit);if(wantSplit)splitStart();else splitStop();
   if(v.type==='list'){
     const it=itemsOf(v);
     if(!it.length){body.innerHTML=`<div class="list"><div class="empty"><b>Empty</b>${esc(v.emptyText||'Go to Add Music on the main menu to load songs.')}</div></div>`;return}
@@ -881,6 +914,8 @@ function render(){
     inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();submitInput()}else if(e.key==='Escape'){inp.blur();pop()}});
     inp.addEventListener('pointerdown',e=>e.stopPropagation());
     try{inp.focus()}catch(e){}
+  }else if(v.type==='flow'){
+    renderFlow(v);
   }else if(v.type==='lyrics'){
     renderLyrics(v);
   }else if(v.type==='clock'){
@@ -950,6 +985,48 @@ function showVol(){
   host.classList.add('showvol');(v.type==='video'?$('#vvb'):$('#vbi')).style.width=(getVol()*100)+'%';
   clearTimeout(volTimer);volTimer=setTimeout(()=>host.classList.remove('showvol'),1400)}
 
+
+/* ---------- split-screen art: slow pan/zoom across your covers, crossfading every 7 s ---------- */
+let splitTimer=null,splitLayer=0,splitLast=null;
+function splitPick(){
+  const withArt=songs.filter(s=>s.artUrl),pool=withArt.length?withArt:songs;if(!pool.length)return null;
+  const uniq=[...new Map(pool.map(s=>[artFor(s),s])).keys()];
+  if(uniq.length===1)return uniq[0];
+  let u;do{u=uniq[Math.random()*uniq.length|0]}while(u===splitLast);return u;
+}
+function splitShow(){const url=splitPick();if(!url)return;splitLast=url;
+  const layers=[...document.querySelectorAll('#split .ken')],nxt=layers[splitLayer^=1],old=layers[splitLayer^1];
+  nxt.style.backgroundImage=`url("${url.replace(/"/g,'%22')}")`;nxt.classList.remove('on');void nxt.offsetWidth;nxt.classList.add('on');old.classList.remove('on')}
+function splitStart(){if(splitTimer)return;splitShow();splitTimer=setInterval(splitShow,7000)}
+function splitStop(){if(!splitTimer)return;clearInterval(splitTimer);splitTimer=null}
+
+/* ---------- Album Flow: 3D shelf of your albums ---------- */
+function flowAlbums(){
+  const m=new Map();for(const s of songs){const k=s.album+'\u0000'+s.artist;if(!m.has(k))m.set(k,{album:s.album,artist:s.artist,songs:[]});m.get(k).songs.push(s)}
+  return [...m.values()].sort((a,b)=>a.album.localeCompare(b.album)||a.artist.localeCompare(b.artist))
+    .map(a=>({...a,songs:albumSort(a.songs),art:artFor(a.songs.find(x=>x.artUrl)||a.songs[0])}));
+}
+function openFlow(){
+  const albums=flowAlbums();
+  if(!albums.length)return push(msgView('No Albums','Add music to browse your albums.'));
+  const p=cur(),start=p?Math.max(0,albums.findIndex(a=>a.songs.some(s=>s.id===p.id))):0;
+  push({type:'flow',title:'Album Flow',albums,sel:start});
+}
+function renderFlow(v){
+  body.innerHTML=`<div class="flow instant" id="flow"><div class="cnt" id="fcnt"></div><div class="stage">${
+    v.albums.map((a,i)=>`<div class="cv" data-i="${i}" style="background-image:url(&quot;${esc(a.art)}&quot;)"></div>`).join('')}</div>
+    <div class="cap"><b id="fal"></b><span id="far"></span></div></div>`;
+  flowUpdate(v);requestAnimationFrame(()=>{const f=$('#flow');if(f)f.classList.remove('instant')});
+}
+function flowUpdate(v){
+  const els=document.querySelectorAll('#flow .cv');
+  els.forEach((el,i)=>{const d=i-v.sel,ad=Math.abs(d);
+    const tf=d===0?'translateX(0) translateZ(36px) rotateY(0deg)'
+      :`translateX(${Math.sign(d)*(64+(ad-1)*20)}px) translateZ(0) rotateY(${d<0?62:-62}deg)`;
+    el.style.transform=tf;el.style.zIndex=String(200-ad);el.style.opacity=ad>6?'0':'1';
+    el.style.filter=d===0?'none':`brightness(${Math.max(.45,.85-ad*.06)})`});
+  const a=v.albums[v.sel];$('#fal').textContent=a.album;$('#far').textContent=a.artist;$('#fcnt').textContent=`${v.sel+1} OF ${v.albums.length}`;
+}
 /* ---------- Modern Now Playing controls ---------- */
 const ACTS=['fav','more','lyrics','queue','out'];
 let ctl=null;                                   // index into ACTS while the wheel is driving the controls, else null
@@ -1050,6 +1127,7 @@ function scroll(dir){
   if(v.type==='brick'){brickInput(v,null,dir);return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
   if(v.type==='list'){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}}
+  else if(v.type==='flow'){const ns=Math.max(0,Math.min(v.albums.length-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowUpdate(v)}}
   else if(v.type==='lyrics'){const el=$('#lyr .in');if(!el)return;const max=Math.max(0,el.scrollHeight-150);const no=Math.max(0,Math.min(max,v.off+dir*22));if(no!==v.off){v.off=no;click();el.style.transform=`translateY(${-no}px)`}}
   else if(v.type==='now'&&ctl!=null){click();ctl=(ctl+dir+ACTS.length)%ACTS.length;applyCtlFocus()}
   else if(v.type==='now'||v.type==='video'){
@@ -1068,10 +1146,12 @@ function press(btn){
   if(btn==='menu'){if(v.type==='input')try{$('#inpt').blur()}catch(e){}if(v.type==='now'&&ctl!=null){ctl=null;applyCtlFocus()}else if(scrub){scrub=false;render()}else pop()}
   else if(btn==='next')next(true);
   else if(btn==='prev')prev();
+  else if(btn==='play'&&v.type==='flow'){const a=v.albums[v.sel];playList(a.songs,0)}
   else if(btn==='play'){playPause();if(v.type==='video')flashVo()}
   else if(btn==='select'){
     if(v.type==='list'){const x=itemsOf(v)[v.sel];if(x&&x.action)x.action()}
     else if(v.type==='msg')pop();
+    else if(v.type==='flow'){const a=v.albums[v.sel];push(songsMenu(a.songs,a.album))}
     else if(v.type==='input')submitInput();
     else if(v.type==='now'&&settings.style==='Modern'){       // center cycles: normal → scrub → controls (center then opens)
       if(ctl!=null)npAction(ACTS[ctl]);else if(scrub){scrub=false;ctl=0;render()}else{scrub=true;render()}}

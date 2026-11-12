@@ -32,6 +32,12 @@ def choose(pg, label):
             if selpos(pg) == before: break
         for _ in range(200): pg.keyboard.press('ArrowUp')
     raise AssertionError(f'could not reach {label!r}')
+def music_label(pg):
+    for _ in range(15): pg.keyboard.press('ArrowUp')
+    txt = pg.inner_text('#body')
+    for l in ('Ad-Free Local Music', 'Offline Music', 'Music'):
+        if l in txt: return l
+    raise AssertionError('music entry not found; title=%r body=%r' % (pg.text_content('#htitle'), txt))
 def home(pg):
     for _ in range(8):
         if pg.text_content('#htitle') == 'iPod': return
@@ -80,7 +86,7 @@ def main():
         files = [str(FIX / f'song{i % 3 + 1}.mp3') for i in range(45)]
         pg.set_input_files('#file', files); pg.wait_for_timeout(4000); key(pg, 'Enter', wait=200)
         n = pg.evaluate('document.querySelectorAll("#body .row").length')
-        home(pg); choose(pg, next(l for l in ('Ad-Free Local Music', 'Offline Music', 'Music') if l in pg.inner_text('#body')))
+        home(pg); choose(pg, music_label(pg))
         choose(pg, 'Albums')
         thumbs = pg.evaluate('[...document.querySelectorAll("#body .row .thumb")].map(t=>t.style.backgroundImage.slice(0,30))')
         check('Albums list shows cover thumbnails', len(thumbs) >= 1 and all('url(' in t for t in thumbs), thumbs)
@@ -133,7 +139,7 @@ def main():
         check('Modern wheel uses outline icons', pg.evaluate('getComputedStyle(document.querySelector(".wheel svg.mod.m")).display') == 'block'
               and pg.evaluate('getComputedStyle(document.querySelector(".wheel .lbl.m")).display') == 'none')
         check('status bar shows the time', ':' in pg.text_content('#hclock'))
-        home(pg); choose(pg, next(l for l in ('Ad-Free Local Music', 'Offline Music', 'Music') if l in pg.inner_text('#body'))); choose(pg, 'Songs'); key(pg, 'Enter', wait=900)
+        home(pg); choose(pg, music_label(pg)); choose(pg, 'Songs'); key(pg, 'Enter', wait=900)
         check('Modern Now Playing layout', pg.evaluate('!!document.querySelector(".mnp .bg") && !!document.querySelector(".mnp .row3")'))
         check('background tone taken from the artwork', pg.evaluate('getComputedStyle(document.getElementById("np")).getPropertyValue("--tone").trim().startsWith("rgb")'),
               pg.evaluate('getComputedStyle(document.getElementById("np")).getPropertyValue("--tone")'))
@@ -162,7 +168,7 @@ def main():
 
         # ---- interactive controls (tap + wheel) ----
         home(pg); pg.set_input_files('#file', [str(FIX / 'lyrics.mp3')]); pg.wait_for_timeout(1500); key(pg, 'Enter', wait=200)
-        music = next(l for l in ('Ad-Free Local Music', 'Offline Music', 'Music') if l in pg.inner_text('#body'))
+        music = music_label(pg)
         home(pg); choose(pg, 'Settings'); choose(pg, 'Fast Scroll'); home(pg)      # keyboard presses are fast; avoid jump-scrolling in tests
         choose(pg, music); choose(pg, 'Songs'); choose(pg, 'Lyric Test'); pg.wait_for_timeout(800)
         key(pg, ' ', wait=150)                                                      # pause: the 2-second test song would auto-advance
@@ -217,6 +223,55 @@ def main():
         check('song without lyrics says so', 'No Lyrics' in pg.inner_text('#body'))
         home(pg); choose(pg, 'Settings'); choose(pg, 'Fast Scroll'); choose(pg, 'Style')     # Fast Scroll back on, back to Classic
         check('Classic unaffected', 'modern' not in pg.get_attribute('#ipod', 'class'))
+
+        # ---- split screen + Album Flow ----
+        home(pg); albums = sorted(FIX.glob('album-*.mp3'))
+        pg.set_input_files('#file', [str(f) for f in albums]); pg.wait_for_timeout(2000); key(pg, 'Enter', wait=300)
+        check('main menu shows split-screen art', 'splitmode' in pg.get_attribute('#screen', 'class') and pg.evaluate('getComputedStyle(document.getElementById("split")).display') == 'block')
+        bg1 = pg.evaluate('[...document.querySelectorAll("#split .ken")].map(e=>e.style.backgroundImage.slice(0,40)).join("|")')
+        check('split panel shows a cover', 'url(' in bg1, bg1)
+        check('menu text stays on the left half', pg.evaluate('document.querySelector("#body .list").getBoundingClientRect().width') < 200)
+        pg.wait_for_timeout(7400)
+        bg2 = pg.evaluate('[...document.querySelectorAll("#split .ken.on")].map(e=>e.style.backgroundImage).join("|")')
+        check('split art crossfades to another cover', bg2 and bg2 not in bg1, (bg1[:60], bg2[:60]))
+        choose(pg, 'Settings')
+        check('split screen only on the main menu', 'splitmode' not in pg.get_attribute('#screen', 'class'))
+        choose(pg, 'Split Screen'); home(pg)
+        check('Split Screen can be turned off', 'splitmode' not in pg.get_attribute('#screen', 'class'))
+        choose(pg, 'Settings'); choose(pg, 'Split Screen'); home(pg)
+
+        choose(pg, 'Album Flow'); pg.wait_for_timeout(600)
+        n_cov = pg.evaluate('document.querySelectorAll("#flow .cv").length')
+        check('Album Flow shows one cover per album', n_cov >= 6, n_cov)
+        cap0 = (pg.text_content('#fal'), pg.text_content('#far'), pg.text_content('#fcnt'))
+        z = pg.evaluate('(()=>{const c=[...document.querySelectorAll("#flow .cv")];return c.map(e=>+e.style.zIndex)})()')
+        sel_i = z.index(max(z))
+        tf_center = pg.evaluate(f'document.querySelectorAll("#flow .cv")[{sel_i}].style.transform')
+        tf_side = pg.evaluate(f'document.querySelectorAll("#flow .cv")[{(sel_i + 1) % n_cov}].style.transform')
+        check('centre cover faces you, neighbours are angled', 'rotateY(0deg)' in tf_center and 'rotateY(' in tf_side and '0deg' not in tf_side, (tf_center, tf_side))
+        i, n = [int(v) for v in cap0[2].split(' OF ')]
+        key(pg, 'ArrowDown' if i < n else 'ArrowUp', wait=400)
+        cap1 = (pg.text_content('#fal'), pg.text_content('#far'), pg.text_content('#fcnt'))
+        check('spinning flips to the next album', cap1 != cap0, (cap0, cap1))
+        check('caption shows album + artist + count', pg.text_content('#far') != '' and 'OF' in pg.text_content('#fcnt'))
+        pg.goto(url); pg.wait_for_timeout(1200)   # fresh state for the open/play checks
+        choose(pg, 'Album Flow'); pg.wait_for_timeout(400)
+        for _ in range(12):
+            if pg.text_content('#fal') == 'Blue Hour': break
+            key(pg, 'ArrowDown', wait=120)
+        key(pg, 'Enter', wait=300)
+        check('center opens the album\'s songs', pg.text_content('#htitle') == 'Blue Hour' and 'Blue Hour Track' in pg.inner_text('#body'), pg.inner_text('#body'))
+        key(pg, 'Escape', wait=300)
+        check('MENU returns to Album Flow on the same album', pg.text_content('#fal') == 'Blue Hour')
+        key(pg, ' ', wait=700)
+        check('play button plays the album', pg.text_content('#htitle') == 'Now Playing' and 'Blue Hour Track' in pg.inner_text('#body'))
+        key(pg, ' ', wait=150)
+        home(pg); choose(pg, 'Album Flow'); pg.wait_for_timeout(300)
+        check('Album Flow opens on the playing album', pg.text_content('#fal') == 'Blue Hour')
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Style'); home(pg); choose(pg, 'Album Flow'); pg.wait_for_timeout(300)
+        check('Album Flow works in Modern style', pg.evaluate('!!document.querySelector("#flow .cv")') and 'modern' in pg.get_attribute('#ipod', 'class'))
+        home(pg); check('split screen works in Modern style', 'splitmode' in pg.get_attribute('#screen', 'class'))
+        choose(pg, 'Settings'); choose(pg, 'Style')
 
         check('no uncaught page errors', not errors, errors)
         ctx.close()
