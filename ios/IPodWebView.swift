@@ -1,11 +1,15 @@
 import SwiftUI
 import WebKit
 import UIKit
+import CoreHaptics
 
 // Root view of the native wrapper. Loads the hosted iPod page in a WKWebView and turns
-// `window.webkit.messageHandlers.ipodHaptics.postMessage(kind)` calls into Taptic Engine feedback.
+// `window.webkit.messageHandlers.ipodHaptics.postMessage(...)` calls into Taptic Engine feedback.
 // Only the top-level page from the trusted origin (hostedURL's scheme + host) can trigger haptics;
 // messages from other origins or from embedded frames (e.g. the YouTube player) are ignored.
+//
+// Message body: either a plain kind string ("selection" | "confirm" | "success"), or an object
+// { kind, intensity: 0–1, sharpness: 0–1, count } built from the iPod's Settings ▸ Haptic Strength / Feel.
 struct IPodWebView: UIViewRepresentable {
     let hostedURL: URL
 
@@ -32,7 +36,6 @@ struct IPodWebView: UIViewRepresentable {
         if #available(iOS 16.4, *) { webView.isInspectable = true }   // Safari ▸ Develop for on-device debugging
         #endif
         webView.load(URLRequest(url: hostedURL, cachePolicy: .reloadRevalidatingCacheData))   // always pick up the latest site
-        context.coordinator.prepare()
         return webView
     }
 
@@ -48,18 +51,12 @@ struct IPodWebView: UIViewRepresentable {
         private let trustedScheme: String
         private let trustedHost: String
         private let trustedPort: Int
-        private let selection = UISelectionFeedbackGenerator()
-        private let impact = UIImpactFeedbackGenerator(style: .medium)
-        private let notification = UINotificationFeedbackGenerator()
+        private let player = HapticPlayer()
 
         init(trustedURL: URL) {
             trustedScheme = (trustedURL.scheme ?? "https").lowercased()
             trustedHost = (trustedURL.host ?? "").lowercased()
             trustedPort = trustedURL.port ?? (trustedScheme == "https" ? 443 : 80)
-        }
-
-        func prepare() {
-            selection.prepare(); impact.prepare(); notification.prepare()
         }
 
         /// True only for the main frame of the hosted page's own origin.
@@ -74,16 +71,88 @@ struct IPodWebView: UIViewRepresentable {
 
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
-            guard message.name == Self.handlerName,
-                  isTrusted(message),
-                  let kind = message.body as? String else { return }
-            DispatchQueue.main.async {
+            guard message.name == Self.handlerName, isTrusted(message) else { return }
+
+            var kind = "selection"
+            var intensity: Float?
+            var sharpness: Float?
+            var count = 1
+            if let s = message.body as? String {
+                kind = s
+            } else if let d = message.body as? [String: Any] {
+                kind = d["kind"] as? String ?? kind
+                intensity = (d["intensity"] as? NSNumber)?.floatValue
+                sharpness = (d["sharpness"] as? NSNumber)?.floatValue
+                count = (d["count"] as? NSNumber)?.intValue ?? count
+            } else { return }
+
+            // Defaults for plain-string messages from older versions of the page.
+            let defaults: (Float, Float, Int) = {
                 switch kind {
-                case "selection": self.selection.selectionChanged(); self.selection.prepare()
-                case "confirm":   self.impact.impactOccurred();      self.impact.prepare()
-                case "success":   self.notification.notificationOccurred(.success); self.notification.prepare()
-                default:          self.selection.selectionChanged(); self.selection.prepare()
+                case "confirm": return (1.0, 0.6, 1)
+                case "success": return (1.0, 0.8, 2)
+                default:        return (0.85, 0.9, 1)
                 }
+            }()
+            let i = min(max(intensity ?? defaults.0, 0), 1)
+            let s = min(max(sharpness ?? defaults.1, 0), 1)
+            let n = min(max(count, 1), 4)
+            DispatchQueue.main.async { self.player.play(intensity: i, sharpness: s, count: n) }
+        }
+    }
+}
+
+/// Plays short transient taps on the Taptic Engine with a given intensity and sharpness.
+/// Uses Core Haptics where available (stronger and more tunable than UISelectionFeedbackGenerator),
+/// and falls back to UIImpactFeedbackGenerator otherwise.
+final class HapticPlayer {
+    private var engine: CHHapticEngine?
+    private var engineRunning = false
+    private let fallback = UIImpactFeedbackGenerator(style: .rigid)
+
+    init() {
+        fallback.prepare()
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics,
+              let engine = try? CHHapticEngine() else { return }
+        engine.playsHapticsOnly = true            // don't interfere with music playback
+        engine.isAutoShutdownEnabled = true       // save battery when the wheel is idle
+        engine.stoppedHandler = { [weak self] _ in self?.engineRunning = false }
+        engine.resetHandler = { [weak self] in
+            self?.engineRunning = false
+            self?.startEngine()
+        }
+        self.engine = engine
+        startEngine()
+    }
+
+    private func startEngine() {
+        guard let engine, !engineRunning else { return }
+        do { try engine.start(); engineRunning = true } catch { engineRunning = false }
+    }
+
+    func play(intensity: Float, sharpness: Float, count: Int, gap: TimeInterval = 0.08) {
+        guard let engine else { playFallback(intensity: intensity, count: count, gap: gap); return }
+        startEngine()
+        let events = (0..<count).map { n in
+            CHHapticEvent(eventType: .hapticTransient,
+                          parameters: [CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                                       CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)],
+                          relativeTime: gap * Double(n))
+        }
+        do {
+            let pattern = try CHHapticPattern(events: events, parameters: [])
+            try engine.makePlayer(with: pattern).start(atTime: CHHapticTimeImmediate)
+        } catch {
+            engineRunning = false
+            playFallback(intensity: intensity, count: count, gap: gap)
+        }
+    }
+
+    private func playFallback(intensity: Float, count: Int, gap: TimeInterval) {
+        for n in 0..<count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + gap * Double(n)) {
+                self.fallback.impactOccurred(intensity: CGFloat(intensity))
+                self.fallback.prepare()
             }
         }
     }

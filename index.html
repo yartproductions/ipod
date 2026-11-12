@@ -155,7 +155,7 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 const audio=new Audio(); audio.preload='auto';
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp'},ls.get('ipod.settings',{}));
 const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
 
@@ -170,6 +170,15 @@ let lastHapticAt=0, pendingHaptic=null;
 const HAPTIC_RANK={selection:0,confirm:1,success:2};
 const hapticBridge=()=>window.webkit?.messageHandlers?.ipodHaptics;
 const hapticSupport=()=>hapticBridge()?'Native':typeof navigator.vibrate==='function'?'Vibrate':'None';
+// User-tunable feel. intensity/sharpness are Core Haptics values (0–1); ms is the Android vibrate length.
+const HAPTIC_STRENGTHS={Light:.45,Medium:.7,Strong:.9,Max:1};
+const HAPTIC_FEELS={Crisp:.95,Click:.7,Soft:.35,Thud:.05};
+function hapticParams(kind){
+  const base=HAPTIC_STRENGTHS[settings.hapticStrength]??.9, sharp=HAPTIC_FEELS[settings.hapticFeel]??.95;
+  const intensity=Math.min(1,kind==='selection'?base:base+.15);
+  return {kind,intensity:+intensity.toFixed(2),sharpness:kind==='confirm'?Math.max(0,+(sharp-.2).toFixed(2)):sharp,
+    count:kind==='success'?2:1,ms:Math.round(4+intensity*12)};
+}
 function triggerHaptic(kind='selection'){
   if(!settings.haptics)return;
   // Several requests in one input event (wheel click + center confirm, confirm + test) collapse into the strongest.
@@ -181,8 +190,9 @@ function triggerHaptic(kind='selection'){
     if(k==='selection'&&now-lastHapticAt<35)return;
     lastHapticAt=now;
     const bridge=hapticBridge();
-    if(bridge){try{bridge.postMessage(k);return}catch(e){}}
-    try{if(navigator.vibrate?.(k==='success'?[12,45,12]:7))return}catch(e){}
+    const p=hapticParams(k);
+    if(bridge){try{bridge.postMessage(p);return}catch(e){}}
+    try{if(navigator.vibrate?.(k==='success'?[p.ms,45,p.ms]:p.ms))return}catch(e){}
     // iOS Safari doesn't expose reliable haptic feedback; avoid hidden switch hacks.
   });
 }
@@ -578,7 +588,10 @@ function settingsMenu(){
     {label:'Repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
     {label:'Clicker',val:settings.clicker?'On':'Off',action:tog('clicker',[true,false])},
     {label:'Haptics',val:settings.haptics?'On':'Off',action:tog('haptics',[true,false])},
-    {label:'Test Haptic',action:()=>triggerHaptic('success')},
+    ...(settings.haptics?[
+      {label:'Haptic Strength',val:settings.hapticStrength,action:()=>{tog('hapticStrength',Object.keys(HAPTIC_STRENGTHS))();setTimeout(()=>triggerHaptic('selection'),120)}},
+      {label:'Haptic Feel',val:settings.hapticFeel,action:()=>{tog('hapticFeel',Object.keys(HAPTIC_FEELS))();setTimeout(()=>triggerHaptic('selection'),120)}},
+      {label:'Test Haptic',action:()=>triggerHaptic('success')}]:[]),
     {label:'Color',val:settings.theme,action:tog('theme',['Silver','Black'])},
     {label:'YouTube (Has Ads)',val:settings.showYouTube?'On':'Off',action:tog('showYouTube',[false,true])},
     ...(settings.showYouTube?[{label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},

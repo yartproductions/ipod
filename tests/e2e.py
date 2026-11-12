@@ -73,7 +73,8 @@ def audius_route(route):
     if path.startswith('/playlists/') and path.endswith('/tracks'): return ok(PL_TRACKS.get(path.split('/')[2], []))
     return route.fulfill(status=404, body='{}')
 
-BRIDGE = "window.__haptics=[];window.webkit={messageHandlers:{ipodHaptics:{postMessage:k=>window.__haptics.push(k)}}};"
+BRIDGE = ("window.__haptics=[];window.__hapticRaw=[];window.webkit={messageHandlers:{ipodHaptics:{postMessage:m=>{"
+          "window.__hapticRaw.push(m);window.__haptics.push(typeof m==='string'?m:m.kind)}}}};")
 VIBRATE = "window.__vib=[];navigator.vibrate=p=>{window.__vib.push(p);return true};"
 
 results = []
@@ -180,6 +181,27 @@ def main():
         pg.evaluate('window.__haptics=[]'); key(pg, 'Escape', wait=150)
         check('MENU press sends "selection"', pg.evaluate('window.__haptics') == ['selection'], pg.evaluate('window.__haptics'))
 
+        # ---- strength / feel are adjustable and reach the native bridge ----
+        choose(pg, 'Settings')
+        raw = lambda: pg.evaluate('window.__hapticRaw')
+        pg.evaluate('window.__hapticRaw=[]'); key(pg, 'ArrowDown', wait=80); key(pg, 'ArrowUp', wait=80)
+        m = raw()[-1]
+        check('bridge message carries intensity + sharpness (default Strong / Crisp)',
+              isinstance(m, dict) and m.get('kind') == 'selection' and m.get('intensity') == 0.9 and m.get('sharpness') == 0.95, m)
+        choose(pg, 'Haptic Strength'); pg.wait_for_timeout(200)       # Strong -> Max
+        check('Haptic Strength cycles to Max', 'Max' in pg.inner_text('#body'), pg.inner_text('#body'))
+        pg.evaluate('window.__hapticRaw=[]'); key(pg, 'ArrowDown', wait=80)
+        check('Max strength sends intensity 1.0', raw()[-1].get('intensity') == 1, raw())
+        for _ in range(3): choose(pg, 'Haptic Strength'); pg.wait_for_timeout(150)   # Max -> Light -> Medium -> Strong
+        choose(pg, 'Haptic Feel'); pg.wait_for_timeout(200)          # Crisp -> Click
+        check('Haptic Feel cycles to Click', 'Click' in pg.inner_text('#body'))
+        pg.evaluate('window.__hapticRaw=[]'); key(pg, 'ArrowDown', wait=80)
+        check('feel changes sharpness', raw()[-1].get('sharpness') == 0.7, raw())
+        for _ in range(3): choose(pg, 'Haptic Feel'); pg.wait_for_timeout(150)       # back to Crisp
+        pg.evaluate('window.__hapticRaw=[]'); choose(pg, 'Test Haptic'); pg.wait_for_timeout(50)
+        check('Test Haptic sends a double tap (count 2)', raw()[-1].get('count') == 2, raw())
+        back_to_main(pg)
+
         choose(pg, 'Settings'); choose(pg, 'Haptics')  # turn off
         pg.evaluate('window.__haptics=[]'); key(pg, 'ArrowDown'); key(pg, 'ArrowUp')
         check('Haptics Off silences the bridge', pg.evaluate('window.__haptics') == [])
@@ -192,7 +214,7 @@ def main():
         pg = ctx.new_page(); pg.on('pageerror', lambda e: errors.append(str(e)))
         pg.add_init_script(VIBRATE); pg.goto(url); pg.wait_for_timeout(800)
         key(pg, 'ArrowDown', wait=80)
-        check('without bridge, falls back to navigator.vibrate', pg.evaluate('window.__vib') == [7], pg.evaluate('window.__vib'))
+        check('without bridge, falls back to navigator.vibrate (length follows strength)', pg.evaluate('window.__vib') == [15], pg.evaluate('window.__vib'))
         check('no hidden <input switch> elements are created', pg.evaluate('document.querySelectorAll("input[switch]").length') == 0)
         pg.close()
 
