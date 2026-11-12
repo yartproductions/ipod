@@ -38,6 +38,9 @@ def music_label(pg):
     for l in ('Ad-Free Local Music', 'Offline Music', 'Music'):
         if l in txt: return l
     raise AssertionError('music entry not found; title=%r body=%r' % (pg.text_content('#htitle'), txt))
+def wait_sync(pg, timeout=20000):
+    pg.wait_for_function('!document.querySelector(".hdr").classList.contains("busy") || document.querySelector(".hdr").classList.contains("done")', timeout=timeout)
+    pg.wait_for_timeout(100)
 def home(pg):
     for _ in range(8):
         if pg.text_content('#htitle') == 'iPod': return
@@ -84,7 +87,7 @@ def main():
         # ---- generated album art + Albums thumbnails + fast scroll ----
         home(pg)
         files = [str(FIX / f'song{i % 3 + 1}.mp3') for i in range(45)]
-        pg.set_input_files('#file', files); pg.wait_for_timeout(4000); key(pg, 'Enter', wait=200)
+        pg.set_input_files('#file', files); pg.wait_for_timeout(4000); wait_sync(pg)
         n = pg.evaluate('document.querySelectorAll("#body .row").length')
         home(pg); choose(pg, music_label(pg))
         choose(pg, 'Albums')
@@ -167,7 +170,7 @@ def main():
         choose(pg, 'Appearance')                       # -> Light
 
         # ---- interactive controls (tap + wheel) ----
-        home(pg); pg.set_input_files('#file', [str(FIX / 'lyrics.mp3')]); pg.wait_for_timeout(1500); key(pg, 'Enter', wait=200)
+        home(pg); pg.set_input_files('#file', [str(FIX / 'lyrics.mp3')]); pg.wait_for_timeout(1500); wait_sync(pg)
         music = music_label(pg)
         home(pg); choose(pg, 'Settings'); choose(pg, 'Fast Scroll'); home(pg)      # keyboard presses are fast; avoid jump-scrolling in tests
         choose(pg, music); choose(pg, 'Songs'); choose(pg, 'Lyric Test'); pg.wait_for_timeout(800)
@@ -226,7 +229,7 @@ def main():
 
         # ---- split screen + Album Flow ----
         home(pg); albums = sorted(FIX.glob('album-*.mp3'))
-        pg.set_input_files('#file', [str(f) for f in albums]); pg.wait_for_timeout(2000); key(pg, 'Enter', wait=300)
+        pg.set_input_files('#file', [str(f) for f in albums]); pg.wait_for_timeout(2000); wait_sync(pg)
         check('main menu shows split-screen art', 'splitmode' in pg.get_attribute('#screen', 'class') and pg.evaluate('getComputedStyle(document.getElementById("split")).display') == 'block')
         bg1 = pg.evaluate('[...document.querySelectorAll("#split .ken")].map(e=>e.style.backgroundImage.slice(0,40)).join("|")')
         check('split panel shows a cover', 'url(' in bg1, bg1)
@@ -236,6 +239,12 @@ def main():
         check('split art crossfades to another cover', bg2 and bg2 not in bg1, (bg1[:60], bg2[:60]))
         choose(pg, 'Settings')
         check('split screen only on the main menu', 'splitmode' not in pg.get_attribute('#screen', 'class'))
+        flips = []
+        for _ in range(8):
+            key(pg, 'ArrowDown', wait=60); flips.append('splitmode' in pg.get_attribute('#screen', 'class'))
+        for _ in range(8):
+            key(pg, 'ArrowUp', wait=60); flips.append('splitmode' in pg.get_attribute('#screen', 'class'))
+        check('split screen never appears while scrolling Settings (regression)', not any(flips), flips)
         choose(pg, 'Split Screen'); home(pg)
         check('Split Screen can be turned off', 'splitmode' not in pg.get_attribute('#screen', 'class'))
         choose(pg, 'Settings'); choose(pg, 'Split Screen'); home(pg)
@@ -272,6 +281,28 @@ def main():
         check('Album Flow works in Modern style', pg.evaluate('!!document.querySelector("#flow .cv")') and 'modern' in pg.get_attribute('#ipod', 'class'))
         home(pg); check('split screen works in Modern style', 'splitmode' in pg.get_attribute('#screen', 'class'))
         choose(pg, 'Settings'); choose(pg, 'Style')
+
+        # ---- header sync bar ----
+        home(pg); for_sync = [str(FIX / f'song{i % 3 + 1}.mp3') for i in range(12)]
+        pg.evaluate('''window.__labels=[];window.__titleHidden=false;new MutationObserver(()=>{window.__labels.push(document.getElementById("tasktl").textContent);
+            if(getComputedStyle(document.getElementById("htitle")).display==="none")window.__titleHidden=true})
+            .observe(document.querySelector(".hdr"),{subtree:true,childList:true,characterData:true,attributes:true})''')
+        pg.set_input_files('#file', for_sync); pg.wait_for_timeout(60)
+        labels = pg.evaluate('window.__labels')
+        check('import shows "Syncing N of 12" progress in the header', any(l.startswith('Syncing') and l.endswith(' of 12') for l in labels) and 'Syncing 12 of 12' in labels, labels[:6])
+        check('screen title is replaced while syncing', pg.evaluate('window.__titleHidden'))
+        key(pg, 'ArrowDown', wait=60)
+        check('iPod stays usable during sync (no loading screen)', pg.evaluate('!!document.querySelector("#body .row.sel")') and pg.text_content('#htitle') == 'iPod')
+        w1 = pg.evaluate('parseFloat(document.getElementById("taskbar").style.width)')
+        wait_sync(pg)
+        check('bar fills and shows Sync Complete', pg.text_content('#tasktl') == 'Sync Complete' and 'done' in pg.get_attribute('.hdr', 'class')
+              and pg.evaluate('parseFloat(document.getElementById("taskbar").style.width)') == 100, (w1, pg.text_content('#tasktl')))
+        pg.wait_for_timeout(2500)
+        check('title comes back after the sync', 'busy' not in pg.get_attribute('.hdr', 'class') and pg.evaluate('getComputedStyle(document.getElementById("htitle")).display') != 'none')
+        choose(pg, 'Settings'); choose(pg, 'Style'); home(pg)
+        pg.set_input_files('#file', [str(FIX / 'song1.mp3'), str(FIX / 'song2.mp3')]); pg.wait_for_timeout(40)
+        check('sync bar works in Modern style', 'busy' in pg.get_attribute('.hdr', 'class') or pg.text_content('#tasktl') == 'Sync Complete')
+        wait_sync(pg); choose(pg, 'Settings'); choose(pg, 'Style')
 
         check('no uncaught page errors', not errors, errors)
         ctx.close()
