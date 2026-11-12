@@ -12,6 +12,29 @@ results = []
 def check(name, cond, detail=''):
     results.append((name, bool(cond))); print(('PASS ' if cond else 'FAIL ') + name + (f'  [{detail}]' if detail and not cond else ''))
 
+import io, json, urllib.parse
+from PIL import Image as _Img
+def _png(rgb):
+    b = io.BytesIO(); _Img.new('RGB', (300, 300), rgb).save(b, 'JPEG'); return b.getvalue()
+COVERS = {'rel-amber': _png((240, 170, 40)), 'rel-blue': _png((60, 150, 230)), 'rel-other': _png((90, 90, 90))}
+import time as _time
+mb_calls = []; mb_times = []
+def mb_route(route):
+    u = urllib.parse.urlparse(route.request.url); q = dict(urllib.parse.parse_qsl(u.query)); mb_calls.append((u.path, q.get('query', ''))); mb_times.append(_time.monotonic())
+    query = q.get('query', '').lower()
+    rel = []
+    if 'amber days' in query:
+        rel = [{'id': 'rel-amber', 'title': 'Amber Days', 'score': 100, 'date': '2020-05-01', 'country': 'US', 'artist-credit': [{'name': 'Fixture Artist'}]},
+               {'id': 'rel-other', 'title': 'Amber Days (Deluxe)', 'score': 70, 'date': '2021', 'country': 'GB', 'artist-credit': [{'name': 'Fixture Artist'}]}]
+    elif 'test album' in query:
+        rel = [{'id': 'rel-blue', 'title': 'Something Else', 'score': 60, 'artist-credit': [{'name': 'Nobody'}]}]   # not confident
+    return route.fulfill(status=200, content_type='application/json', body=json.dumps({'releases': rel, 'recordings': []}),
+                         headers={'Access-Control-Allow-Origin': '*'})
+def caa_route(route):
+    rid = route.request.url.split('/release/')[1].split('/')[0]
+    if rid not in COVERS: return route.fulfill(status=404, body='')
+    return route.fulfill(status=200, content_type='image/jpeg', body=COVERS[rid], headers={'Access-Control-Allow-Origin': '*'})
+
 def serve():
     class Q(http.server.SimpleHTTPRequestHandler):
         def log_message(self, *a): pass
@@ -54,6 +77,8 @@ def main():
         ctx = p.chromium.launch_persistent_context(tempfile.mkdtemp(), executable_path=CHROME, headless=True,
               args=['--no-sandbox', '--autoplay-policy=no-user-gesture-required'], viewport={'width': 390, 'height': 844})
         ctx.route('https://**', lambda r: r.abort())          # no network: these features must work offline
+        ctx.route('https://musicbrainz.org/**', mb_route)
+        ctx.route('https://coverartarchive.org/**', caa_route)
         pg = ctx.new_page(); pg.on('pageerror', lambda e: errors.append(str(e)))
         pg.goto(url); pg.wait_for_timeout(1200)
 
@@ -362,6 +387,87 @@ def main():
         key(pg, 'Enter', wait=300); choose(pg, 'Menu Style')
         home(pg)
         check('back to the List menu', pg.evaluate('!document.querySelector("#flow")') and len(rows(pg)) >= 5)
+
+        # ---- Flow Now Playing ----
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Now Playing Style')
+        check('Now Playing Style switches to Flow', pg.evaluate('JSON.parse(localStorage.getItem("ipod.settings")).npStyle') == 'Flow')
+        home(pg); choose(pg, music_label(pg)); choose(pg, 'Album Flow'); pg.wait_for_timeout(300)
+        for _ in range(12):
+            if pg.text_content('#fal') == 'Blue Hour': break
+            key(pg, 'ArrowDown', wait=100)
+        home(pg); choose(pg, music_label(pg)); choose(pg, 'Songs')
+        for _ in range(60):
+            if sel(pg) == 'Blue Hour Track': break
+            key(pg, 'ArrowDown', wait=30)
+        key(pg, 'Enter', wait=700); key(pg, ' ', wait=200)
+        check('Flow Now Playing shows a cover shelf', pg.evaluate('!!document.querySelector(".fnp .cv")') and 'Blue Hour Track' in pg.text_content('.fnp .cap b'))
+        check('previous and upcoming songs are on the shelf', pg.evaluate('document.querySelectorAll(".fnp .cv").length') >= 3
+              and pg.text_content('.fnp .tag.l') == 'Previous' and pg.text_content('.fnp .tag.r') == 'Up Next')
+        center = pg.evaluate('(()=>{const c=[...document.querySelectorAll(".fnp .cv")];return c.find(e=>e.style.transform.includes("rotateY(0deg)")).dataset.q})()')
+        key(pg, 'ArrowRight', wait=700); key(pg, ' ', wait=150)
+        center2 = pg.evaluate('(()=>{const c=[...document.querySelectorAll(".fnp .cv")];return c.find(e=>e.style.transform.includes("rotateY(0deg)")).dataset.q})()')
+        check('next glides the shelf to the upcoming song', int(center2) == int(center) + 1, (center, center2))
+        prev_card = pg.locator('.fnp .cv[data-q="%d"]' % (int(center2) - 1))
+        prev_card.click(force=True); pg.wait_for_timeout(700); key(pg, ' ', wait=150)
+        check('tapping the previous cover jumps back to it', 'Blue Hour Track' in pg.text_content('.fnp .cap b'), pg.text_content('.fnp .cap b'))
+        key(pg, 'ArrowUp', wait=150)
+        check('wheel still controls volume', 'showvol' in pg.get_attribute('#np', 'class'))
+        key(pg, 'Enter', wait=200)
+        check('center #1 scrubs', 'scrub' in pg.get_attribute('.fnp .bar', 'class'))
+        key(pg, 'Enter', wait=300)
+        check('center #2 opens the song menu with Get Artwork', pg.text_content('#htitle') == 'Song' and ('Get Artwork' in pg.inner_text('#body') or 'Replace Artwork' in pg.inner_text('#body')))
+        key(pg, 'Escape', wait=200)
+
+        # ---- Get Artwork (pick a candidate) ----
+        home(pg); pg.set_input_files('#file', [str(FIX / 'song1.mp3')]); pg.wait_for_timeout(300); wait_sync(pg)
+        pg.evaluate("1")
+        # an untagged-art song: re-import the Amber Days track without its cover via a stripped copy
+        import subprocess, tempfile as _tf
+        bare = _tf.mktemp(suffix='.mp3')
+        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', str(FIX / 'album-amber-days.mp3'), '-map', '0:a', '-c', 'copy', '-id3v2_version', '3',
+                        '-metadata', 'title=Bare Amber', '-metadata', 'artist=Fixture Artist', '-metadata', 'album=Amber Days', bare], check=True)
+        pg.set_input_files('#file', [bare]); pg.wait_for_timeout(300); wait_sync(pg)
+        home(pg); choose(pg, music_label(pg)); choose(pg, 'Songs')
+        for _ in range(80):
+            if sel(pg) == 'Bare Amber': break
+            key(pg, 'ArrowDown', wait=25)
+        key(pg, 'Enter', wait=600); key(pg, ' ', wait=150)
+        key(pg, 'Enter', wait=150); key(pg, 'Enter', wait=300)
+        check('song without art offers Get Artwork', 'Get Artwork' in pg.inner_text('#body') or 'Get Artwork' in ' '.join(rows(pg)))
+        choose(pg, 'Get Artwork'); pg.wait_for_timeout(2500)
+        check('Get Artwork lists candidates with thumbnails', pg.text_content('#htitle') == 'Choose Artwork' and pg.evaluate('document.querySelectorAll("#body .thumb").length') >= 2,
+              pg.inner_text('#body'))
+        check('MusicBrainz searched by album + artist', any('amber days' in q.lower() and 'fixture artist' in q.lower() for _, q in mb_calls), mb_calls[-2:])
+        key(pg, 'Enter', wait=1200)
+        check('picking a candidate saves the cover', 'Artwork Saved' in pg.inner_text('#body'), pg.inner_text('#body'))
+        key(pg, 'Enter', wait=200)
+        for _ in range(4):
+            if pg.text_content('#htitle') == 'Now Playing': break
+            key(pg, 'Escape', wait=250)
+        art = pg.evaluate('getComputedStyle(document.querySelector(".fnp .cv[style*=blob]")||document.body).backgroundImage')
+        check('Now Playing shows the new cover', 'blob:' in art, art[:60])
+        pg.reload(); pg.wait_for_timeout(1500)
+        has_art = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();
+            q.onsuccess=()=>res(q.result.filter(s=>s.title==="Bare Amber").map(s=>!!s.art&&s.art.size>2048&&s.artSource==="coverartarchive"))}})''')
+        check('cover is saved with the song (persists after reload)', has_art == [True], has_art)
+
+        # ---- Find Missing Artwork (auto, confident matches only) ----
+        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', str(FIX / 'album-amber-days.mp3'), '-map', '0:a', '-c', 'copy', '-id3v2_version', '3',
+                        '-metadata', 'title=Bare Amber Two', '-metadata', 'artist=Fixture Artist', '-metadata', 'album=Amber Days', bare], check=True)
+        n_before = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();q.onsuccess=()=>res(q.result.filter(s=>!s.art).length)}})''')
+        pg.set_input_files('#file', [bare]); pg.wait_for_timeout(300); wait_sync(pg); pg.wait_for_timeout(2300)
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Find Missing Artwork')
+        check('Find Missing Artwork starts in the background', 'Finding Artwork' in pg.inner_text('#body'), pg.inner_text('#body'))
+        pg.wait_for_function('document.getElementById("tasktl").textContent.startsWith("Found") || document.getElementById("tasktl").textContent.startsWith("No new")', timeout=30000)
+        status = pg.text_content('#tasktl')
+        rec = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();
+            q.onsuccess=()=>res(q.result.map(s=>[s.title,!!s.art,s.artSource||""]))}})''')
+        check('confident match filled automatically', ['Bare Amber Two', True, 'coverartarchive'] in rec, (status, [r_ for r_ in rec if 'Bare' in r_[0]]))
+        check('uncertain matches are left alone', all(not r_[1] or r_[2] == '' or 'Bare' in r_[0] for r_ in rec if r_[0].startswith('Test Song')), [r_ for r_ in rec if r_[0].startswith('Test Song')][:3])
+        check('embedded covers are never replaced', all(r_[2] == '' for r_ in rec if r_[0].endswith(' Track')), [r_ for r_ in rec if r_[0].endswith(' Track')])
+        gaps = [b - a_ for a_, b in zip(mb_times, mb_times[1:])]
+        check('MusicBrainz calls are spaced ≥1 s apart', len(gaps) >= 1 and min(gaps) >= 1.0, [round(g, 2) for g in gaps])
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Now Playing Style')
 
         check('no uncaught page errors', not errors, errors)
         ctx.close()

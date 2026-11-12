@@ -226,6 +226,32 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .flow .cv.card svg{width:44px;height:44px;fill:none;stroke:#fff;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}
 .flow .cv.card .chev{position:absolute;right:8px;bottom:6px;font-size:13px;font-weight:700;color:rgba(255,255,255,.75)}
 .flow.menu .cap b{font-size:14px}
+
+/* ================= Flow Now Playing ================= */
+.fnp{position:absolute;top:20px;left:0;right:0;bottom:0;overflow:hidden;background:radial-gradient(ellipse at 50% 25%,#2a2f38 0%,#0b0d11 72%);perspective:420px;color:#fff}
+.modern .fnp{top:22px}
+.modern.lightui .fnp{background:radial-gradient(ellipse at 50% 25%,#ffffff 0%,#d9dee6 78%);color:#111827}
+.fnp .stage{position:absolute;left:50%;top:10px;width:0;height:0;transform-style:preserve-3d}
+.fnp .cv{position:absolute;left:-42px;top:0;width:84px;height:84px;border-radius:3px;background-size:cover;background-position:center;cursor:pointer;
+  transition:transform .38s cubic-bezier(.2,.8,.3,1),opacity .38s,filter .38s;box-shadow:0 2px 8px rgba(0,0,0,.45);
+  -webkit-box-reflect:below 2px linear-gradient(transparent 62%,rgba(255,255,255,.22))}
+.fnp.instant .cv{transition:none}
+.fnp .tag{position:absolute;top:2px;font-size:8.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;opacity:.5}
+.fnp .tag.l{left:8px}.fnp .tag.r{right:8px}
+.fnp .cap{position:absolute;left:10px;right:10px;top:112px;text-align:center;line-height:1.25}
+.fnp .cap b{display:block;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fnp .cap span{display:block;font-size:10.5px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fnp .bar{top:150px;bottom:auto;left:14px;right:14px;height:5px;border:0;border-radius:3px;background:rgba(255,255,255,.2)}
+.fnp .bar i{background:rgba(255,255,255,.85);border-radius:3px}
+.modern.lightui .fnp .bar{background:rgba(17,24,39,.14)}.modern.lightui .fnp .bar i{background:#111827}
+.fnp .bar.scrub{overflow:visible}.fnp .bar.scrub::after{top:-4px;width:12px;height:12px;border:0;border-radius:50%;background:#fff;transform:translateX(-50%)}
+.fnp .times{top:159px;bottom:auto;left:14px;right:14px;color:inherit;opacity:.6;font-size:9.5px}
+.fnp .vol{left:14px;right:14px;top:156px;bottom:auto;background:transparent}
+.fnp .vol svg path{fill:currentColor;stroke:currentColor}.fnp .vol .vb{height:5px;border:0;border-radius:3px;background:rgba(255,255,255,.2)}.fnp .vol .vb i{background:#fff}
+.modern.lightui .fnp .vol .vb{background:rgba(17,24,39,.14)}.modern.lightui .fnp .vol .vb i{background:#111827}
+.fnp.showvol .times{visibility:hidden}
+/* artwork candidates */
+.row.th.big{height:27px}
 /* hold switch on the top edge */
 .hold{position:absolute;top:-7px;right:44px;width:34px;height:10px;border-radius:5px 5px 0 0;background:linear-gradient(#cfd2d7,#9ea3aa);box-shadow:inset 0 1px 0 #fff8,0 0 0 1px #0002;cursor:pointer;z-index:2}
 .hold::before{content:"";position:absolute;top:2px;left:3px;width:14px;height:6px;border-radius:3px;background:linear-gradient(#fafafa,#c9ccd1);box-shadow:0 0 0 1px #0003;transition:left .18s}
@@ -403,7 +429,7 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 const audio=new Audio(); audio.preload='auto';
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard'},ls.get('ipod.settings',{}));
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
@@ -836,6 +862,8 @@ function settingsMenu(){
     {label:'Backlight',val:settings.backlight,action:tog('backlight',['10 sec','20 sec','1 min','Always On'])},
     {label:'Fast Scroll',val:settings.accel?'On':'Off',action:tog('accel',[true,false])},
     {label:'Menu Style',val:settings.menuStyle,action:tog('menuStyle',['List','Flow'])},
+    {label:'Now Playing Style',val:settings.npStyle,action:tog('npStyle',['Standard','Flow'])},
+    {label:'Find Missing Artwork',chev:1,action:()=>findMissingArtwork()},
     ...(settings.menuStyle==='List'?[{label:'Split Screen',val:settings.split,action:tog('split',['Album Art','Now Playing','Off'])}]:[]),
     {label:'YouTube Downloads',val:'Offline MP3'},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
@@ -850,7 +878,7 @@ function aboutView(){return list('About',[
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
-  {label:'Version',val:'3.8'}])}
+  {label:'Version',val:'3.9'}])}
 function extrasMenu(){return list('Extras',[
   {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))}])}
@@ -991,6 +1019,8 @@ function render(){
     renderClock();
   }else if(v.type==='brick'){
     brickMount(v);
+  }else if(v.type==='now'&&settings.npStyle==='Flow'&&cur()){
+    renderNowFlow();
   }else if(v.type==='now'&&settings.style==='Modern'&&cur()){
     const s=cur(),art=artFor(s);screenEl.classList.add('nowmod');if(scrub)ctl=null;
     body.innerHTML=`<div class="mnp" id="np">
@@ -1149,6 +1179,100 @@ function flowUpdate(v){
     el.style.filter=d===0?'none':`brightness(${Math.max(.45,.85-ad*.06)})`});
   const a=v.albums[v.sel];$('#fal').textContent=a.album;$('#far').textContent=a.artist;$('#fcnt').textContent=`${v.sel+1} OF ${v.albums.length}`;
 }
+
+/* ---------- Flow Now Playing: previous ← current → upcoming on a 3D shelf ---------- */
+let flowNpQi=null;
+function nowFlowPos(el,d){const ad=Math.abs(d);
+  el.style.transform=d===0?'translateX(0) translateZ(40px) rotateY(0deg)':`translateX(${Math.sign(d)*(68+(ad-1)*18)}px) rotateY(${d<0?60:-60}deg)`;
+  el.style.zIndex=String(100-ad);el.style.opacity=ad>4?'0':'1';el.style.filter=d===0?'none':`brightness(${Math.max(.4,.8-ad*.08)})`}
+function renderNowFlow(){
+  const s=cur(),from=flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
+  const lo=Math.max(0,qi-5),hi=Math.min(queue.length-1,qi+5);let cards='';
+  for(let i=lo;i<=hi;i++)cards+=`<div class="cv" data-q="${i}" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div>`;
+  body.innerHTML=`<div class="fnp instant" id="np"><span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
+    <div class="stage">${cards}</div>
+    <div class="cap"><b>${esc(s.title)}</b><span>${esc(s.artist)}${s.album?' — '+esc(s.album):''}</span></div>
+    <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
+    <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
+    <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/></svg><div class="vb"><i id="vbi"></i></div>
+      <svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/><path d="M8.5 3.5a3.5 3.5 0 010 5M10 2a5.5 5.5 0 010 8" fill="none"/></svg></div></div>`;
+  const els=[...document.querySelectorAll('#np .cv')];
+  els.forEach(el=>nowFlowPos(el,+el.dataset.q-from));           // start where the shelf was …
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#np');if(!f)return;f.classList.remove('instant');
+    els.forEach(el=>nowFlowPos(el,+el.dataset.q-qi))}));        // … and glide to the new song
+  els.forEach(el=>el.addEventListener('click',()=>{const q=+el.dataset.q;if(q!==qi){click();qi=q;load(true)}}));
+  flowNpQi=qi;tick();
+}
+
+/* ---------- Artwork lookup: MusicBrainz (find the release) + Cover Art Archive (the cover) ---------- */
+// Free, open services; no key. MusicBrainz asks for at most ~1 request per second, so lookups are queued.
+const MB='https://musicbrainz.org/ws/2',CAA='https://coverartarchive.org';
+let mbLast=0;
+async function mbGet(path){
+  const wait=Math.max(0,mbLast+1100-Date.now());if(wait)await new Promise(r=>setTimeout(r,wait));mbLast=Date.now();
+  const r=await fetch(MB+path+(path.includes('?')?'&':'?')+'fmt=json',{headers:{Accept:'application/json'}});
+  if(r.status===503)throw new Error('MusicBrainz is busy. Try again in a moment.');
+  if(!r.ok)throw new Error('MusicBrainz error '+r.status);return r.json();
+}
+const mbq=t=>'"'+String(t).replace(/["\\]/g,' ').trim()+'"';
+const norm=t=>String(t||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\(.*?\)|\[.*?\]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+const known=t=>t&&!/^unknown (album|artist)$/i.test(t);
+async function artCandidates(s){
+  if(!navigator.onLine)throw new Error('You’re offline.');
+  if(!known(s.artist)&&!known(s.album))throw new Error('This song has no artist or album info to search with.');
+  let rel=[];
+  if(known(s.album)){const j=await mbGet(`/release?query=${encodeURIComponent(`release:${mbq(s.album)}`+(known(s.artist)?` AND artist:${mbq(s.artist)}`:''))}&limit=8`);rel=j.releases||[]}
+  if(!rel.length&&s.title){const j=await mbGet(`/recording?query=${encodeURIComponent(`recording:${mbq(s.title)}`+(known(s.artist)?` AND artist:${mbq(s.artist)}`:''))}&limit=5`);
+    rel=(j.recordings||[]).flatMap(rc=>(rc.releases||[]).map(x=>({...x,score:rc.score,'artist-credit':x['artist-credit']||rc['artist-credit']})))}
+  const seen=new Set();
+  return rel.filter(x=>x&&x.id&&!seen.has(x.id)&&seen.add(x.id)).map(x=>({id:x.id,title:x.title||'',score:+x.score||0,
+    artist:((x['artist-credit']||[]).map(a=>a.name||(a.artist&&a.artist.name)).join(''))||'',year:(x.date||'').slice(0,4),country:x.country||'',
+    thumb:`${CAA}/release/${x.id}/front-250`,full:`${CAA}/release/${x.id}/front-500`})).sort((a,b)=>b.score-a.score).slice(0,8);
+}
+// Confident = MusicBrainz score ≥ 90 and the album (or song) and artist names actually match.
+const confident=(c,s)=>c.score>=90&&(!known(s.artist)||norm(c.artist).includes(norm(s.artist))||norm(s.artist).includes(norm(c.artist)))&&
+  (!known(s.album)||norm(c.title)===norm(s.album));
+async function fetchCover(url){
+  const r=await fetch(url);if(!r.ok)throw new Error(r.status===404?'No cover for this release.':'Cover download failed ('+r.status+').');
+  const b=await r.blob();if(!/^image\//.test(b.type)||b.size<2048)throw new Error('That cover isn’t a valid image.');return b;
+}
+async function saveArtwork(s,blob){
+  // The chosen song always gets the cover; other songs from the same album only if they have no artwork of their own.
+  const lib=songs.find(x=>x.id===s.id)||s;
+  const targets=[lib,...songs.filter(x=>x!==lib&&x.album===s.album&&x.artist===s.artist&&!x.art)];
+  for(const t of targets){
+    if(t.artUrl&&t.artUrl.startsWith('blob:'))URL.revokeObjectURL(t.artUrl);
+    t.art=blob;t.artSource='coverartarchive';t.artUrl=URL.createObjectURL(blob);
+    queue.forEach(q=>{if(q.id===t.id){q.art=blob;q.artUrl=t.artUrl}});
+    try{const {kind,url,artUrl,...rec}=t;await dbPut(rec)}catch(e){}
+  }
+  setSession();return targets.length;
+}
+async function getArtwork(s){
+  push(loadingView('Searching…'));
+  try{
+    const cands=await artCandidates(s);
+    if(!cands.length)return replaceTop(msgView('No Match','Couldn’t find this album in MusicBrainz. Check the song’s artist and album tags.'));
+    replaceTop(list('Choose Artwork',cands.map(c=>({label:`${c.title}${c.year?' ('+c.year+')':''}`,val:c.country||undefined,thumb:c.thumb,
+      action:async()=>{push(loadingView('Saving…'));try{const b=await fetchCover(c.full);const n=await saveArtwork(s,b);
+        replaceTop(msgView('Artwork Saved',`Added to ${n} song${n===1?'':'s'} from ${s.album||c.title}.`))}catch(e){replaceTop(msgView('Couldn’t Save',e.message))}}})),
+      {emptyText:'No covers found.'}));
+  }catch(e){replaceTop(msgView('Artwork Search Failed',e.message||'Check your connection.'))}
+}
+let artBusy=false;
+async function findMissingArtwork(){
+  if(artBusy)return push(msgView('Already Running','Artwork search is in progress; watch the bar at the top.'));
+  const groups=[...new Map(songs.filter(s=>!s.art).map(s=>[s.album+'\u0000'+s.artist,s])).values()];
+  if(!groups.length)return push(msgView('All Set','Every song already has artwork.'));
+  if(!navigator.onLine)return push(msgView('You’re Offline','Connect to the internet to look up artwork.'));
+  artBusy=true;push(msgView('Finding Artwork',`Looking up ${groups.length} album${groups.length===1?'':'s'}. You can keep using the iPod; progress shows at the top.`));
+  let found=0;
+  try{for(let i=0;i<groups.length;i++){const s=groups[i];setHdrTask(`Artwork ${i+1} of ${groups.length}`,i/groups.length);
+    try{const c=(await artCandidates(s)).find(c=>confident(c,s));if(c){await saveArtwork(s,await fetchCover(c.full));found++}}catch(e){}
+    setHdrTask(`Artwork ${i+1} of ${groups.length}`,(i+1)/groups.length)}}
+  finally{artBusy=false}
+  setHdrTask(found?`Found ${found} cover${found===1?'':'s'}`:'No new covers found',1,true);render();
+}
 /* ---------- Modern Now Playing controls ---------- */
 const ACTS=['fav','more','lyrics','queue','out'];
 let ctl=null;                                   // index into ACTS while the wheel is driving the controls, else null
@@ -1179,6 +1303,7 @@ function songOptions(s){return list('Song',()=>[
   {label:s.favorite?'Remove from Favorites':'Add to Favorites',action:async()=>{await toggleFavorite(s);pop()}},
   {label:'Go to Album',chev:1,action:go(()=>songsMenu(albumSort(songs.filter(x=>x.album===s.album)),s.album))},
   {label:'Go to Artist',chev:1,action:go(()=>{const ss=songs.filter(x=>x.artist===s.artist);return new Set(ss.map(x=>x.album)).size>1?albumsMenu(ss,s.artist,true):songsMenu(albumSort(ss),s.artist)})},
+  {label:s.art?'Replace Artwork':'Get Artwork',chev:1,action:()=>getArtwork(s)},
   {label:'Song Info',chev:1,action:go(()=>list('Song Info',[
     {label:'Title',val:s.title},{label:'Artist',val:s.artist},{label:'Album',val:s.album},
     {label:'Length',val:fmt(s===cur()?dur():s.duration||0)},{label:'Format',val:fmtOf(s)},
@@ -1278,6 +1403,7 @@ function press(btn){
     else if(v.type==='input')submitInput();
     else if(v.type==='now'&&settings.style==='Modern'){       // center cycles: normal → scrub → controls (center then opens)
       if(ctl!=null)npAction(ACTS[ctl]);else if(scrub){scrub=false;ctl=0;render()}else{scrub=true;render()}}
+    else if(v.type==='now'&&cur()){if(scrub){scrub=false;push(songOptions(cur()))}else{scrub=true;render()}}   // center: scrub → song menu
     else if(v.type==='now'||v.type==='video'){scrub=!scrub;render()}
   }
 }
