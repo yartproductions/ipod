@@ -214,7 +214,7 @@ let dbp=null;
 function db(){if(dbp)return dbp;dbp=new Promise((res,rej)=>{try{const r=indexedDB.open('ipod',1);
   r.onupgradeneeded=()=>r.result.createObjectStore('songs',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});return dbp}
 async function dbAll(){try{const d=await db();return await new Promise(r=>{const q=d.transaction('songs').objectStore('songs').getAll();q.onsuccess=()=>r(q.result||[]);q.onerror=()=>r([])})}catch(e){return[]}}
-async function dbPut(o){try{const d=await db();d.transaction('songs','readwrite').objectStore('songs').put(o)}catch(e){}}
+async function dbPut(o){const d=await db();return new Promise((resolve,reject)=>{const tx=d.transaction('songs','readwrite');tx.objectStore('songs').put(o);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)})}
 async function dbClear(){try{const d=await db();d.transaction('songs','readwrite').objectStore('songs').clear()}catch(e){}}
 
 function decText(b,enc){
@@ -254,7 +254,7 @@ async function readTags(file){
   return tags;
 }
 function fromName(n){n=n.replace(/\.[^.]+$/,'').replace(/^\d+[\s.\-_]+/,'');const m=n.split(' - ');return m.length>1?{artist:m[0].trim(),title:m.slice(1).join(' - ').trim()}:{title:n}}
-function hydrate(r){return {...r,kind:'file',url:URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):null}}
+function hydrate(r){return {...r,kind:'file',url:URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):r.artworkUrl||null}}
 async function addFiles(files){
   let n=0;
   for(const f of files){
@@ -351,15 +351,8 @@ function playPause(){
 }
 audio.addEventListener('ended',()=>next(false));
 // Only tracks that actually start playing go into Audius → Recently Played.
-audio.addEventListener('playing',()=>{const it=cur();if(it&&it.kind==='au'&&it.url===audio.getAttribute('src'))auAddHistory(it)});
-let auErrTimer=null;
-audio.addEventListener('error',()=>{
-  const it=cur();if(!it||it.kind!=='au'||!audio.getAttribute('src'))return;
-  const v=top();if(v.type==='now'){const t=$('.np .al');if(t)t.textContent='Unavailable — skipping…'}
-  clearTimeout(auErrTimer);
-  if(qi<queue.length-1)auErrTimer=setTimeout(()=>{if(cur()===it)next(true)},1500);
-  else if(v.type==='now')replaceTop(msgView('Can’t Play','This track isn’t available to stream right now.'));
-});
+
+
 ['play','pause'].forEach(e=>audio.addEventListener(e,()=>{renderHdr();if('mediaSession' in navigator)navigator.mediaSession.playbackState=audio.paused?'paused':'playing'}));
 function setSession(){
   if(!('mediaSession' in navigator))return;const s=cur();if(!s)return;
@@ -423,10 +416,32 @@ async function openPlaylist(list,title){
     queue=[{kind:'ytlist',list,title:title||'YouTube Playlist'}];qi=0;load(true);replaceTop(videoView());
   }
 }
-function playYT(items,i){
-  if(settings.shuffle){const f=items[i];queue=[f,...shuffled(items.filter((_,k)=>k!==i))];qi=0}else{queue=items.slice();qi=i}
-  load(true);push(videoView());
+const YTMP3_ENDPOINT='https://ytmp3.ge/api/convert';
+async function acquireYT(it){
+ const id=it.id;if(!/^[A-Za-z0-9_-]{11}$/.test(id))throw new Error('Invalid video ID.');
+ const existing=songs.find(s=>s.sourceId===id);if(existing)return existing;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),300000);
+ let r;try{r=await fetch(YTMP3_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({youtube_url:'https://www.youtube.com/watch?v='+id,quality:'320'}),signal:controller.signal})}
+ catch(e){throw new Error('Converter unavailable or blocked by CORS.')}finally{clearTimeout(timer)}
+ if(!r.ok)throw new Error('Conversion HTTP '+r.status);
+ const data=await r.json();if(!data.success||!data.downloadUrl)throw new Error(data.error||'No MP3 link returned.');
+ const u=new URL(data.downloadUrl);if(u.protocol!=='https:')throw new Error('Insecure download URL.');
+ let response;try{response=await fetch(u.href)}catch(e){throw new Error('MP3 download blocked by CORS.')}
+ if(!response.ok)throw new Error('MP3 download HTTP '+response.status);
+ const blob=await response.blob(),type=(response.headers.get('content-type')||'').toLowerCase();
+ if(!blob.size||type.includes('text/html')||type.includes('application/json'))throw new Error('Invalid audio response.');
+ const rec={id:'yt-'+id,sourceId:id,blob,title:data.title||it.title||'Untitled',artist:it.artist||'Unknown Artist',album:'Offline Music',artworkUrl:data.thumbnail||'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'};
+ await dbPut(rec);const song=hydrate(rec);songs.push(song);sortSongs();return song;
 }
+async function playYT(items,i){
+ if(!items.length)return;
+ const it=items[i],already=songs.find(s=>s.sourceId===it.id);
+ if(already){playList([already],0);return}
+ push(loadingView('Saving Audio…'));
+ try{const song=await acquireYT(it);replaceTop(nowView());queue=[song];qi=0;load(true)}
+ catch(e){replaceTop(msgView('Audio Unavailable',e.message||'Could not save MP3.'))}
+}
+
 function addHistory(it){
   const e=it.kind==='ytlist'?{type:'playlist',list:it.list,title:it.title}:{type:'video',id:it.id,title:it.title||'',artist:it.artist||''};
   history=[e,...history.filter(h=>!(h.type===e.type&&(h.id||h.list)===(e.id||e.list)))].slice(0,50);ls.set('ipod.history',history);
@@ -444,90 +459,6 @@ function entriesView(title,arr,removable){
       :{label:e.title||e.id,ytid:e.id,action:()=>playYT(vids,vids.findIndex(v=>v.id===e.id))})},{emptyText:removable?'Save videos from YouTube → Save Now Playing.':'Nothing played yet.'});
 }
 
-/* ---------- Audius: ad-free, artist-licensed streaming (https://audius.co) ---------- */
-// Read-only public API; no key needed. Tracks stream as plain MP3 through the same <audio> element as
-// local files, so there are no ads, and lock-screen controls / background audio behave like local music.
-const AU_API='https://api.audius.co/v1', AU_APP='iPodClassicWeb', AU_PAGE=25;
-let auSaved=ls.get('ipod.au.saved',[]), auHistory=ls.get('ipod.au.history',[]);
-const AU_GENRES=['Electronic','Hip-Hop/Rap','Pop','R&B/Soul','Alternative','Rock','Lo-Fi','Ambient','House','Techno',
-  'Dubstep','Drum & Bass','Trap','Jazz','Acoustic','Folk','Country','Latin','Reggae','Funk','Classical','Soundtrack'];
-async function auGet(path,params={}){
-  const u=new URL(AU_API+path);
-  Object.entries({...params,app_name:AU_APP}).forEach(([k,v])=>v!=null&&v!==''&&u.searchParams.set(k,v));
-  const r=await fetch(u,{headers:{Accept:'application/json'}});
-  if(!r.ok)throw new Error(r.status===429?'Audius is busy. Try again in a moment.':'Audius error '+r.status);
-  const j=await r.json();return Array.isArray(j.data)?j.data:j.data?[j.data]:[];
-}
-const auArt=a=>a&&(a['480x480']||a['1000x1000']||a['150x150'])||null;
-// Only tracks anyone can stream for free: skip purchase-, follow- or tip-gated and unavailable tracks.
-const auPlayable=t=>t&&t.id&&t.is_streamable!==false&&!t.is_stream_gated&&!t.is_delete&&!t.is_unlisted;
-function auTrack(t){return {kind:'au',id:String(t.id),title:t.title||'Untitled',artist:(t.user&&t.user.name)||'Unknown Artist',
-  album:t.genre?`${t.genre} · Audius`:'Audius',artUrl:auArt(t.artwork),duration:t.duration||0,
-  url:`${AU_API}/tracks/${encodeURIComponent(t.id)}/stream?app_name=${AU_APP}`}}
-const auTracks=arr=>arr.filter(auPlayable).map(auTrack);
-function auPlay(items,i){
-  if(!items.length)return;
-  if(settings.shuffle){const f=items[i];queue=[f,...shuffled(items.filter((_,k)=>k!==i))];qi=0}else{queue=items.slice();qi=i}
-  load(true);push(nowView());
-}
-function auRemember(arr,key,e,max){const k=e.type+':'+e.id;arr=[e,...arr.filter(x=>x.type+':'+x.id!==k)].slice(0,max);ls.set(key,arr);return arr}
-function auAddHistory(it){auHistory=auRemember(auHistory,'ipod.au.history',{type:'track',id:it.id,title:it.title,artist:it.artist,album:it.album,artUrl:it.artUrl,url:it.url},50)}
-const auFromSaved=e=>({kind:'au',id:e.id,title:e.title,artist:e.artist,album:e.album||'Audius',artUrl:e.artUrl,url:e.url||`${AU_API}/tracks/${encodeURIComponent(e.id)}/stream?app_name=${AU_APP}`});
-
-// A list of tracks with Play All / Shuffle / optional Save and paging.
-function auTracksView(title,items,opts={}){
-  return list(title,()=>[
-    ...(items.length>1?[{label:'Play All',action:()=>auPlay(items,0)},{label:'Shuffle',action:()=>{queue=shuffled(items);qi=0;load(true);push(nowView())}}]:[]),
-    ...(opts.playlist?[{label:'Save Playlist',action:go(()=>{auSaved=auRemember(auSaved,'ipod.au.saved',{type:'playlist',id:opts.playlist.id,title:opts.playlist.title,artist:opts.playlist.artist},200);return msgView('Saved',`${opts.playlist.title} was added to Saved.`)})}]:[]),
-    ...items.map((it,i)=>({label:it.title,auid:it.id,action:()=>auPlay(items,i)})),
-    ...(opts.more?[{label:'More…',action:opts.more}]:[])],{emptyText:opts.empty||'No free-to-stream tracks here.'});
-}
-// Load a paged track source into the current (loading) view.
-async function auLoadTracks(title,fetchPage,opts={}){
-  let items=[],offset=0;const seen=new Set();
-  // Returns how many new tracks the page added; paging stops when a page is short or adds nothing new.
-  const page=async()=>{const raw=await fetchPage(offset);offset+=raw.length;
-    const fresh=auTracks(raw).filter(t=>!seen.has(t.id));fresh.forEach(t=>seen.add(t.id));items=items.concat(fresh);
-    return raw.length>=AU_PAGE&&fresh.length>0&&!opts.single?AU_PAGE:0};
-  try{
-    const n=await page();
-    const build=more=>auTracksView(title,items,{...opts,more});
-    const moreFn=()=>{const keep=top().sel;replaceTop(loadingView('Loading…'));
-      page().then(n2=>{replaceTop(build(n2>=AU_PAGE?moreFn:null));top().sel=keep;render()})
-        .catch(e=>replaceTop(msgView('Couldn’t Load',e.message)))};
-    replaceTop(build(n>=AU_PAGE?moreFn:null));
-  }catch(e){replaceTop(msgView('Couldn’t Load',(e&&e.message)||'Check your connection.'))}
-}
-function auOpenPlaylist(pl){
-  push(loadingView('Loading…'));
-  auLoadTracks(pl.title,()=>auGet(`/playlists/${encodeURIComponent(pl.id)}/tracks`),{playlist:pl,single:true,empty:'This playlist has no free-to-stream tracks.'});
-}
-const auPl=p=>({id:String(p.id),title:p.playlist_name||'Playlist',artist:(p.user&&p.user.name)||''});
-async function auLoadPlaylists(title,fetcher){
-  try{const pls=(await fetcher()).filter(p=>p&&p.id&&!p.is_private).map(auPl);
-    replaceTop(list(title,pls.map(pl=>({label:pl.title,chev:1,action:()=>auOpenPlaylist(pl)})),{emptyText:'No playlists found.'}));
-  }catch(e){replaceTop(msgView('Couldn’t Load',(e&&e.message)||'Check your connection.'))}
-}
-function audiusMenu(){return list('Audius',()=>[
-  {label:'Trending',chev:1,action:()=>{push(loadingView('Loading…'));auLoadTracks('Trending',off=>auGet('/tracks/trending',{time:'week',limit:AU_PAGE,offset:off}))}},
-  {label:'Genres',chev:1,action:go(()=>list('Genres',AU_GENRES.map(g=>({label:g,chev:1,action:()=>{push(loadingView('Loading…'));
-    auLoadTracks(g,off=>auGet('/tracks/trending',{genre:g,time:'month',limit:AU_PAGE,offset:off}))}}))))},
-  {label:'Top Playlists',chev:1,action:()=>{push(loadingView('Loading…'));auLoadPlaylists('Top Playlists',()=>auGet('/playlists/trending',{time:'week',limit:AU_PAGE}))}},
-  {label:'Search Songs',chev:1,action:go(()=>inputView('Search Songs','Song or artist',q=>{replaceTop(loadingView('Searching…'));
-    auLoadTracks(`“${q}”`,off=>auGet('/tracks/search',{query:q,limit:AU_PAGE,offset:off}),{empty:'No free-to-stream matches.'})}))},
-  {label:'Search Playlists',chev:1,action:go(()=>inputView('Search Playlists','Mood, genre, name…',q=>{replaceTop(loadingView('Searching…'));
-    auLoadPlaylists(`“${q}”`,()=>auGet('/playlists/search',{query:q,limit:AU_PAGE}))}))},
-  {label:'Saved',chev:1,action:go(auSavedView)},
-  {label:'Recently Played',chev:1,action:go(()=>{const items=auHistory.map(auFromSaved);return auTracksView('Recently Played',items,{empty:'Nothing played yet.'})})},
-  ...(cur()&&cur().kind==='au'?[{label:'Save Now Playing',action:go(()=>{const it=cur();
-    auSaved=auRemember(auSaved,'ipod.au.saved',{type:'track',id:it.id,title:it.title,artist:it.artist,album:it.album,artUrl:it.artUrl,url:it.url},200);
-    return msgView('Saved',`${it.title} was added to Saved.`)})}]:[]),
-])}
-function auSavedView(){return list('Saved',()=>{
-  const tracks=auSaved.filter(e=>e.type==='track').map(auFromSaved);
-  return [...auSaved.filter(e=>e.type==='playlist').map(e=>({label:'▤ '+e.title,chev:1,action:()=>auOpenPlaylist(e)})),
-    ...(tracks.length>1?[{label:'Play All Saved Songs',action:()=>auPlay(tracks,0)}]:[]),
-    ...tracks.map((t,i)=>({label:t.title,auid:t.id,action:()=>auPlay(tracks,i)}))]},{emptyText:'Use Audius → Save Now Playing, or Save Playlist.'})}
 
 /* ---------- views ---------- */
 function list(title,items,extra={}){return {type:'list',title,items,sel:0,scroll:0,...extra}}
@@ -535,8 +466,8 @@ const go=v=>()=>push(typeof v==='function'?v():v);
 function mainMenu(){
   return list('iPod',()=>[
     {label:'Ad-Free Local Music',action:go(musicMenu),chev:1},
-    {label:'Audius (Ad-Free)',action:go(audiusMenu),chev:1},
-    ...(settings.showYouTube?[{label:'YouTube (Has Ads)',action:go(youtubeMenu),chev:1}]:[]),
+
+    {label:'YouTube → Save MP3',action:go(youtubeMenu),chev:1},
     {label:'Shuffle Songs',action:()=>shuffleAll()},
     ...(qi>=0?[{label:'Now Playing',action:()=>push(nowView()),chev:1}]:[]),
     {label:'Add Music',action:()=>$('#file').click(),chev:1},
@@ -549,7 +480,7 @@ function youtubeMenu(){return list('YouTube',()=>[
   {label:'Paste Link',chev:1,action:go(()=>inputView('Paste Link','youtube.com/watch?v=… or playlist',s=>{
     const {id,list:l}=parseYT(s);
     if(l&&!id){replaceTop(loadingView('Loading…'));openPlaylist(l)}
-    else if(id){queue=[{kind:'yt',id,title:'',artist:''}];qi=0;load(true);replaceTop(videoView())}
+    else if(id){playYT([{kind:'yt',id,title:'',artist:''}],0)}
     else replaceTop(msgView('Not a YouTube Link','Paste a video or playlist link from YouTube or YouTube Music.'))}))},
   {label:'Saved',chev:1,action:go(()=>entriesView('Saved',saved,true))},
   {label:'Recently Played',chev:1,action:go(()=>entriesView('Recently Played',history))},
@@ -593,7 +524,7 @@ function settingsMenu(){
       {label:'Haptic Feel',val:settings.hapticFeel,action:()=>{tog('hapticFeel',Object.keys(HAPTIC_FEELS))();setTimeout(()=>triggerHaptic('selection'),120)}},
       {label:'Test Haptic',action:()=>triggerHaptic('success')}]:[]),
     {label:'Color',val:settings.theme,action:tog('theme',['Silver','Black'])},
-    {label:'YouTube (Has Ads)',val:settings.showYouTube?'On':'Off',action:tog('showYouTube',[false,true])},
+    {label:'YouTube Downloads',val:'Offline MP3'},
     ...(settings.showYouTube?[{label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
       {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)}]:[]),
     {label:'Clear Library',chev:1,action:go(()=>list('Clear Library?',[
@@ -604,7 +535,7 @@ function settingsMenu(){
 function aboutView(){return list('About',[
   {label:'Songs',val:String(songs.length)},
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
-  {label:'Saved (Audius)',val:String(auSaved.length)},
+  {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
   {label:'Version',val:'3.0'}])}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
@@ -645,7 +576,7 @@ function render(){
     if(v.sel<v.scroll)v.scroll=v.sel;if(v.sel>=v.scroll+VIS)v.scroll=v.sel-VIS+1;
     const playing=cur(),sbw=it.length>VIS;let h='<div class="list">';
     for(let i=v.scroll;i<Math.min(it.length,v.scroll+VIS);i++){const x=it[i],rp=sbw?'right:14px':'';
-      const isCur=playing&&((x.song&&x.song.id===playing.id)||(x.ytid&&playing.id===x.ytid)||(x.auid&&playing.kind==='au'&&playing.id===x.auid));
+      const isCur=playing&&((x.song&&x.song.id===playing.id)||(x.ytid&&playing.id===x.ytid));
       h+=`<div class="row${i===v.sel?' sel':''}" style="${sbw?'padding-right:28px':''}">${esc(x.label)}${
         x.val!=null?`<span class="val" style="${rp}">${esc(x.val)}</span>`:x.chev?`<span class="chev" style="${rp}">›</span>`:isCur?`<span class="spk" style="${rp}">${spk}</span>`:''}</div>`}
     if(sbw){const hh=190,th=Math.max(14,hh*VIS/it.length),ty=(hh-th)*v.scroll/(it.length-VIS);h+=`<div class="sb"><i style="top:${ty}px;height:${th}px"></i></div>`}
