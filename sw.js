@@ -1,6 +1,6 @@
 // Offline app shell for the iPod. Caches only this site's own files so the iPod opens with no network and
 // plays songs saved in IndexedDB. The page is fetched network-first (so updates arrive as soon as you're online)
-// and falls back to the cached copy offline. Cross-origin requests (Audius, YouTube, fonts) are never touched.
+// and falls back to the cached copy offline. Cross-origin requests (YTMP3, YouTube, fonts) are never touched.
 const CACHE = 'ipod-shell-v1';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
