@@ -88,6 +88,18 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .showvol .vol{display:flex}.showvol .times{visibility:hidden}
 .np .vol{background:linear-gradient(#fff,#eef0f3)}
 
+.np .art{position:relative;overflow:hidden;border-radius:8px!important;box-shadow:0 5px 14px rgba(15,27,50,.28),0 0 0 1px rgba(255,255,255,.65)!important;isolation:isolate}
+.np .art::after{content:"";position:absolute;inset:0;background:linear-gradient(145deg,rgba(255,255,255,.34),transparent 38%,rgba(0,0,0,.24));pointer-events:none}
+.np .art::before{content:"";position:absolute;inset:-20%;background:radial-gradient(circle at 25% 25%,rgba(255,255,255,.28),transparent 55%);pointer-events:none}
+.np .top{gap:12px}
+.np .t{font-size:13px;line-height:1.25}
+.np .a{color:#3b567a}
+.np .al{font-size:10px;color:#7a8494}
+.np .cnt{color:#62758f;letter-spacing:.07em;text-transform:uppercase;font-size:9px}
+.download-toast{position:absolute;z-index:8;left:8px;right:8px;bottom:7px;padding:7px 9px;border-radius:7px;background:rgba(20,33,54,.94);color:#fff;font-size:10px;line-height:1.4;box-shadow:0 3px 12px #0004;pointer-events:none}
+.download-toast strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.download-toast i{display:block;height:3px;margin-top:5px;border-radius:3px;background:#80c5ff;transition:width .25s}
+.download-toast .track{height:3px;background:#ffffff30;border-radius:3px;overflow:hidden;margin-top:5px}
 /* video */
 #ytbox{position:absolute;inset:0;display:none;background:#000;z-index:1}
 #ytbox iframe,#ytbox>div{width:100%!important;height:100%!important;border:0;display:block}
@@ -125,7 +137,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
   <div class="ipod" id="ipod">
     <div class="bezel"><div class="screen" id="screen">
       <div class="hdr"><span class="pi" id="pi"></span><span id="htitle">iPod</span><span class="bat"><i></i></span></div>
-      <div id="body"></div>
+      <div id="body"></div><div id="download-toast" class="download-toast" style="display:none"></div>
       
       <div class="vo" id="vo">
         <div class="vt" id="vot"></div>
@@ -341,7 +353,44 @@ async function openPlaylist(list,title){
   }catch(e){replaceTop(msgView('Playlist Unavailable',e.message||'Could not load playlist.'))}
 }
 const IPOD_WORKER='https://ipod-audio-relay.kohlindersjohn.workers.dev';
-async function acquireYT(it){
+const downloadJobs=new Map();
+const downloadQueue=[];
+let activeDownload=false,downloadNoticeTimer=null,latestPlayRequest=0;
+function downloadNotice(){
+ const el=$('#download-toast');if(!el)return;
+ const job=[...downloadJobs.values()].find(j=>j.state!=='Done'&&j.state!=='Failed')||[...downloadJobs.values()].reverse().find(j=>Date.now()-j.updated<7000);
+ if(!job){el.style.display='none';return}
+ el.style.display='block';
+ el.innerHTML='<strong>'+esc(job.title||'Audio')+'</strong>'+esc(job.state)+(job.state==='Failed'&&job.error?' · '+esc(job.error):'')+
+ '<div class="track"><i style="width:'+Math.max(3,Math.min(100,job.progress||0))+'%"></i></div>';
+}
+function setDownloadStatus(id,state,progress,error){
+ const job=downloadJobs.get(id);if(!job)return;
+ Object.assign(job,{state,progress,updated:Date.now(),error:error||''});
+ downloadNotice();clearTimeout(downloadNoticeTimer);
+ downloadNoticeTimer=setTimeout(downloadNotice,8000);
+}
+function enqueueYT(it){
+ const cached=songs.find(s=>s.sourceId===it.id);if(cached)return Promise.resolve(cached);
+ if(downloadJobs.has(it.id))return downloadJobs.get(it.id).promise;
+ const job={id:it.id,title:it.title||'YouTube audio',state:'Queued',progress:3,updated:Date.now(),promise:null};
+ downloadJobs.set(it.id,job);
+ job.promise=new Promise((resolve,reject)=>{downloadQueue.push({it,resolve,reject});runDownloadQueue()});
+ downloadNotice();return job.promise;
+}
+async function runDownloadQueue(){
+ if(activeDownload)return;
+ activeDownload=true;
+ try{
+  while(downloadQueue.length){
+   const task=downloadQueue.shift(),id=task.it.id;
+   try{const song=await acquireYT(task.it,(state,progress)=>setDownloadStatus(id,state,progress));setDownloadStatus(id,'Done',100);task.resolve(song)}
+   catch(e){setDownloadStatus(id,'Failed',0,e.message);task.reject(e)}
+  }
+ }finally{activeDownload=false}
+}
+
+async function acquireYT(it,onProgress=()=>{}){
  const id=it.id;if(!/^[A-Za-z0-9_-]{11}$/.test(id))throw new Error('Invalid video ID.');
  const existing=songs.find(s=>s.sourceId===id);if(existing)return existing;
  const relay=async(path,payload)=>{
@@ -352,6 +401,7 @@ async function acquireYT(it){
   finally{clearTimeout(timer)}
   return response;
  };
+ onProgress('Preparing audio…',10);
  const created=await relay('/tornado-create',{videoId:id,authorized:true});
  const creation=await created.json().catch(()=>({}));
  if(!created.ok||!creation.jobId)throw new Error(creation.error||'Tornado job could not be created.');
@@ -362,26 +412,36 @@ async function acquireYT(it){
   const result=await relay('/tornado-status',{jobId});
   info=await result.json().catch(()=>({}));
   if(!result.ok)throw new Error(info.error||'Tornado status unavailable.');
+  onProgress('Processing audio…',Math.min(65,18+attempt*2));
   if(info.status==='Completed')break;
   if(['Failed','Warning','Skipped','Cancelled','CancelledByAdmin'].includes(info.status))throw new Error(info.error||'Tornado job '+info.status);
  }
  if(info?.status!=='Completed')throw new Error('Tornado is still processing. Please try again later; do not repeatedly submit the same track.');
+ onProgress('Downloading audio…',75);
  const response=await relay('/tornado-file',{jobId});
  if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'Audio delivery failed.')}
  const type=(response.headers.get('content-type')||'').toLowerCase();
  if(!type.startsWith('audio/'))throw new Error('Audio delivery returned invalid content.');
  const blob=await response.blob();
+ onProgress('Saving offline…',92);
  if(blob.size<1024)throw new Error('Audio file was empty or incomplete.');
  const rec={id:'yt-'+id,sourceId:id,blob,title:info.title||it.title||'Untitled',artist:it.artist||'Unknown Artist',album:'Offline Music',artworkUrl:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'};
  await dbPut(rec);const song=hydrate(rec);songs.push(song);sortSongs();return song;
 }
 async function playYT(items,i){
- if(!items.length)return;
- const it=items[i],already=songs.find(s=>s.sourceId===it.id);
- if(already){playList([already],0);return}
- push(loadingView('Saving Audio…'));
- try{const song=await acquireYT(it);replaceTop(nowView());queue=[song];qi=0;load(true)}
- catch(e){replaceTop(msgView('Audio Unavailable',e.message||'Could not save MP3.'))}
+ if(!items.length||!items[i])return;
+ const it=items[i],request=++latestPlayRequest;
+ const cached=songs.find(s=>s.sourceId===it.id);
+ if(cached){playList([cached],0);return}
+ // Background download: remain free to browse with the wheel.
+ enqueueYT(it).then(song=>{
+  if(request!==latestPlayRequest)return;
+  queue=[song];qi=0;load(true);
+  push(nowView());
+ }).catch(e=>{
+  if(request===latestPlayRequest)push(msgView('Audio Unavailable',e.message||'Could not save MP3.'));
+ });
+ downloadNotice();
 }
 
 function addHistory(it){
@@ -411,12 +471,18 @@ function mainMenu(){
 
     {label:'YouTube → Save MP3',action:go(youtubeMenu),chev:1},
     {label:'Shuffle Songs',action:()=>shuffleAll()},
+    {label:'Downloads',action:go(downloadsMenu),chev:1},
     ...(qi>=0?[{label:'Now Playing',action:()=>push(nowView()),chev:1}]:[]),
     {label:'Add Music',action:()=>$('#file').click(),chev:1},
     {label:'Settings',action:go(settingsMenu),chev:1},
     {label:'About',action:go(aboutView),chev:1},
   ]);
 }
+function downloadsMenu(){return list('Downloads',()=>{
+ const jobs=[...downloadJobs.values()].reverse();
+ return jobs.length?jobs.map(j=>({label:(j.state==='Done'?'✓ ':j.state==='Failed'?'! ':'↓ ')+j.title,val:j.state==='Done'?'Saved':j.state==='Failed'?'Error':'…',
+ action:()=>{const song=songs.find(s=>s.sourceId===j.id);if(song)playList([song],0);else if(j.state==='Failed')push(msgView('Download Failed',j.error||'Please try again.'));else push(msgView(j.state,j.title))}})):[{label:'No active downloads'}];
+})}
 function youtubeMenu(){return list('YouTube',()=>[
   {label:'Search',chev:1,action:go(()=>inputView('Search',settings.musicOnly?'Songs, artists…':'Search YouTube',q=>{replaceTop(loadingView('Searching…'));doSearch(q)}))},
   {label:'Paste Link',chev:1,action:go(()=>inputView('Paste Link','youtube.com/watch?v=… or playlist',s=>{
@@ -544,6 +610,7 @@ function render(){
   }else if(isVid){
     body.innerHTML='';renderVideoMeta();$('#vbar').classList.toggle('scrub',scrub);flashVo();
   }
+  downloadNotice();
 }
 function renderVideoMeta(){const s=cur();if(!s)return;
   const t=s.nowTitle||s.title||'Loading…',a=s.nowArtist||s.artist||'';
