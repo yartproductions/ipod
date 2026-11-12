@@ -11,6 +11,27 @@ export default {
   if(request.method!=='POST')return json({error:'Method not allowed'},405);
   const url=new URL(request.url);
   try{
+   if(url.pathname==='/render-audio'){
+    if(!env.AUDIO_API_KEY)return json({error:'Cloudflare AUDIO_API_KEY secret is not configured'},503);
+    let input;try{input=await request.json()}catch{return json({error:'Invalid JSON'},400)}
+    const id=String(input?.videoId||'');
+    if(!/^[a-zA-Z0-9_-]{11}$/.test(id))return json({error:'Invalid video ID'},400);
+    if(input?.authorized!==true)return json({error:'Download authorization required'},400);
+    const upstream=await fetch('https://ipod-audio-api.onrender.com/convert',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Audio-Key':env.AUDIO_API_KEY},
+      body:JSON.stringify({videoId:id,authorized:true}),
+      signal:AbortSignal.timeout(180000)
+    });
+    if(!upstream.ok){
+      let message='Audio backend HTTP '+upstream.status;
+      try{const detail=await upstream.json();message=detail.error||message}catch{}
+      return json({error:message},502);
+    }
+    const type=(upstream.headers.get('content-type')||'').toLowerCase();
+    if(!type.startsWith('audio/'))return json({error:'Backend did not return audio',contentType:type},502);
+    return new Response(upstream.body,{status:200,headers:{'Content-Type':type,'Cache-Control':'no-store'}});
+   }
    if(url.pathname==='/convert'){
     let input;try{input=await request.json()}catch{return json({error:'Invalid JSON'},400)}
     const id=String(input?.videoId||'');
