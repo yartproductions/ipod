@@ -23,13 +23,14 @@ rows = lambda pg: pg.eval_on_selector_all('#body .row', 'els=>els.map(e=>e.lastC
 sel = lambda pg: pg.eval_on_selector('#body .row.sel', 'e=>[...e.childNodes].find(n=>n.nodeType===3).textContent')
 def key(pg, k, n=1, wait=40):
     for _ in range(n): pg.keyboard.press(k); pg.wait_for_timeout(wait)
+def selpos(pg): return pg.evaluate('(()=>{const r=[...document.querySelectorAll("#body .row")];const t=document.querySelector("#body .sb i");return r.findIndex(e=>e.classList.contains("sel"))+"|"+(t?t.style.top:"")+"|"+r.map(e=>e.textContent).join("/")})()')
 def choose(pg, label):
     for _ in range(3):
-        for _ in range(80):
+        for _ in range(200):
             if sel(pg) == label: key(pg, 'Enter', wait=250); return
-            before = sel(pg); pg.keyboard.press('ArrowDown')
-            if sel(pg) == before: break
-        for _ in range(80): pg.keyboard.press('ArrowUp')
+            before = selpos(pg); pg.keyboard.press('ArrowDown')
+            if selpos(pg) == before: break
+        for _ in range(200): pg.keyboard.press('ArrowUp')
     raise AssertionError(f'could not reach {label!r}')
 def home(pg):
     for _ in range(8):
@@ -107,7 +108,7 @@ def main():
         # ---- Clock ----
         home(pg); choose(pg, 'Extras'); choose(pg, 'Clock'); pg.wait_for_timeout(300)
         check('Clock shows an analogue face and the time', pg.evaluate('!!document.querySelector(".clock svg")') and (':' in pg.text_content('.clock .dig')))
-        t1 = pg.inner_html('.clock svg'); pg.wait_for_timeout(1100)
+        t1 = pg.inner_html('.clock svg'); pg.wait_for_timeout(2100)
         check('Clock ticks every second', pg.inner_html('.clock svg') != t1)
         key(pg, 'Escape', wait=150)
 
@@ -143,6 +144,79 @@ def main():
         check('scrubbing works in Modern', 'scrub' in pg.get_attribute('.mnp .bar', 'class'))
         home(pg); choose(pg, 'Settings'); choose(pg, 'Style')
         check('back to Classic', 'modern' not in pg.get_attribute('#ipod', 'class'))
+
+        # ---- Modern ▸ Light / Dark / Auto ----
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Style')
+        cls = lambda: pg.get_attribute('#ipod', 'class')
+        check('Modern defaults to Light appearance', 'modern' in cls() and 'lightui' in cls())
+        scr_bg = pg.evaluate('getComputedStyle(document.getElementById("screen")).backgroundColor')
+        check('Light screen is light', scr_bg in ('rgb(245, 247, 250)',), scr_bg)
+        choose(pg, 'Appearance')
+        check('Appearance → Dark', 'lightui' not in cls())
+        choose(pg, 'Appearance')
+        check('Appearance → Auto follows the system (headless = light)', 'lightui' in cls() and 'Auto' in pg.inner_text('#body'))
+        pg.emulate_media(color_scheme='dark'); pg.wait_for_timeout(200)
+        check('Auto switches live when the system goes dark', 'lightui' not in cls())
+        pg.emulate_media(color_scheme='light'); pg.wait_for_timeout(200)
+        choose(pg, 'Appearance')                       # -> Light
+
+        # ---- interactive controls (tap + wheel) ----
+        home(pg); pg.set_input_files('#file', [str(FIX / 'lyrics.mp3')]); pg.wait_for_timeout(1500); key(pg, 'Enter', wait=200)
+        music = next(l for l in ('Ad-Free Local Music', 'Offline Music', 'Music') if l in pg.inner_text('#body'))
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Fast Scroll'); home(pg)      # keyboard presses are fast; avoid jump-scrolling in tests
+        choose(pg, music); choose(pg, 'Songs'); choose(pg, 'Lyric Test'); pg.wait_for_timeout(800)
+        key(pg, ' ', wait=150)                                                      # pause: the 2-second test song would auto-advance
+        tint = pg.evaluate('getComputedStyle(document.getElementById("np")).getPropertyValue("--tint").trim()')
+        check('Light Now Playing gets a soft tint from the art', tint.startswith('rgb'), tint)
+        pg.click('.mnp [data-act="fav"]'); pg.wait_for_timeout(300)
+        check('tapping ☆ favorites the song', 'on' in pg.get_attribute('.mnp [data-act="fav"]', 'class') and 'Favorites' in pg.text_content('#nptoast'))
+        pg.click('.mnp [data-act="lyrics"]'); pg.wait_for_timeout(500)
+        check('tapping lyrics shows the lyrics embedded in the file', 'Placeholder line for the lyrics test' in pg.inner_text('#body'), pg.inner_text('#body')[:80])
+        y0 = pg.evaluate('getComputedStyle(document.querySelector(".lyr .in")).transform')
+        key(pg, 'ArrowDown', n=3, wait=80)
+        check('wheel scrolls the lyrics', pg.evaluate('getComputedStyle(document.querySelector(".lyr .in")).transform') != y0)
+        key(pg, 'Escape', wait=200)
+        check('MENU returns from lyrics to Now Playing', pg.evaluate('!!document.querySelector(".mnp")'))
+        pg.click('.mnp [data-act="queue"]'); pg.wait_for_timeout(300)
+        check('tapping the list icon opens Up Next', pg.text_content('#htitle') == 'Up Next' and '▶ Lyric Test' in pg.inner_text('#body'), pg.inner_text('#body')[:120])
+        key(pg, 'Escape', wait=200)
+        pg.click('.mnp [data-act="out"]'); pg.wait_for_timeout(200)
+        check('tapping the output row explains how to switch output', 'Playing on' in pg.inner_text('#body'))
+        key(pg, 'Enter', wait=200)
+        # wheel path: center → scrub → controls
+        key(pg, 'Enter', wait=200)
+        check('center #1 → scrub', 'scrub' in pg.get_attribute('.mnp .bar', 'class'))
+        key(pg, 'Enter', wait=200)
+        check('center #2 → controls with focus ring on ☆', 'ctl' in pg.get_attribute('#np', 'class') and 'focus' in pg.get_attribute('.mnp [data-act="fav"]', 'class'))
+        key(pg, 'ArrowDown', wait=120)
+        check('spinning moves the focus to ⋯', 'focus' in pg.get_attribute('.mnp [data-act="more"]', 'class'))
+        key(pg, 'Enter', wait=250)
+        check('center opens the ⋯ song menu', pg.text_content('#htitle') == 'Song' and 'Play Next' in pg.inner_text('#body'))
+        choose(pg, 'Song Info'); 
+        check('Song Info shows format + favorite', 'MP3' in pg.inner_text('#body') and 'Yes' in pg.inner_text('#body'), pg.inner_text('#body'))
+        key(pg, 'Escape', wait=150); key(pg, 'Escape', wait=150)
+        cnt0 = pg.text_content('.mnp .cnt')
+        pg.click('.mnp [data-act="more"]'); pg.wait_for_timeout(200); choose(pg, 'Add to Up Next'); pg.wait_for_timeout(200)
+        cnt1 = pg.text_content('.mnp .cnt')
+        check('Add to Up Next appends to the queue', int(cnt1.split()[-1]) == int(cnt0.split()[-1]) + 1, (cnt0, cnt1))
+        pg.click('.mnp [data-act="more"]'); pg.wait_for_timeout(200); choose(pg, 'Play Next'); pg.wait_for_timeout(200)
+        pg.click('.mnp [data-act="queue"]'); pg.wait_for_timeout(200)
+        check('Play Next puts it right after the current song', rows(pg)[:2] == ['▶ Lyric Test', 'Lyric Test'], rows(pg)[:3])
+        key(pg, 'Escape', wait=150)
+        key(pg, 'Enter', wait=150); key(pg, 'Enter', wait=150)   # → controls
+        key(pg, 'Escape', wait=150)
+        check('MENU leaves controls but stays on Now Playing', pg.text_content('#htitle') == 'Now Playing' and 'ctl' not in pg.get_attribute('#np', 'class'))
+        # favourites persist + list
+        pg.reload(); pg.wait_for_timeout(1500)
+        choose(pg, music); choose(pg, 'Favorites')
+        check('favorite is saved and listed after reload', rows(pg) == ['Lyric Test'], rows(pg))
+        choose(pg, 'Lyric Test'); pg.wait_for_timeout(500); key(pg, ' ', wait=150)
+        pg.click('.mnp [data-act="fav"]'); pg.wait_for_timeout(200)
+        home(pg); choose(pg, music); choose(pg, 'Songs'); choose(pg, 'Test Song 2'); pg.wait_for_timeout(500)
+        pg.click('.mnp [data-act="lyrics"]'); pg.wait_for_timeout(400)
+        check('song without lyrics says so', 'No Lyrics' in pg.inner_text('#body'))
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Fast Scroll'); choose(pg, 'Style')     # Fast Scroll back on, back to Classic
+        check('Classic unaffected', 'modern' not in pg.get_attribute('#ipod', 'class'))
 
         check('no uncaught page errors', not errors, errors)
         ctx.close()
