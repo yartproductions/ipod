@@ -165,10 +165,29 @@ addEventListener('resize',fit);fit();
 function applyTheme(){$('#ipod').classList.toggle('black',settings.theme==='Black')}
 applyTheme();
 
+/* Native iOS bridge; browser vibration is best-effort, not a promise of iPhone haptics. */
+let lastHapticAt=0, pendingHaptic=null;
+const HAPTIC_RANK={selection:0,confirm:1,success:2};
+const hapticBridge=()=>window.webkit?.messageHandlers?.ipodHaptics;
+const hapticSupport=()=>hapticBridge()?'Native':typeof navigator.vibrate==='function'?'Vibrate':'None';
+function triggerHaptic(kind='selection'){
+  if(!settings.haptics)return;
+  // Several requests in one input event (wheel click + center confirm, confirm + test) collapse into the strongest.
+  if(pendingHaptic!==null){if((HAPTIC_RANK[kind]||0)>(HAPTIC_RANK[pendingHaptic]||0))pendingHaptic=kind;return}
+  pendingHaptic=kind;
+  queueMicrotask(()=>{
+    const k=pendingHaptic;pendingHaptic=null;
+    const now=performance.now();
+    if(k==='selection'&&now-lastHapticAt<35)return;
+    lastHapticAt=now;
+    const bridge=hapticBridge();
+    if(bridge){try{bridge.postMessage(k);return}catch(e){}}
+    try{if(navigator.vibrate?.(k==='success'?[12,45,12]:7))return}catch(e){}
+    // iOS Safari doesn't expose reliable haptic feedback; avoid hidden switch hacks.
+  });
+}
+
 /* ---------- click + haptics ---------- */
-function iosTap(){try{const l=document.createElement('label');l.setAttribute('aria-hidden','true');l.style.display='none';
-  const i=document.createElement('input');i.type='checkbox';i.setAttribute('switch','');l.appendChild(i);
-  document.body.appendChild(l);l.click();l.remove()}catch(e){}}
 let actx=null, clickBuf=null;
 function click(){
   if(settings.clicker){try{
@@ -177,7 +196,7 @@ function click(){
       const d=clickBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length/6));}
     const s=actx.createBufferSource(),g=actx.createGain();g.gain.value=.35;s.buffer=clickBuf;s.connect(g);g.connect(actx.destination);s.start();
   }catch(e){}}
-  if(settings.haptics){let ok=false;try{if(navigator.vibrate)ok=navigator.vibrate(7)}catch(e){}if(!ok)iosTap()}
+  if(settings.haptics)triggerHaptic('selection')
 }
 
 /* ---------- local library (IndexedDB) ---------- */
@@ -240,7 +259,7 @@ function sortSongs(){songs.sort((a,b)=>a.title.localeCompare(b.title))}
 $('#file').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';if(f.length){push(loadingView('Syncing…'));addFiles(f)}});
 
 /* ---------- YouTube player ---------- */
-let yt=null, ytReady=false, ytQueue=[], ytAutoPaused=false, hintTimer=null;
+let yt=null, ytReady=false, ytQueue=[], ytAutoPaused=false, hintTimer=null, loadSeq=0;
 const whenYT=fn=>{if(ytReady)fn();else ytQueue.push(fn)};
 window.onYouTubeIframeAPIReady=()=>{
   yt=new YT.Player('ytp',{width:270,height:210,playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,fs:0,iv_load_policy:3,modestbranding:1,origin:location.origin},
@@ -282,16 +301,19 @@ function setVol(v){v=Math.max(0,Math.min(1,v));const it=cur();if(isYT(it)){try{y
 
 function load(play){
   const it=cur();if(!it)return;
+  const seq=++loadSeq;
   hideHint();
   if(isYT(it)){
     audio.pause();
     whenYT(()=>{
+      if(seq!==loadSeq||cur()!==it)return; // superseded before the player was ready
       if(it.kind==='ytlist')yt.loadPlaylist({list:it.list,listType:'playlist',index:it.index||0});
       else if(play)yt.loadVideoById(it.id);else yt.cueVideoById(it.id);
       clearTimeout(hintTimer);hintTimer=setTimeout(()=>{try{const s=yt.getPlayerState();if(s!==1&&s!==3&&s!==2&&top().type==='video')showHint()}catch(e){}},2200);
     });
     addHistory(it);
   }else{
+    ytAutoPaused=false;
     if(ytReady)try{yt.stopVideo()}catch(e){}
     audio.src=it.url;if(play)audio.play().catch(()=>{});
   }
@@ -407,7 +429,7 @@ function list(title,items,extra={}){return {type:'list',title,items,sel:0,scroll
 const go=v=>()=>push(typeof v==='function'?v():v);
 function mainMenu(){
   return list('iPod',()=>[
-    {label:'Music',action:go(musicMenu),chev:1},
+    {label:'Ad-Free Local Music',action:go(musicMenu),chev:1},
     {label:'YouTube',action:go(youtubeMenu),chev:1},
     {label:'Shuffle Songs',action:()=>shuffleAll()},
     ...(qi>=0?[{label:'Now Playing',action:()=>push(nowView()),chev:1}]:[]),
@@ -429,11 +451,12 @@ function youtubeMenu(){return list('YouTube',()=>[
   {label:'YouTube Key',val:settings.ytKey?'Set':'None',chev:0,action:go(keyView)},
 ])}
 function keyView(){return inputView('YouTube Key','Paste API key',k=>{settings.ytKey=k.trim();saveSettings();replaceTop(msgView('Key Saved',settings.ytKey?'Search is ready.':'Key cleared.'))},settings.ytKey)}
-function musicMenu(){return list('Music',[
+function musicMenu(){return list('Local Music',[
   {label:'Artists',action:go(artistsMenu),chev:1},
   {label:'Albums',action:go(()=>albumsMenu(songs,'Albums')),chev:1},
   {label:'Songs',action:go(()=>songsMenu(songs,'Songs')),chev:1},
-  {label:'Shuffle Songs',action:()=>shuffleAll()}])}
+  {label:'Shuffle Songs',action:()=>shuffleAll()},
+  {label:'Add Music',action:()=>$('#file').click(),chev:1}])}
 function artistsMenu(){
   const as=[...new Set(songs.map(s=>s.artist))].sort((a,b)=>a.localeCompare(b));
   return list('Artists',as.map(a=>({label:a,chev:1,action:go(()=>{
@@ -459,7 +482,7 @@ function settingsMenu(){
     {label:'Repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
     {label:'Clicker',val:settings.clicker?'On':'Off',action:tog('clicker',[true,false])},
     {label:'Haptics',val:settings.haptics?'On':'Off',action:tog('haptics',[true,false])},
-    {label:'Test Haptic',action:()=>{for(let k=0;k<3;k++)setTimeout(iosTap,k*120);try{navigator.vibrate&&navigator.vibrate([20,80,20,80,20])}catch(e){}}},
+    {label:'Test Haptic',action:()=>triggerHaptic('success')},
     {label:'Color',val:settings.theme,action:tog('theme',['Silver','Black'])},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
     {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
@@ -472,7 +495,8 @@ function aboutView(){return list('About',[
   {label:'Songs',val:String(songs.length)},
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Saved (YouTube)',val:String(saved.length)},
-  {label:'Version',val:'2.0'}])}
+  {label:'Haptics',val:hapticSupport()},
+  {label:'Version',val:'2.1'}])}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -558,7 +582,9 @@ function tick(){
 }
 setInterval(()=>{tick();if(isYT(cur())){renderHdr();
   if(top().type!=='video'&&ytReady&&isPlaying()){try{yt.pauseVideo();ytAutoPaused=true}catch(e){}}}},300);
-audio.addEventListener('timeupdate',tick);
+audio.addEventListener('timeupdate',()=>{tick();
+  if('mediaSession' in navigator&&navigator.mediaSession.setPositionState&&!isYT(cur())&&isFinite(audio.duration)&&audio.duration>0)
+    try{navigator.mediaSession.setPositionState({duration:audio.duration,position:Math.min(audio.currentTime,audio.duration),playbackRate:audio.playbackRate||1})}catch(e){}});
 function showVol(){
   const v=top(),host=v.type==='video'?$('#vo'):$('#np');if(!host)return;
   if(v.type==='video')flashVo();
@@ -580,6 +606,7 @@ function scroll(dir){
 }
 function press(btn){
   click();
+  if(btn==='select')triggerHaptic('confirm');
   const v=top();
   if(btn==='menu'){if(v.type==='input')try{$('#inpt').blur()}catch(e){}if(scrub){scrub=false;render()}else pop()}
   else if(btn==='next')next(true);
