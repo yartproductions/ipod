@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 import hmac
+import logging
 from pathlib import Path
 from flask import Flask, jsonify, request, send_file
 import yt_dlp
@@ -34,8 +35,8 @@ def convert():
             "format": "bestaudio/best",
             "outtmpl": str(Path(directory.name) / "%(id)s.%(ext)s"),
             "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
+            "quiet": False,
+            "no_warnings": False,
             "socket_timeout": 20,
             "retries": 1,
             "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
@@ -57,5 +58,16 @@ def convert():
         return Response(stream_with_context(chunks()), mimetype="audio/mpeg", headers={"Cache-Control":"no-store"})
     except Exception as exc:
         directory.cleanup()
-        app.logger.warning("Audio conversion failed: %s", type(exc).__name__)
-        return jsonify(error="Audio conversion failed; provider may restrict automated access",type=type(exc).__name__), 502
+        app.logger.exception("Audio conversion failed")
+        message = str(exc).lower()
+        if "sign in" in message or "bot" in message or "captcha" in message:
+            reason = "YouTube requires verification for this server"
+        elif "403" in message or "forbidden" in message:
+            reason = "Upstream audio request was denied (HTTP 403)"
+        elif "ffmpeg" in message:
+            reason = "FFmpeg audio processing failed"
+        elif "requested format" in message:
+            reason = "No compatible audio format available"
+        else:
+            reason = "Conversion failed; inspect Render logs for details"
+        return jsonify(error=reason, type=type(exc).__name__), 502
