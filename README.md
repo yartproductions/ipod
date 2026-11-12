@@ -6,7 +6,7 @@ An iPod Classic–style music player: click wheel, clicker, haptics, menus. Ther
 |---|---|---|
 | Ad-free local music | ✅ | ✅ |
 | Offline library (airplane mode), backup / restore | ✅ | partial (see Offline library) |
-| Ad-free streaming (Audius) — the default | ✅ | ✅ |
+| Authorized YTMP3 download handoff | ✅ | ✅ |
 | YouTube (official embed, **has ads**, off by default) | opt-in | opt-in |
 | Click-wheel haptics on iPhone | ❌ not supported by Safari | ✅ via Taptic Engine (needs a physical iPhone to confirm) |
 | Local music with the screen locked | Not guaranteed on iOS | Intended (`UIBackgroundModes: audio`); confirm on a device |
@@ -28,28 +28,27 @@ Your songs are stored on the device as the actual audio files, so the iPod works
 
 - **Where songs come from:**
   - **Add Music:** import your own files.
-  - **Audius → Save Now Playing Offline:** saves the song you're playing, if its artist allows downloads.
+  - **YTMP3 Download:** opens the provider only after you confirm that you own or have permission to save the video; import the finished MP3 with **Add Music**.
   - **Restore Backup:** brings back a library you backed up.
 - **Storage:** IndexedDB database `ipod`, version 2. Each record holds the complete audio file plus artwork and details: title, artist, album, track, length, file type, size, a SHA-256 fingerprint, where it came from, and the date added. Upgrading from version 1 only adds lookup indexes; existing songs are kept and get their fingerprint filled in quietly in the background.
-- **Duplicates:** importing, downloading or restoring the same audio twice is skipped, matched by fingerprint or Audius track ID.
+- **Duplicates:** importing or restoring the same audio twice is skipped by its SHA-256 fingerprint.
 - **Settings → Library & Storage:**
   - songs saved, storage used and space available
   - **Keep Storage**, which asks the browser not to delete your data
   - **Back Up Library** and **Restore Backup**
   - **Delete Songs** (one at a time) and **Clear Library**
-- **Offline launch:** a service worker (`sw.js`) caches the app's own files so it opens with no network. Online, it always fetches the latest version. It never touches Audius or YouTube requests.
-- **Offline behavior:** saved songs play normally. Streaming an Audius song you haven't saved shows **Unavailable Offline**, and browsing Audius explains that you're offline.
+- **Offline launch:** a service worker (`sw.js`) caches the app's own files so it opens with no network. Online, it always fetches the latest version. It never touches YTMP3 or YouTube requests.
+- **Offline behavior:** imported songs play normally with no network.
 
-### Save Offline (Audius)
-- **Who allows it:** only tracks whose artists have **enabled downloads** on Audius. Find them with **Audius → Downloadable Songs**, which uses Audius's `only_downloadable` search.
-- **How:** the file comes from Audius's official `/v1/tracks/{id}/download` endpoint.
-- **Screens:** Preparing audio → Downloading (with a real percentage when the size is known, otherwise MB received) → Saving to library → Download Complete. If something goes wrong you'll see **Download Failed**, **Insufficient Storage** or **Not Downloadable**. Press MENU while it's downloading to cancel.
-- **Safety:** a song is added only after the whole file has downloaded, been checked and been saved. A failed or cancelled download leaves nothing behind. Temporary download links are never stored.
-- **Already saved:** saved tracks show a **✓** in Audius lists, and playing them uses the saved copy.
+### Authorized YTMP3 downloads
+- Paste a single YouTube video link under **YTMP3 Download**. Playlists are rejected.
+- The converter opens only after **I Have Permission** is selected. Use it only for content you own, public-domain or suitably licensed content, or content you have explicit permission to download.
+- The provider's supported browser interface opens in a separate tab. Its JSON conversion endpoint does not grant cross-origin browser access, so this static app does not claim it can fetch files directly.
+- After the MP3 finishes, return to the iPod and choose **Import Download** or **Add Music**. The existing IndexedDB pipeline fingerprints and stores the complete Blob for offline playback.
 
 ### Backup and restore
 - **Format:** **Back Up Library** writes `iPod-Library-YYYY-MM-DD.zip`. It's a plain, uncompressed ZIP containing:
-  - `manifest.json` (format `ipod-library-backup`, version 1): every song's details, your Audius saved songs, playlists and history, and your YouTube saved items
+  - `manifest.json` (format `ipod-library-backup`, version 1): every song's details and your YouTube saved items
   - `audio/<id>.<ext>`: the **original audio bytes**
   - `art/<id>.<ext>`: artwork
 - **Memory:** the audio isn't copied in memory to build the ZIP, and fingerprints are computed in 4 MB chunks.
@@ -62,31 +61,6 @@ Your songs are stored on the device as the actual audio files, so the iPod works
 - **Each app has its own library.** Safari, the Home Screen web app and the native iOS wrapper store data separately.
 - **The native iOS wrapper** (`ios/`) doesn't yet support the service worker (that needs app-bound domains), so it can't open with no network. Backup downloads there also aren't wired up. Use Safari or the Home Screen app for offline listening and backups.
 - **Downloads don't continue in the background.** Keep the iPod open while saving songs; iOS may suspend the page otherwise.
-
-## Audius (Ad-Free) — default streaming source
-Main menu → **Audius (Ad-Free)**:
-- **Trending**: this week's top tracks.
-- **Genres**: trending by genre.
-- **Top Playlists**.
-- **Search Songs** and **Search Playlists**.
-- **Saved**: songs and playlists you save.
-- **Recently Played**.
-- **Save Now Playing** appears while an Audius track is playing.
-
-How it works:
-- [Audius](https://audius.co) is a free streaming service where artists upload their own music and choose to make it streamable.
-- The app uses Audius's public read-only REST API (`https://api.audius.co/v1`), which needs no key, and identifies itself with `app_name=iPodClassicWeb`.
-- Tracks stream as plain audio through the same `<audio>` player as local files. There are **no ads to block**: Audius doesn't insert ads into API streams.
-- The wheel, Now Playing, scrubbing, volume, shuffle, repeat and lock-screen controls work exactly as they do for local music.
-- Artist names stay on screen, and Now Playing credits Audius, as Audius's API guidelines ask.
-
-**Catalog limitations:**
-- **Mostly independent and emerging artists.** Electronic, hip-hop, lo-fi and similar genres are strong. Most major-label releases and mainstream hits are **not** on Audius, so many popular songs won't be found.
-- **Free-to-stream tracks only.** Tracks that need a purchase, a follow or a tip (gated), or that are unlisted or deleted, are hidden. A playlist may show fewer songs than it has on audius.co.
-- **The catalog changes constantly.** Artists can remove or gate tracks at any time. If a track fails to stream, the player shows "Unavailable — skipping…" and moves on.
-- **Rate limits.** Unauthenticated requests share Audius's public limits. A free Audius API key raises them (not wired in yet).
-- **No personal account.** Saved and Recently Played live in this browser only. There's no Audius login, so your audius.co favorites and playlists aren't synced.
-- **Needs a connection.** Streams don't download for offline play. Use Ad-Free Local Music for offline listening.
 
 ## Haptics
 `click()` and `press()` call `triggerHaptic(kind)`, where `kind` is `selection`, `confirm` or `success`:
@@ -140,9 +114,9 @@ These are headless Chrome tests, using generated tagged MP3s in `tests/fixtures/
 - Media Session metadata
 - Paste Link, and pausing the video when hidden
 - the race where a queued YouTube load must not autoplay after local music starts
-- Audius, against a local stand-in for its API (same JSON shape, real MP3 streams): trending with paging, gated tracks hidden, playback with artwork and lock-screen info, auto-advance, next and previous, broken streams skipped, song and playlist search, saving, Recently Played, genres, and YouTube staying hidden by default
+- YTMP3 link validation, authorization gating, and local import persistence
 
-They don't call the live Audius service (this test environment can't reach it), so check the live catalog on a device. They also can't verify real Taptic output, iOS background audio, the lock screen, or anything in the Swift code. Those need a physical iPhone; see the checklist in the pull request.
+Tests do not convert or download third-party media. Real haptics, iOS background audio, and lock-screen behavior require a physical iPhone.
 
 ## Maintenance
 `apply_patch.py` applies the haptic bridge change to an older `index.html`. It's idempotent, and safe to rerun on the current file.
