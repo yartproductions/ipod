@@ -56,6 +56,8 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .sb i{position:absolute;left:0;right:0;background:linear-gradient(90deg,#8bb7e8,#4f8fd8);border-radius:2px}
 .empty{padding:34px 16px;text-align:center;color:#555;font-size:13px;line-height:1.5}
 .empty b{display:block;font-size:15px;color:#222;margin-bottom:4px}
+.dlbar{position:relative;height:9px;margin:12px 8px 0;border:1px solid #6c737c;background:linear-gradient(#fff,#dcdfe3);overflow:hidden}
+.dlbar i{display:block;height:100%;background:linear-gradient(#8ec6ff,#2f7ed8 60%,#2766b8)}
 .spin{width:22px;height:22px;margin:0 auto 10px;border:3px solid #cfd3d8;border-top-color:#2b7fde;border-radius:50%;animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 
@@ -147,6 +149,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
   </div>
 </div></div>
 <input type="file" id="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg" multiple style="display:none">
+<input type="file" id="restore" accept=".zip,application/zip" style="display:none">
 
 <script>
 (()=>{
@@ -209,13 +212,34 @@ function click(){
   if(settings.haptics)triggerHaptic('selection')
 }
 
-/* ---------- local library (IndexedDB) ---------- */
+/* ---------- local library (IndexedDB) ----------
+   Database "ipod", store "songs", one record per song holding the complete audio file:
+   { id, blob (audio), art (image Blob|null), title, artist, album, track, mimeType, fileSize, duration,
+     hash (SHA-256 of the audio), source ('local-import'|'audius-download'|'backup-restore'), sourceId,
+     dateAdded, downloadStatus:'complete' }
+   v1 → v2 only ADDS indexes (sourceId, hash); existing records are kept and back-filled lazily. */
+const DB_VERSION=2;
 let dbp=null;
-function db(){if(dbp)return dbp;dbp=new Promise((res,rej)=>{try{const r=indexedDB.open('ipod',1);
-  r.onupgradeneeded=()=>r.result.createObjectStore('songs',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});return dbp}
+function db(){if(dbp)return dbp;dbp=new Promise((res,rej)=>{try{const r=indexedDB.open('ipod',DB_VERSION);
+  r.onupgradeneeded=()=>{const d=r.result;
+    const st=d.objectStoreNames.contains('songs')?r.transaction.objectStore('songs'):d.createObjectStore('songs',{keyPath:'id'});
+    if(!st.indexNames.contains('sourceId'))st.createIndex('sourceId','sourceId',{unique:false});
+    if(!st.indexNames.contains('hash'))st.createIndex('hash','hash',{unique:false});};
+  r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);r.onblocked=()=>rej(new Error('Close other iPod tabs and reload.'))}catch(e){rej(e)}});return dbp}
 async function dbAll(){try{const d=await db();return await new Promise(r=>{const q=d.transaction('songs').objectStore('songs').getAll();q.onsuccess=()=>r(q.result||[]);q.onerror=()=>r([])})}catch(e){return[]}}
-async function dbPut(o){try{const d=await db();d.transaction('songs','readwrite').objectStore('songs').put(o)}catch(e){}}
-async function dbClear(){try{const d=await db();d.transaction('songs','readwrite').objectStore('songs').clear()}catch(e){}}
+// Resolves only once the write is committed, so nothing shows as saved before its audio is really stored.
+function dbTx(fn){return db().then(d=>new Promise((res,rej)=>{const tx=d.transaction('songs','readwrite');fn(tx.objectStore('songs'));
+  tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Write aborted'))}))}
+const dbPut=o=>dbTx(st=>st.put(o));
+const dbDelete=id=>dbTx(st=>st.delete(id));
+const dbClear=()=>dbTx(st=>st.clear());
+const isQuotaError=e=>e&&(e.name==='QuotaExceededError'||/quota/i.test(e.message||''));
+async function sha256(blob){const h=await crypto.subtle.digest('SHA-256',await blob.arrayBuffer());return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join('')}
+const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const songBySource=src=>songs.find(s=>s.sourceId===src);
+const songByHash=h=>h&&songs.find(s=>s.hash===h);
+function normalize(r){return {source:'local-import',sourceId:null,dateAdded:0,duration:0,track:0,art:null,...r,
+  mimeType:r.mimeType||(r.blob&&r.blob.type)||'audio/mpeg',fileSize:r.fileSize||(r.blob&&r.blob.size)||0,downloadStatus:'complete'}}
 
 function decText(b,enc){
   try{let s;if(enc===0)s=new TextDecoder('latin1').decode(b);else if(enc===1){
@@ -254,16 +278,39 @@ async function readTags(file){
   return tags;
 }
 function fromName(n){n=n.replace(/\.[^.]+$/,'').replace(/^\d+[\s.\-_]+/,'');const m=n.split(' - ');return m.length>1?{artist:m[0].trim(),title:m.slice(1).join(' - ').trim()}:{title:n}}
-function hydrate(r){return {...r,kind:'file',url:URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):null}}
+// Audio object URLs are made only for the song being played and revoked on the next track; artwork URLs are small.
+function hydrate(r){r=normalize(r);return {...r,kind:'file',artUrl:r.art?URL.createObjectURL(r.art):null}}
+let liveAudioUrl=null;
+function audioSrcFor(it){
+  if(liveAudioUrl){URL.revokeObjectURL(liveAudioUrl);liveAudioUrl=null}
+  if(it.blob){liveAudioUrl=URL.createObjectURL(it.blob);return liveAudioUrl}
+  return it.url;
+}
 async function addFiles(files){
-  let n=0;
+  let n=0,dupes=0,full=false;
   for(const f of files){
+    const hash=await sha256(f).catch(()=>null);
+    if(songByHash(hash)){dupes++;continue}
     const t=await readTags(f),fn=fromName(f.name);
-    const rec={id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),blob:f,
-      title:t.title||fn.title||'Untitled',artist:t.artist||fn.artist||'Unknown Artist',album:t.album||'Unknown Album',track:parseInt(t.track)||0,art:t.art||null};
-    await dbPut(rec);songs.push(hydrate(rec));n++;
+    const rec=normalize({id:newId(),blob:f,hash,source:'local-import',dateAdded:Date.now(),
+      title:t.title||fn.title||'Untitled',artist:t.artist||fn.artist||'Unknown Artist',album:t.album||'Unknown Album',track:parseInt(t.track)||0,art:t.art||null});
+    try{await dbPut(rec)}catch(e){if(isQuotaError(e)){full=true;break}continue}
+    songs.push(hydrate(rec));n++;
   }
-  sortSongs();stack=[mainMenu()];push(msgView('Music Added',`${n} song${n===1?'':'s'} added to your iPod.`));
+  sortSongs();stack=[mainMenu()];
+  push(msgView(full?'Storage Full':'Music Added',`${n} song${n===1?'':'s'} added to your iPod.`+(dupes?` ${dupes} already in your library.`:'')+(full?' Not enough storage for the rest.':'')));
+}
+// Back-fill hashes for songs saved before v2 so duplicate checks cover the whole library (one at a time, in the background).
+async function backfillHashes(){for(const s of songs){if(s.hash)continue;try{s.hash=await sha256(s.blob);
+  const {kind,artUrl,...rec}=s;await dbPut(rec)}catch(e){}}}
+async function deleteSong(s){
+  await dbDelete(s.id);
+  songs=songs.filter(x=>x.id!==s.id);
+  if(s.artUrl)URL.revokeObjectURL(s.artUrl);
+  const wasCur=cur()&&cur().id===s.id&&cur().kind==='file';
+  queue=queue.filter(x=>!(x.kind==='file'&&x.id===s.id));
+  if(wasCur){audio.pause();audio.removeAttribute('src');qi=queue.length?Math.min(qi,queue.length-1):-1}
+  else if(qi>=queue.length)qi=queue.length-1;
 }
 function sortSongs(){songs.sort((a,b)=>a.title.localeCompare(b.title))}
 $('#file').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';if(f.length){push(loadingView('Syncing…'));addFiles(f)}});
@@ -309,6 +356,7 @@ function seekTo(t){const it=cur();if(isYT(it)){try{yt.seekTo(t,true)}catch(e){}}
 function getVol(){const it=cur();if(isYT(it)){try{return yt.getVolume()/100}catch(e){return 1}}return audio.volume}
 function setVol(v){v=Math.max(0,Math.min(1,v));const it=cur();if(isYT(it)){try{yt.setVolume(Math.round(v*100));if(v>0)yt.unMute()}catch(e){}}else audio.volume=v;return v}
 
+let playingItem=null;
 function load(play){
   const it=cur();if(!it)return;
   const seq=++loadSeq;
@@ -325,7 +373,8 @@ function load(play){
   }else{
     ytAutoPaused=false;
     if(ytReady)try{yt.stopVideo()}catch(e){}
-    audio.src=it.url;if(play)audio.play().catch(()=>{});
+    const local=it.kind==='au'?songBySource('audius:'+it.id):null;   // offline-first: play the saved copy if there is one
+    audio.src=audioSrcFor(local||it);playingItem=it;if(play)audio.play().catch(()=>{});
   }
   setSession();render();
 }
@@ -351,10 +400,11 @@ function playPause(){
 }
 audio.addEventListener('ended',()=>next(false));
 // Only tracks that actually start playing go into Audius → Recently Played.
-audio.addEventListener('playing',()=>{const it=cur();if(it&&it.kind==='au'&&it.url===audio.getAttribute('src'))auAddHistory(it)});
+audio.addEventListener('playing',()=>{const it=cur();if(it&&it.kind==='au'&&it===playingItem)auAddHistory(it)});
 let auErrTimer=null;
 audio.addEventListener('error',()=>{
   const it=cur();if(!it||it.kind!=='au'||!audio.getAttribute('src'))return;
+  if(!navigator.onLine){const v=top();if(v.type==='now')replaceTop(msgView('Unavailable Offline','This song isn’t saved on your iPod. Save Offline songs whose artists allow downloads.'));return}
   const v=top();if(v.type==='now'){const t=$('.np .al');if(t)t.textContent='Unavailable — skipping…'}
   clearTimeout(auErrTimer);
   if(qi<queue.length-1)auErrTimer=setTimeout(()=>{if(cur()===it)next(true)},1500);
@@ -452,6 +502,7 @@ let auSaved=ls.get('ipod.au.saved',[]), auHistory=ls.get('ipod.au.history',[]);
 const AU_GENRES=['Electronic','Hip-Hop/Rap','Pop','R&B/Soul','Alternative','Rock','Lo-Fi','Ambient','House','Techno',
   'Dubstep','Drum & Bass','Trap','Jazz','Acoustic','Folk','Country','Latin','Reggae','Funk','Classical','Soundtrack'];
 async function auGet(path,params={}){
+  if(!navigator.onLine)throw new Error('You’re offline. Songs you saved are in Ad-Free Local Music.');
   const u=new URL(AU_API+path);
   Object.entries({...params,app_name:AU_APP}).forEach(([k,v])=>v!=null&&v!==''&&u.searchParams.set(k,v));
   const r=await fetch(u,{headers:{Accept:'application/json'}});
@@ -461,25 +512,28 @@ async function auGet(path,params={}){
 const auArt=a=>a&&(a['480x480']||a['1000x1000']||a['150x150'])||null;
 // Only tracks anyone can stream for free: skip purchase-, follow- or tip-gated and unavailable tracks.
 const auPlayable=t=>t&&t.id&&t.is_streamable!==false&&!t.is_stream_gated&&!t.is_delete&&!t.is_unlisted;
-function auTrack(t){return {kind:'au',id:String(t.id),title:t.title||'Untitled',artist:(t.user&&t.user.name)||'Unknown Artist',
+// Artist-permitted downloads only: the track must be marked downloadable with no purchase/follow gate on the download.
+const auDownloadable=t=>!!(t.is_downloadable||t.downloadable===true||(t.download&&t.download.is_downloadable))&&!t.download_conditions&&!t.is_download_gated;
+function auTrack(t){return {kind:'au',id:String(t.id),downloadable:auDownloadable(t),title:t.title||'Untitled',artist:(t.user&&t.user.name)||'Unknown Artist',
   album:t.genre?`${t.genre} · Audius`:'Audius',artUrl:auArt(t.artwork),duration:t.duration||0,
   url:`${AU_API}/tracks/${encodeURIComponent(t.id)}/stream?app_name=${AU_APP}`}}
 const auTracks=arr=>arr.filter(auPlayable).map(auTrack);
 function auPlay(items,i){
   if(!items.length)return;
+  if(!navigator.onLine&&!songBySource('audius:'+items[i].id))return push(msgView('Unavailable Offline','This song isn’t saved on your iPod. Connect to the internet to stream it.'));
   if(settings.shuffle){const f=items[i];queue=[f,...shuffled(items.filter((_,k)=>k!==i))];qi=0}else{queue=items.slice();qi=i}
   load(true);push(nowView());
 }
 function auRemember(arr,key,e,max){const k=e.type+':'+e.id;arr=[e,...arr.filter(x=>x.type+':'+x.id!==k)].slice(0,max);ls.set(key,arr);return arr}
-function auAddHistory(it){auHistory=auRemember(auHistory,'ipod.au.history',{type:'track',id:it.id,title:it.title,artist:it.artist,album:it.album,artUrl:it.artUrl,url:it.url},50)}
-const auFromSaved=e=>({kind:'au',id:e.id,title:e.title,artist:e.artist,album:e.album||'Audius',artUrl:e.artUrl,url:e.url||`${AU_API}/tracks/${encodeURIComponent(e.id)}/stream?app_name=${AU_APP}`});
+function auAddHistory(it){auHistory=auRemember(auHistory,'ipod.au.history',{type:'track',id:it.id,title:it.title,artist:it.artist,album:it.album,artUrl:it.artUrl,url:it.url,downloadable:!!it.downloadable},50)}
+const auFromSaved=e=>({kind:'au',id:e.id,downloadable:!!e.downloadable,title:e.title,artist:e.artist,album:e.album||'Audius',artUrl:e.artUrl,url:e.url||`${AU_API}/tracks/${encodeURIComponent(e.id)}/stream?app_name=${AU_APP}`});
 
 // A list of tracks with Play All / Shuffle / optional Save and paging.
 function auTracksView(title,items,opts={}){
   return list(title,()=>[
     ...(items.length>1?[{label:'Play All',action:()=>auPlay(items,0)},{label:'Shuffle',action:()=>{queue=shuffled(items);qi=0;load(true);push(nowView())}}]:[]),
     ...(opts.playlist?[{label:'Save Playlist',action:go(()=>{auSaved=auRemember(auSaved,'ipod.au.saved',{type:'playlist',id:opts.playlist.id,title:opts.playlist.title,artist:opts.playlist.artist},200);return msgView('Saved',`${opts.playlist.title} was added to Saved.`)})}]:[]),
-    ...items.map((it,i)=>({label:it.title,auid:it.id,action:()=>auPlay(items,i)})),
+    ...items.map((it,i)=>({label:it.title,auid:it.id,val:songBySource('audius:'+it.id)?'✓':undefined,action:()=>auPlay(items,i)})),
     ...(opts.more?[{label:'More…',action:opts.more}]:[])],{emptyText:opts.empty||'No free-to-stream tracks here.'});
 }
 // Load a paged track source into the current (loading) view.
@@ -517,10 +571,14 @@ function audiusMenu(){return list('Audius',()=>[
     auLoadTracks(`“${q}”`,off=>auGet('/tracks/search',{query:q,limit:AU_PAGE,offset:off}),{empty:'No free-to-stream matches.'})}))},
   {label:'Search Playlists',chev:1,action:go(()=>inputView('Search Playlists','Mood, genre, name…',q=>{replaceTop(loadingView('Searching…'));
     auLoadPlaylists(`“${q}”`,()=>auGet('/playlists/search',{query:q,limit:AU_PAGE}))}))},
+  {label:'Downloadable Songs',chev:1,action:go(()=>inputView('Downloadable Songs','Song or artist',q=>{replaceTop(loadingView('Searching…'));
+    auLoadTracks(`⤓ “${q}”`,off=>auGet('/tracks/search',{query:q,only_downloadable:'true',limit:AU_PAGE,offset:off}).then(a=>a.filter(auDownloadable)),
+      {empty:'No matching songs whose artists allow downloads.'})}))},
   {label:'Saved',chev:1,action:go(auSavedView)},
   {label:'Recently Played',chev:1,action:go(()=>{const items=auHistory.map(auFromSaved);return auTracksView('Recently Played',items,{empty:'Nothing played yet.'})})},
+  ...(cur()&&cur().kind==='au'?[{label:'Save Now Playing Offline',val:songBySource('audius:'+cur().id)?'✓':undefined,action:()=>auDownload(cur())}]:[]),
   ...(cur()&&cur().kind==='au'?[{label:'Save Now Playing',action:go(()=>{const it=cur();
-    auSaved=auRemember(auSaved,'ipod.au.saved',{type:'track',id:it.id,title:it.title,artist:it.artist,album:it.album,artUrl:it.artUrl,url:it.url},200);
+    auSaved=auRemember(auSaved,'ipod.au.saved',{type:'track',id:it.id,title:it.title,artist:it.artist,album:it.album,artUrl:it.artUrl,url:it.url,downloadable:!!it.downloadable},200);
     return msgView('Saved',`${it.title} was added to Saved.`)})}]:[]),
 ])}
 function auSavedView(){return list('Saved',()=>{
@@ -528,6 +586,189 @@ function auSavedView(){return list('Saved',()=>{
   return [...auSaved.filter(e=>e.type==='playlist').map(e=>({label:'▤ '+e.title,chev:1,action:()=>auOpenPlaylist(e)})),
     ...(tracks.length>1?[{label:'Play All Saved Songs',action:()=>auPlay(tracks,0)}]:[]),
     ...tracks.map((t,i)=>({label:t.title,auid:t.id,action:()=>auPlay(tracks,i)}))]},{emptyText:'Use Audius → Save Now Playing, or Save Playlist.'})}
+
+/* ---------- Download manager: save artist-permitted Audius downloads into the offline library ---------- */
+const fmtMB=b=>b>=1073741824?(b/1073741824).toFixed(1)+' GB':(b/1048576).toFixed(b<10485760?1:0)+' MB';
+// A progress screen: {type:'dl', title, state, pct (0–1 or null when unknown), active, ctrl}
+function progressView(title,state){return {type:'dl',title,state,pct:null,active:false}}
+async function auDownload(it){
+  const src='audius:'+it.id;
+  if(songBySource(src))return push(msgView('Available Offline',`${it.title} is already saved on your iPod.`));
+  if(!it.downloadable)return push(msgView('Not Downloadable','The artist hasn’t allowed downloads of this track. You can still stream it while online.'));
+  if(!navigator.onLine)return push(msgView('You’re Offline','Connect to the internet to save songs.'));
+  const v={...progressView('Save Offline','Preparing audio…'),active:true,ctrl:new AbortController()};push(v);
+  const upd=(state,pct=null)=>{v.state=state;v.pct=pct;if(top()===v)render()};
+  const finish=(title,msg)=>{v.active=false;v.title=title;v.state=msg;v.pct=null;if(top()===v)render()};
+  let timedOut=false;const timer=setTimeout(()=>{timedOut=true;v.ctrl.abort()},60000);   // no response within 60 s
+  try{
+    const res=await fetch(`${AU_API}/tracks/${encodeURIComponent(it.id)}/download?app_name=${AU_APP}`,{signal:v.ctrl.signal});
+    clearTimeout(timer);
+    if(!res.ok)throw new Error(res.status===401||res.status===403?'The artist hasn’t allowed downloads of this track.':`Audius couldn’t provide the file (${res.status}).`);
+    const total=+res.headers.get('content-length')||0;
+    const est=navigator.storage&&navigator.storage.estimate?await navigator.storage.estimate().catch(()=>null):null;
+    if(total&&est&&est.quota&&est.quota-est.usage<total*1.1)return finish('Insufficient Storage',`This song needs ${fmtMB(total)} and there isn’t enough space.`);
+    const type=(res.headers.get('content-type')||'').split(';')[0].trim();
+    if(type&&!/^audio\/|octet-stream/.test(type))throw new Error('Audius didn’t return an audio file.');
+    const reader=res.body.getReader(),chunks=[];let got=0;
+    for(;;){const {done,value}=await reader.read();if(done)break;chunks.push(value);got+=value.length;
+      upd(total?`Downloading… ${Math.floor(got/total*100)}%`:`Downloading… ${fmtMB(got)}`,total?got/total:null)}
+    if(got<2048||(total&&got!==total))throw new Error('The download was incomplete. Nothing was saved.');
+    const blob=new Blob(chunks,{type:type.startsWith('audio/')?type:'audio/mpeg'});
+    upd('Saving to library…');
+    const hash=await sha256(blob);
+    if(songByHash(hash))return finish('Available Offline',`${it.title} is already in your library.`);
+    let art=null;try{if(it.artUrl){const a=await fetch(it.artUrl);if(a.ok)art=await a.blob()}}catch(e){}
+    const rec=normalize({id:newId(),blob,art,hash,title:it.title,artist:it.artist,album:'Audius',source:'audius-download',sourceId:src,
+      duration:it.duration||0,mimeType:blob.type,fileSize:blob.size,dateAdded:Date.now()});
+    await dbPut(rec);                       // only now does the song exist in the library
+    songs.push(hydrate(rec));sortSongs();
+    finish('Download Complete',`${it.title} is available offline in Ad-Free Local Music.`);
+  }catch(e){
+    clearTimeout(timer);
+    if(v.ctrl.signal.aborted&&!timedOut)return finish('Download Cancelled','Nothing was saved.');
+    if(isQuotaError(e))return finish('Insufficient Storage','There isn’t enough space on this device to save this song.');
+    finish('Download Failed',timedOut?'Audius took too long to respond.':e instanceof TypeError?'Couldn’t reach the download. Check your connection.':(e&&e.message)||'Something went wrong.');
+  }
+}
+
+/* ---------- Backup / restore: a plain (stored, uncompressed) ZIP with a versioned manifest ---------- */
+const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+async function blobCrc(b){let c=0xFFFFFFFF;for(let o=0;o<b.size;o+=4194304){const u=new Uint8Array(await b.slice(o,o+4194304).arrayBuffer());
+  for(let i=0;i<u.length;i++)c=CRC_T[(c^u[i])&255]^(c>>>8)}return (c^0xFFFFFFFF)>>>0}
+const MIME_EXT={'audio/mpeg':'mp3','audio/mp3':'mp3','audio/mp4':'m4a','audio/x-m4a':'m4a','audio/aac':'aac','audio/wav':'wav','audio/x-wav':'wav','audio/flac':'flac','audio/ogg':'ogg','image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'};
+const EXT_MIME=Object.fromEntries(Object.entries(MIME_EXT).reverse().map(([m,e])=>[e,m]));
+const extFor=t=>MIME_EXT[t]||'bin', mimeFor=n=>EXT_MIME[(n.split('.').pop()||'').toLowerCase()]||'';
+async function buildBackup(onProgress){
+  const files=[],meta=[];
+  for(const s of songs){
+    const a=`audio/${s.id}.${extFor(s.mimeType)}`,ar=s.art?`art/${s.id}.${extFor(s.art.type)}`:null;
+    files.push({name:a,blob:s.blob});if(ar)files.push({name:ar,blob:s.art});
+    meta.push({id:s.id,title:s.title,artist:s.artist,album:s.album,track:s.track,duration:s.duration,mimeType:s.mimeType,fileSize:s.blob.size,
+      hash:s.hash||null,source:s.source,sourceId:s.sourceId,dateAdded:s.dateAdded,audio:a,art:ar});
+  }
+  const manifest={format:'ipod-library-backup',version:1,created:new Date().toISOString(),songs:meta,
+    audius:{saved:auSaved,history:auHistory},youtube:{saved,history}};
+  files.unshift({name:'manifest.json',blob:new Blob([JSON.stringify(manifest)],{type:'application/json'})});
+  // Audio Blobs are referenced, not copied: the ZIP Blob is assembled lazily by the browser.
+  const enc=new TextEncoder(),parts=[],central=[];let off=0;
+  for(let i=0;i<files.length;i++){
+    const f=files[i],nm=enc.encode(f.name),size=f.blob.size;onProgress&&onProgress(i,files.length);
+    if(off+30+nm.length+size>0xFFFFFFFE||files.length>65535)throw new Error('The library is over 4 GB. Delete some songs or back up on a computer.');
+    const crc=await blobCrc(f.blob);
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true);lh.setUint16(4,20,true);lh.setUint16(6,0x0800,true);lh.setUint16(12,0x21,true);
+    lh.setUint32(14,crc,true);lh.setUint32(18,size,true);lh.setUint32(22,size,true);lh.setUint16(26,nm.length,true);
+    parts.push(lh.buffer,nm,f.blob);
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true);ch.setUint16(4,20,true);ch.setUint16(6,20,true);ch.setUint16(8,0x0800,true);ch.setUint16(14,0x21,true);
+    ch.setUint32(16,crc,true);ch.setUint32(20,size,true);ch.setUint32(24,size,true);ch.setUint16(28,nm.length,true);ch.setUint32(42,off,true);
+    central.push(ch.buffer,nm);off+=30+nm.length+size;
+  }
+  const cdSize=central.reduce((a,b)=>a+b.byteLength,0),end=new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true);end.setUint16(8,files.length,true);end.setUint16(10,files.length,true);end.setUint32(12,cdSize,true);end.setUint32(16,off,true);
+  return new Blob([...parts,...central,end.buffer],{type:'application/zip'});
+}
+async function backupLibrary(){
+  if(!songs.length)return push(msgView('Nothing to Back Up','Your library is empty.'));
+  const v=progressView('Back Up Library','Preparing…');push(v);
+  const upd=(t,st,pct=null)=>{v.title=t;v.state=st;v.pct=pct;if(top()===v)render()};
+  try{
+    const blob=await buildBackup((i,n)=>upd('Back Up Library',`Packing ${i+1} of ${n}…`,i/n));
+    const name=`iPod-Library-${new Date().toISOString().slice(0,10)}.zip`,file=new File([blob],name,{type:'application/zip'});
+    if(/iPhone|iPad|iPod/.test(navigator.userAgent)&&navigator.canShare&&navigator.canShare({files:[file]})){
+      v.share=file;upd('Backup Ready',`${songs.length} songs · ${fmtMB(blob.size)}. Press the center button, then choose Save to Files.`);
+    }else{
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();
+      setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},60000);
+      upd('Backup Ready',`${name} (${fmtMB(blob.size)}) was downloaded. Keep it somewhere safe.`);
+    }
+  }catch(e){upd('Backup Failed',(e&&e.message)||'Something went wrong.')}
+}
+async function readZip(file){
+  const tailStart=Math.max(0,file.size-65557),tail=new DataView(await file.slice(tailStart).arrayBuffer());
+  let e=-1;for(let i=tail.byteLength-22;i>=0;i--)if(tail.getUint32(i,true)===0x06054b50){e=i;break}
+  if(e<0)throw new Error('That file isn’t a ZIP backup.');
+  const count=tail.getUint16(e+10,true),cdSize=tail.getUint32(e+12,true),cdOff=tail.getUint32(e+16,true);
+  if(cdOff+cdSize>file.size)throw new Error('The backup file is damaged.');
+  const cd=new DataView(await file.slice(cdOff,cdOff+cdSize).arrayBuffer()),dec=new TextDecoder(),entries=new Map();let p=0;
+  for(let k=0;k<count;k++){
+    if(p+46>cd.byteLength||cd.getUint32(p,true)!==0x02014b50)throw new Error('The backup file is damaged.');
+    const method=cd.getUint16(p+10,true),crc=cd.getUint32(p+16,true),csize=cd.getUint32(p+20,true),usize=cd.getUint32(p+24,true),
+      nl=cd.getUint16(p+28,true),xl=cd.getUint16(p+30,true),cl=cd.getUint16(p+32,true),lo=cd.getUint32(p+42,true);
+    entries.set(dec.decode(new Uint8Array(cd.buffer,p+46,nl)),{method,crc,csize,usize,lo});p+=46+nl+xl+cl;
+  }
+  async function blobOf(name){
+    const en=entries.get(name);if(!en)return null;
+    if(en.method!==0||en.csize!==en.usize)throw new Error('This ZIP is compressed. Restore a backup made by the iPod, unchanged.');
+    const lh=new DataView(await file.slice(en.lo,en.lo+30).arrayBuffer());
+    if(lh.byteLength<30||lh.getUint32(0,true)!==0x04034b50)throw new Error('The backup file is damaged.');
+    const start=en.lo+30+lh.getUint16(26,true)+lh.getUint16(28,true);
+    if(start+en.csize>file.size)throw new Error('The backup file is damaged.');
+    return {blob:file.slice(start,start+en.csize),crc:en.crc};
+  }
+  return {entries,blobOf};
+}
+async function restoreBackup(file){
+  const v=progressView('Restore Backup','Checking backup…');push(v);
+  const upd=(t,st,pct=null)=>{v.title=t;v.state=st;v.pct=pct;if(top()===v)render()};
+  let added=0,skipped=0,bad=0;
+  try{
+    const z=await readZip(file),m=await z.blobOf('manifest.json');
+    if(!m)throw new Error('This isn’t an iPod library backup.');
+    let man;try{man=JSON.parse(await m.blob.text())}catch(e){throw new Error('The backup’s manifest is damaged.')}
+    if(man.format!=='ipod-library-backup'||!Array.isArray(man.songs))throw new Error('This isn’t an iPod library backup.');
+    if(!(man.version>=1&&man.version<=1))throw new Error('This backup was made by a different version of the iPod.');
+    for(const s of man.songs)if(!s.audio||!z.entries.has(s.audio))throw new Error(`The backup is missing the audio for “${s.title||s.id}”. Nothing was restored.`);
+    for(let i=0;i<man.songs.length;i++){
+      const s=man.songs[i];upd('Restore Backup',`Restoring ${i+1} of ${man.songs.length}…`,i/man.songs.length);
+      if(s.sourceId&&songBySource(s.sourceId)){skipped++;continue}
+      const a=await z.blobOf(s.audio);
+      if(await blobCrc(a.blob)!==a.crc){bad++;continue}            // never import damaged audio
+      const blob=new Blob([a.blob],{type:s.mimeType||mimeFor(s.audio)||'audio/mpeg'}),hash=await sha256(blob);
+      if(songByHash(hash)){skipped++;continue}
+      let art=null;if(s.art){const ab=await z.blobOf(s.art).catch(()=>null);if(ab)art=new Blob([ab.blob],{type:mimeFor(s.art)||'image/jpeg'})}
+      const rec=normalize({id:songs.some(x=>x.id===s.id)||!s.id?newId():s.id,blob,art,hash,title:s.title||'Untitled',artist:s.artist||'Unknown Artist',
+        album:s.album||'Unknown Album',track:s.track||0,duration:s.duration||0,mimeType:blob.type,fileSize:blob.size,
+        source:s.source||'backup-restore',sourceId:s.sourceId||null,dateAdded:s.dateAdded||Date.now()});
+      try{await dbPut(rec)}catch(e){if(isQuotaError(e))throw new Error(`Storage is full. ${added} songs were restored before space ran out.`);throw e}
+      songs.push(hydrate(rec));added++;
+    }
+    const merge=(arr,inc,key)=>{(inc||[]).forEach(e=>{if(e&&!arr.some(x=>key(x)===key(e)))arr.push(e)});return arr};
+    auSaved=merge(auSaved,man.audius&&man.audius.saved,e=>e.type+':'+e.id);ls.set('ipod.au.saved',auSaved);
+    saved=merge(saved,man.youtube&&man.youtube.saved,e=>e.type+':'+(e.id||e.list));ls.set('ipod.saved',saved);
+    sortSongs();
+    upd('Restore Complete',`${added} song${added===1?'':'s'} restored.`+(skipped?` ${skipped} already in your library.`:'')+(bad?` ${bad} damaged file${bad===1?'':'s'} skipped.`:''));
+  }catch(e){if(added)sortSongs();upd('Restore Failed',(e&&e.message)||'Something went wrong.')}
+}
+$('#restore').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(f)restoreBackup(f)});
+
+/* ---------- Library & Storage ---------- */
+let storageInfo=null;
+async function refreshStorage(){
+  try{const e=await navigator.storage.estimate();storageInfo={usage:e.usage||0,quota:e.quota||0,persisted:navigator.storage.persisted?await navigator.storage.persisted():false}}
+  catch(x){storageInfo={usage:0,quota:0,persisted:false,unknown:true}}
+  if(top()&&top().title==='Library & Storage')render();
+}
+function libraryMenu(){refreshStorage();return list('Library & Storage',()=>[
+  {label:'Songs Saved',val:String(songs.length)},
+  {label:'Storage Used',val:storageInfo?(storageInfo.unknown?'Unknown':fmtMB(storageInfo.usage)):'…'},
+  {label:'Space Available',val:storageInfo&&storageInfo.quota?fmtMB(Math.max(0,storageInfo.quota-storageInfo.usage)):'…'},
+  {label:'Keep Storage',val:storageInfo?(storageInfo.persisted?'On':'Off'):'…',action:async()=>{
+    let ok=false;try{ok=await navigator.storage.persist()}catch(e){}await refreshStorage();
+    push(msgView(ok?'Storage Protected':'Not Granted',ok?'This browser will keep your songs unless you clear website data.':'The browser decided not to protect storage right now. Back up your library to be safe.'))}},
+  {label:'About Storage',chev:1,action:go(()=>msgView('About Storage','Songs are saved inside this browser on this device and survive restarts. iOS or the browser can still delete website data when space is low or the site goes unused, so keep a backup.'))},
+  {label:'Back Up Library',chev:1,action:()=>backupLibrary()},
+  {label:'Restore Backup',chev:1,action:()=>$('#restore').click()},
+  {label:'Delete Songs',chev:1,action:go(deleteSongsView)},
+  {label:'Clear Library',chev:1,action:go(()=>list('Clear Library?',[
+    {label:'Cancel',action:()=>pop()},
+    {label:'Erase All Songs',action:async()=>{audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}
+      songs.forEach(x=>x.artUrl&&URL.revokeObjectURL(x.artUrl));songs=[];await dbClear().catch(()=>{});stack=[mainMenu()];render()}}]))},
+])}
+function deleteSongsView(){return list('Delete Songs',()=>songs.map(s=>({label:s.title,val:s.source==='audius-download'?'⤓':undefined,chev:1,
+  action:go(()=>list('Delete Song?',[{label:'Cancel',action:()=>pop()},
+    {label:`Delete “${s.title}”`,action:async()=>{try{await deleteSong(s)}catch(e){return replaceTop(msgView('Couldn’t Delete',e.message||''))}pop();render()}}]))})),
+  {emptyText:'Your library is empty.'})}
 
 /* ---------- views ---------- */
 function list(title,items,extra={}){return {type:'list',title,items,sel:0,scroll:0,...extra}}
@@ -596,9 +837,7 @@ function settingsMenu(){
     {label:'YouTube (Has Ads)',val:settings.showYouTube?'On':'Off',action:tog('showYouTube',[false,true])},
     ...(settings.showYouTube?[{label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
       {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)}]:[]),
-    {label:'Clear Library',chev:1,action:go(()=>list('Clear Library?',[
-      {label:'Cancel',action:()=>pop()},
-      {label:'Erase All Songs',action:async()=>{audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
+    {label:'Library & Storage',chev:1,action:go(libraryMenu)},
     {label:'Clear YouTube History',action:go(()=>{history=[];ls.set('ipod.history',[]);return msgView('Cleared','Recently Played is empty.')})},
   ])}
 function aboutView(){return list('About',[
@@ -606,7 +845,7 @@ function aboutView(){return list('About',[
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Saved (Audius)',val:String(auSaved.length)},
   {label:'Haptics',val:hapticSupport()},
-  {label:'Version',val:'3.0'}])}
+  {label:'Version',val:'3.1'}])}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -652,6 +891,9 @@ function render(){
     body.innerHTML=h+'</div>';
   }else if(v.type==='msg'){
     body.innerHTML=`<div class="list"><div class="empty"><b>${esc(v.title)}</b>${esc(v.msg)}</div></div>`;
+  }else if(v.type==='dl'){
+    body.innerHTML=`<div class="list"><div class="empty"><b>${esc(v.title)}</b>${esc(v.state)}${v.pct!=null?`<div class="dlbar"><i style="width:${Math.round(v.pct*100)}%"></i></div>`:''}${
+      v.active&&v.ctrl?'<div style="margin-top:10px;font-size:11px;color:#777">MENU to cancel</div>':''}</div></div>`;
   }else if(v.type==='loading'){
     body.innerHTML=`<div class="list"><div class="empty"><div class="spin"></div>${esc(v.title)}</div></div>`;
   }else if(v.type==='input'){
@@ -718,6 +960,7 @@ function press(btn){
   click();
   if(btn==='select')triggerHaptic('confirm');
   const v=top();
+  if(btn==='menu'&&v.type==='dl'&&v.active&&v.ctrl){v.ctrl.abort();return}
   if(btn==='menu'){if(v.type==='input')try{$('#inpt').blur()}catch(e){}if(scrub){scrub=false;render()}else pop()}
   else if(btn==='next')next(true);
   else if(btn==='prev')prev();
@@ -725,6 +968,7 @@ function press(btn){
   else if(btn==='select'){
     if(v.type==='list'){const x=itemsOf(v)[v.sel];if(x&&x.action)x.action()}
     else if(v.type==='msg')pop();
+    else if(v.type==='dl'&&!v.active){if(v.share){const f=v.share;navigator.share({files:[f],title:f.name}).catch(()=>{})}else pop()}
     else if(v.type==='input')submitInput();
     else if(v.type==='now'||v.type==='video'){scrub=!scrub;render()}
   }
@@ -758,9 +1002,12 @@ addEventListener('keydown',e=>{
 let wacc=0;addEventListener('wheel',e=>{wacc+=e.deltaY;while(wacc>40){wacc-=40;scroll(1)}while(wacc<-40){wacc+=40;scroll(-1)}},{passive:true});
 document.addEventListener('gesturestart',e=>e.preventDefault());
 
+/* ---------- offline app shell ---------- */
+if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+
 /* ---------- boot ---------- */
 stack=[mainMenu()];render();
-dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
+dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render();backfillHashes()}});
 })();
 </script>
 </body>
