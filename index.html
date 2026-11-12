@@ -34,6 +34,36 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .ipod.c-gold{background:linear-gradient(160deg,#f6e7c8 0%,#e3c98f 38%,#c9a867 66%,#efdcb0 100%);box-shadow:inset 0 2px 1px rgba(255,255,255,.7),inset 0 -3px 6px rgba(0,0,0,.18),0 0 0 1px #a8884c}
 .ipod.c-graphite{background:linear-gradient(160deg,#6b6f76 0%,#4b4f55 40%,#36393e 70%,#5b5f66 100%);box-shadow:inset 0 2px 1px rgba(255,255,255,.2),0 0 0 1px #2c2e32}
 
+/* Modern Light — independently selectable, keeps classic and modern dark unchanged */
+.ipod.modern.modern-light,.ipod.modern.modern-light[class*=" c-"]{background:linear-gradient(155deg,#f8fafc,#dce4ed 48%,#cbd5e1 85%,#eaf0f6);box-shadow:inset 0 2px 2px #fff,0 0 0 1px #a5b4c5}
+.modern-light .bezel{background:#d4dde8;box-shadow:inset 0 0 0 1px #aab8c9}
+.modern-light .screen{background:#f7f9fc}
+.modern-light .hdr{color:#536477}
+.modern-light .hdr #hclock{color:#263448}
+.modern-light .hdr .bat{border-color:#536477}.modern-light .hdr .bat::after{background:#536477}.modern-light .hdr .bat i{background:#44698b}
+.modern-light .list{background:#f7f9fc}
+.modern-light .row{color:#263448}
+.modern-light .row.sel{background:#d7e7fa;color:#123e70}
+.modern-light .row .chev,.modern-light .row .val{color:#667b92}
+.modern-light .empty{color:#62758a}.modern-light .empty b{color:#263448}
+.modern-light .inp,.modern-light .clock{background:#f7f9fc}.modern-light .inp .tip{color:#60748a}
+.modern-light .clock .dig{color:#263448}
+.modern-light .wheel{background:radial-gradient(circle at 50% 30%,#fff,#e7edf5 65%,#d4dfeb);box-shadow:inset 0 1px 1px #fff,0 1px 2px #8b9aad,0 0 0 1px #b5c2d1}
+.modern-light .center{background:radial-gradient(circle at 50% 30%,#fff,#dbe5f0);box-shadow:inset 0 1px 1px #fff,0 0 0 1px #b4c2d2}
+.modern-light .wheel svg.mod{stroke:#435c78}
+.modern-light .mnp{color:#1d3048;background:var(--tone,#dce8f4)}
+.modern-light .mnp .shade{background:linear-gradient(180deg,#ffffff77 0%,transparent 35%,#f7f9fccc 78%,#f7f9fc 100%)}
+.modern-light .mnp .t{color:#172a42;text-shadow:0 1px 3px #fff8}
+.modern-light .mnp .a{color:#405c7b}.modern-light .mnp .al,.modern-light .mnp .cnt,.modern-light .mnp .times{color:#62758b}
+.modern-light .mnp .fmt,.modern-light .mnp .row3{color:#405c7b}
+.modern-light .mnp .ic{stroke:#405c7b}.modern-light .mnp .ic.on{fill:#4e80b6}
+.modern-light .mnp .bar,.modern-light .mnp .vol .vb{background:#b8c9dc}
+.modern-light .mnp .bar i,.modern-light .mnp .vol .vb i{background:#3b6d9e}
+.modern-light .mnp .vol{background:#f7f9fc}
+.mnp .action{cursor:pointer;pointer-events:auto;touch-action:manipulation;border-radius:5px;outline-offset:2px}
+.mnp .action:focus-visible{outline:2px solid #64a9ef}
+.mnp .action:active{opacity:.6}
+.mnp .bar{cursor:pointer;touch-action:manipulation}
 /* ================= Modern style (Settings ▸ Style) ================= */
 .ipod.modern,.ipod.modern[class*=" c-"]{border-radius:44px;background:linear-gradient(165deg,#646c78 0%,#4b525d 45%,#3e444e 75%,#535a66 100%);
   box-shadow:inset 0 1px 1px rgba(255,255,255,.25),inset 0 -2px 5px rgba(0,0,0,.25),0 0 0 1px #2c3038}
@@ -279,7 +309,7 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 const audio=new Audio(); audio.preload='auto';
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',modernAppearance:'Dark'},ls.get('ipod.settings',{}));
 const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
 
@@ -287,7 +317,7 @@ let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
 function fit(){const s=Math.min(innerWidth/335,innerHeight/555,1.7);$('#stage').style.transform=`scale(${s})`}
 addEventListener('resize',fit);fit();
 const COLORS=['Silver','Black','Graphite','Red','Blue','Green','Pink','Gold'];
-function applyTheme(){$('#ipod').classList.toggle('modern',settings.style==='Modern');applyColor()}
+function applyTheme(){const el=$('#ipod');el.classList.toggle('modern',settings.style==='Modern');el.classList.toggle('modern-light',settings.style==='Modern'&&settings.modernAppearance==='Light');applyColor()}
 function applyColor(){const el=$('#ipod');COLORS.forEach(c=>el.classList.remove('c-'+c.toLowerCase()));
   el.classList.toggle('black',settings.theme==='Black'||settings.theme==='Graphite');
   if(settings.theme!=='Silver'&&settings.theme!=='Black')el.classList.add('c-'+settings.theme.toLowerCase())}
@@ -667,7 +697,7 @@ function ytListView(title,items,more,pl){
     ...items.map((it,i)=>({label:it.title,ytid:it.id,action:()=>playYT(items,i)})),
     ...(more?[{label:'More Results…',action:more}]:[])])}
 function settingsMenu(){
-  const tog=(k,opts)=>()=>{const i=opts.indexOf(settings[k]);settings[k]=opts[(i+1)%opts.length];saveSettings();if(k==='theme'||k==='style')applyTheme();if(k==='backlight')wake();render()};
+  const tog=(k,opts)=>()=>{const i=opts.indexOf(settings[k]);settings[k]=opts[(i+1)%opts.length];saveSettings();if(k==='theme'||k==='style'||k==='modernAppearance')applyTheme();if(k==='backlight')wake();render()};
   return list('Settings',()=>[
     {label:'Shuffle',val:settings.shuffle?'Songs':'Off',action:tog('shuffle',[false,true])},
     {label:'Repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
@@ -678,6 +708,7 @@ function settingsMenu(){
       {label:'Haptic Feel',val:settings.hapticFeel,action:()=>{tog('hapticFeel',Object.keys(HAPTIC_FEELS))();setTimeout(()=>triggerHaptic('selection'),120)}},
       {label:'Test Haptic',action:()=>triggerHaptic('success')}]:[]),
     {label:'Style',val:settings.style,action:tog('style',['Classic','Modern'])},
+    ...(settings.style==='Modern'?[{label:'Appearance',val:settings.modernAppearance,action:tog('modernAppearance',['Dark','Light'])}]:[]),
     ...(settings.style==='Classic'?[{label:'Color',val:settings.theme,action:tog('theme',COLORS)}]:[]),
     {label:'Backlight',val:settings.backlight,action:tog('backlight',['10 sec','20 sec','1 min','Always On'])},
     {label:'Fast Scroll',val:settings.accel?'On':'Off',action:tog('accel',[true,false])},
@@ -811,6 +842,7 @@ function render(){
         x.val!=null?`<span class="val" style="${rp}">${esc(x.val)}</span>`:x.chev?`<span class="chev" style="${rp}">›</span>`:isCur?`<span class="spk" style="${rp}">${spk}</span>`:''}</div>`}
     if(sbw){const hh=190,th=Math.max(14,hh*VIS/it.length),ty=(hh-th)*v.scroll/(it.length-VIS);h+=`<div class="sb"><i style="top:${ty}px;height:${th}px"></i></div>`}
     body.innerHTML=h+'</div>';
+    body.querySelectorAll('.row').forEach((el,index)=>el.addEventListener('click',()=>{const pos=v.scroll+index;if(v.sel===pos){const item=itemsOf(v)[pos];if(item?.action)item.action()}else{v.sel=pos;render()}}));
   }else if(v.type==='msg'){
     body.innerHTML=`<div class="list"><div class="empty"><b>${esc(v.title)}</b>${esc(v.msg)}</div></div>`;
   }else if(v.type==='loading'){
@@ -834,17 +866,23 @@ function render(){
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
       <div class="row2"><span class="fmt"><svg viewBox="0 0 13 10"><rect x=".5" y=".5" width="12" height="9" rx="2" fill="none" stroke="currentColor"/><path d="M3 3v4M5.5 2v6M8 3.5v3M10.5 4.5v1" stroke="currentColor" stroke-linecap="round"/></svg>${fmtOf(s)}</span>
         <span class="sp"></span>
-        <svg class="ic${s.favorite?' on':''}" viewBox="0 0 20 20"><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14.3l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z"/></svg>
-        <svg class="ic" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><circle cx="6.3" cy="10" r=".6" fill="#fff"/><circle cx="10" cy="10" r=".6" fill="#fff"/><circle cx="13.7" cy="10" r=".6" fill="#fff"/></svg></div>
+        <svg data-action="favorite" role="button" tabindex="0" aria-label="Toggle favorite" class="action ic${s.favorite?' on':''}" viewBox="0 0 20 20"><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14.3l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z"/></svg>
+        <svg data-action="more" role="button" tabindex="0" aria-label="More song options" class="action ic" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8"/><circle cx="6.3" cy="10" r=".6" fill="#fff"/><circle cx="10" cy="10" r=".6" fill="#fff"/><circle cx="13.7" cy="10" r=".6" fill="#fff"/></svg></div>
       <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
-      <div class="row3"><svg class="ic" viewBox="0 0 20 20"><path d="M3 13a7 7 0 0114 0"/><rect x="2" y="12" width="3.5" height="5" rx="1.2"/><rect x="14.5" y="12" width="3.5" height="5" rx="1.2"/></svg>
+      <div class="row3"><svg data-action="output" role="button" tabindex="0" aria-label="Audio output" class="action ic" viewBox="0 0 20 20"><path d="M3 13a7 7 0 0114 0"/><rect x="2" y="12" width="3.5" height="5" rx="1.2"/><rect x="14.5" y="12" width="3.5" height="5" rx="1.2"/></svg>
         <span>${esc(outputName())}</span><span class="sp"></span>
-        <svg class="ic" viewBox="0 0 20 20"><path d="M3.5 4.5h13a1.5 1.5 0 011.5 1.5v7a1.5 1.5 0 01-1.5 1.5H9l-3.5 3v-3H3.5A1.5 1.5 0 012 13V6a1.5 1.5 0 011.5-1.5z"/><path d="M7 8.3v1.6M7 8.3h1.2M11 8.3v1.6M11 8.3h1.2"/></svg>
-        <svg class="ic" viewBox="0 0 20 20"><path d="M7 5h11M7 10h11M7 15h11"/><circle cx="3.2" cy="5" r=".7" fill="#fff"/><circle cx="3.2" cy="10" r=".7" fill="#fff"/><circle cx="3.2" cy="15" r=".7" fill="#fff"/></svg></div>
+        <svg data-action="details" role="button" tabindex="0" aria-label="Song details" class="action ic" viewBox="0 0 20 20"><path d="M3.5 4.5h13a1.5 1.5 0 011.5 1.5v7a1.5 1.5 0 01-1.5 1.5H9l-3.5 3v-3H3.5A1.5 1.5 0 012 13V6a1.5 1.5 0 011.5-1.5z"/><path d="M7 8.3v1.6M7 8.3h1.2M11 8.3v1.6M11 8.3h1.2"/></svg>
+        <svg data-action="queue" role="button" tabindex="0" aria-label="Play queue" class="action ic" viewBox="0 0 20 20"><path d="M7 5h11M7 10h11M7 15h11"/><circle cx="3.2" cy="5" r=".7" fill="#fff"/><circle cx="3.2" cy="10" r=".7" fill="#fff"/><circle cx="3.2" cy="15" r=".7" fill="#fff"/></svg></div>
       <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/></svg><div class="vb"><i id="vbi"></i></div>
         <svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/><path d="M8.5 3.5a3.5 3.5 0 010 5M10 2a5.5 5.5 0 010 8" fill="none"/></svg></div></div>`;
     const np=$('#np');artTone(art,t=>{if(np&&np.isConnected)np.style.setProperty('--tone',t)});
+    np.addEventListener('click',e=>{
+      const action=e.target.closest('[data-action]')?.dataset.action;
+      if(action){e.stopPropagation();modernAction(action);return}
+      if(e.target.closest('#bar')){const r=$('#bar').getBoundingClientRect();seekTo(Math.max(0,Math.min(dur(),(e.clientX-r.left)/r.width*dur())));tick()}
+    });
+    np.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.dataset.action){e.preventDefault();modernAction(e.target.dataset.action)}});
     lastArtId=s.id;tick();
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
@@ -861,6 +899,30 @@ function render(){
     body.innerHTML='';renderVideoMeta();$('#vbar').classList.toggle('scrub',scrub);flashVo();
   }
   downloadNotice();
+}
+function modernAction(action){
+ const s=cur();if(!s)return;
+ if(action==='favorite'){
+  s.favorite=!s.favorite;
+  const record=songs.find(x=>x.id===s.id);if(record)record.favorite=s.favorite;
+  if(s.blob){dbPut({...s,url:undefined,artUrl:undefined}).catch(()=>{})}
+  render();return;
+ }
+ if(action==='queue'){push(list('Up Next',queue.map((song,i)=>({label:(i===qi?'▶ ':'')+song.title,action:()=>{qi=i;load(true);push(nowView())}})));return}
+ if(action==='details'){push(list('Song Info',[
+  {label:'Title',val:s.title||'Unknown'},
+  {label:'Artist',val:s.artist||'Unknown'},
+  {label:'Album',val:s.album||'Unknown'},
+  {label:'Format',val:fmtOf(s)},
+  {label:'Play Song',action:()=>{audio.play().catch(()=>{});push(nowView())}}
+ ]));return}
+ if(action==='more'){push(list('Song Options',[
+  {label:s.favorite?'Remove Favorite':'Add Favorite',action:()=>{modernAction('favorite');pop()}},
+  {label:'Play Next',action:()=>{if(qi>=0){queue.splice(qi+1,0,s);render()}pop()}},
+  {label:'Song Info',action:()=>modernAction('details')},
+  {label:'Up Next',action:()=>modernAction('queue')}
+ ]));return}
+ if(action==='output'){push(msgView('Audio Output','Use your device audio controls or AirPlay to select a speaker.'));return}
 }
 function renderVideoMeta(){const s=cur();if(!s)return;
   const t=s.nowTitle||s.title||'Loading…',a=s.nowArtist||s.artist||'';
