@@ -327,6 +327,42 @@ def main():
         check('sync bar works in Modern style', 'busy' in pg.get_attribute('.hdr', 'class') or pg.text_content('#tasktl') == 'Sync Complete')
         wait_sync(pg); choose(pg, 'Settings'); choose(pg, 'Style')
 
+        # ---- Flow menu style ----
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Menu Style')
+        check('Menu Style switches to Flow (and hides Split Screen)', 'Flow' in pg.inner_text('#body') and 'Split Screen' not in pg.inner_text('#body'))
+        home(pg); pg.wait_for_timeout(400)
+        n_cards = pg.evaluate('document.querySelectorAll("#flow .cv.card").length')
+        check('main menu becomes a card shelf', n_cards >= 7 and 'splitmode' not in pg.get_attribute('#screen', 'class'), n_cards)
+        check('every card has an icon', pg.evaluate('[...document.querySelectorAll("#flow .cv.card svg")].every(s=>s.innerHTML.length>10)'))
+        check('shelf reopens on the card you last used', pg.text_content('#fal') == 'Settings', pg.text_content('#fal'))
+        for _ in range(12): key(pg, 'ArrowUp', wait=40)
+        c0 = pg.text_content('#fal')
+        check('caption shows the selected item', c0 == 'Offline Music', c0)
+        tfs = pg.evaluate('[...document.querySelectorAll("#flow .cv")].slice(0,2).map(e=>e.style.transform)')
+        check('front card faces you, next card is angled', 'rotateY(0deg)' in tfs[0] and '-62deg' in tfs[1], tfs)
+        for _ in range(12):
+            if pg.text_content('#fal') == 'Settings': break
+            key(pg, 'ArrowDown', wait=120)
+        check('spinning flips through the menu', pg.text_content('#fal') == 'Settings')
+        key(pg, 'Enter', wait=300)
+        check('center opens the item', pg.text_content('#htitle') == 'Settings')
+        key(pg, 'Escape', wait=400)
+        check('MENU returns to the shelf on the same card', pg.evaluate('!!document.querySelector("#flow .cv.card")') and pg.text_content('#fal') == 'Settings')
+        for _ in range(12): key(pg, 'ArrowUp', wait=40)
+        for _ in range(12):
+            if pg.text_content('#fal') == 'Album Flow': break
+            key(pg, 'ArrowDown', wait=100)
+        key(pg, 'Enter', wait=500)
+        check('Album Flow still opens from the Flow menu', pg.text_content('#htitle') == 'Album Flow' and pg.evaluate('!!document.querySelector("#flow .cv:not(.card)")'))
+        key(pg, 'Escape', wait=300)
+        for _ in range(12): key(pg, 'ArrowDown', wait=40)
+        for _ in range(12):
+            if pg.text_content('#fal') == 'Settings': break
+            key(pg, 'ArrowUp', wait=100)
+        key(pg, 'Enter', wait=300); choose(pg, 'Menu Style')
+        home(pg)
+        check('back to the List menu', pg.evaluate('!document.querySelector("#flow")') and len(rows(pg)) >= 5)
+
         check('no uncaught page errors', not errors, errors)
         ctx.close()
     srv.shutdown()
