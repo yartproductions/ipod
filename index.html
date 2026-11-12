@@ -514,11 +514,12 @@ const outputName=()=>/iPhone/.test(navigator.userAgent)?'iPhone':/iPad/.test(nav
 function hydrate(r){return {...r,kind:'file',url:URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):r.artworkUrl||null}}
 // ----- header status bar: replaces the screen title while a task runs (like iTunes' sync display) -----
 let hdrTask=null,hdrTaskTimer=null;
-function setHdrTask(label,pct,done){
-  clearTimeout(hdrTaskTimer);hdrTask={label,pct,done};
+function setHdrTask(label,pct,done,source='import'){
+  if(importing&&source==='download')return;
+  clearTimeout(hdrTaskTimer);hdrTask={label,pct,done,source};
   const h=$('.hdr');h.classList.add('busy');h.classList.toggle('done',!!done);
   $('#tasktl').textContent=label;$('#taskbar').style.width=Math.max(4,Math.round((pct||0)*100))+'%';
-  if(done)hdrTaskTimer=setTimeout(clearHdrTask,2200);
+  if(done)hdrTaskTimer=setTimeout(()=>{clearHdrTask();if(source==='download')downloadNotice()},2200);
 }
 function clearHdrTask(){hdrTask=null;const h=$('.hdr');h.classList.remove('busy','done')}
 // Imports run in the background: the header shows "Syncing 3 of 12" and you can keep using the iPod.
@@ -540,7 +541,7 @@ async function addFiles(files){
   }finally{importing=false}
   sortSongs();
   setHdrTask(failed?`Sync done · ${failed} failed`:'Sync Complete',1,true);
-  const v=top();if(v&&v.type==='list'||v&&v.type==='flow')render();
+  const v=top();if(v&&v.type==='list'||v&&v.type==='flow')render();setTimeout(downloadNotice,2300);
 }
 function sortSongs(){songs.sort((a,b)=>a.title.localeCompare(b.title))}
 $('#file').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';if(f.length)addFiles(f)});
@@ -622,7 +623,14 @@ const downloadJobs=new Map();
 const downloadQueue=[];
 let activeDownload=false,downloadNoticeTimer=null,latestPlayRequest=0;
 function downloadNotice(){
- const el=$('#download-toast');if(!el)return;
+ // Share the existing iTunes-style header progress bar; never overlay a second download frame.
+ const el=$('#download-toast');if(el)el.style.display='none';
+ if(importing)return;
+ const jobs=[...downloadJobs.values()];
+ const job=jobs.find(j=>j.state!=='Done'&&j.state!=='Failed')||jobs.slice().reverse().find(j=>Date.now()-j.updated<7000);
+ if(!job){if(hdrTask?.source==='download')clearHdrTask();return}
+ setHdrTask((job.state==='Done'?'Saved: ':job.state==='Failed'?'Failed: ':'Downloading: ')+(job.title||'Audio'),(job.progress||0)/100,job.state==='Done'||job.state==='Failed','download');
+ return;
  const job=[...downloadJobs.values()].find(j=>j.state!=='Done'&&j.state!=='Failed')||[...downloadJobs.values()].reverse().find(j=>Date.now()-j.updated<7000);
  if(!job){el.style.display='none';return}
  el.style.display='block';
