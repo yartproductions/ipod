@@ -125,6 +125,25 @@ def main():
         key(pg, 'Escape', wait=200)
         check('MENU leaves the game', pg.text_content('#htitle') == 'Extras')
 
+        # ---- Modern style ----
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Style')
+        check('Style switches to Modern', 'modern' in pg.get_attribute('#ipod', 'class') and 'Modern' in pg.inner_text('#body'))
+        check('Modern hides Color (fixed slate finish)', 'Color' not in pg.inner_text('#body'))
+        check('Modern wheel uses outline icons', pg.evaluate('getComputedStyle(document.querySelector(".wheel svg.mod.m")).display') == 'block'
+              and pg.evaluate('getComputedStyle(document.querySelector(".wheel .lbl.m")).display') == 'none')
+        check('status bar shows the time', ':' in pg.text_content('#hclock'))
+        home(pg); choose(pg, next(l for l in ('Ad-Free Local Music', 'Offline Music', 'Music') if l in pg.inner_text('#body'))); choose(pg, 'Songs'); key(pg, 'Enter', wait=900)
+        check('Modern Now Playing layout', pg.evaluate('!!document.querySelector(".mnp .bg") && !!document.querySelector(".mnp .row3")'))
+        check('background tone taken from the artwork', pg.evaluate('getComputedStyle(document.getElementById("np")).getPropertyValue("--tone").trim().startsWith("rgb")'),
+              pg.evaluate('getComputedStyle(document.getElementById("np")).getPropertyValue("--tone")'))
+        check('format badge shows the file type', 'MP3' in pg.text_content('.mnp .fmt'))
+        key(pg, 'ArrowUp', wait=100)
+        check('volume overlay works in Modern', 'showvol' in pg.get_attribute('#np', 'class'))
+        key(pg, 'Enter', wait=200)
+        check('scrubbing works in Modern', 'scrub' in pg.get_attribute('.mnp .bar', 'class'))
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Style')
+        check('back to Classic', 'modern' not in pg.get_attribute('#ipod', 'class'))
+
         check('no uncaught page errors', not errors, errors)
         ctx.close()
     srv.shutdown()
