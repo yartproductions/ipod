@@ -126,7 +126,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
     <div class="bezel"><div class="screen" id="screen">
       <div class="hdr"><span class="pi" id="pi"></span><span id="htitle">iPod</span><span class="bat"><i></i></span></div>
       <div id="body"></div>
-      <div id="ytbox"><div id="ytp"></div></div>
+      
       <div class="vo" id="vo">
         <div class="vt" id="vot"></div>
         <div class="vbtm"></div>
@@ -275,7 +275,7 @@ window.onYouTubeIframeAPIReady=()=>{
   yt=new YT.Player('ytp',{width:270,height:210,playerVars:{playsinline:1,controls:0,disablekb:1,rel:0,fs:0,iv_load_policy:3,modestbranding:1,origin:location.origin},
     events:{onReady:()=>{ytReady=true;ytQueue.splice(0).forEach(f=>f())},onStateChange:ytState,onError:ytError}});
 };
-(()=>{const s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s)})();
+
 function ytState(e){
   const st=e.data;
   if(st===1||st===3){hideHint()}
@@ -403,7 +403,7 @@ async function doSearch(q,pageToken,prevItems){
   }catch(e){replaceTop(msgView('Search Failed',e.message))}
 }
 async function openPlaylist(list,title){
-  if(!settings.ytKey){queue=[{kind:'ytlist',list,title:title||'YouTube Playlist'}];qi=0;load(true);replaceTop(videoView());return}
+  if(!settings.ytKey){replaceTop(msgView('YouTube Key Needed','Add a YouTube API key to load playlists.'));return}
   try{
     let items=[],tok;
     for(let p=0;p<4;p++){const j=await ytApi('playlistItems',{part:'snippet',maxResults:50,playlistId:list,pageToken:tok});
@@ -412,9 +412,7 @@ async function openPlaylist(list,title){
       tok=j.nextPageToken;if(!tok)break}
     if(!items.length)throw new Error('Playlist is empty or private.');
     replaceTop(ytListView(title||'Playlist',items,null,{list,title}));
-  }catch(e){ // fall back to letting YouTube run the playlist
-    queue=[{kind:'ytlist',list,title:title||'YouTube Playlist'}];qi=0;load(true);replaceTop(videoView());
-  }
+  }catch(e){replaceTop(msgView('Playlist Unavailable',e.message||'Could not load playlist.'))}
 }
 const YTMP3_ENDPOINT='https://ytmp3.ge/api/convert';
 async function acquireYT(it){
@@ -447,8 +445,8 @@ function addHistory(it){
   history=[e,...history.filter(h=>!(h.type===e.type&&(h.id||h.list)===(e.id||e.list)))].slice(0,50);ls.set('ipod.history',history);
 }
 function saveCurrent(){
-  const it=cur();if(!isYT(it))return msgView('Nothing to Save','Play something from YouTube first.');
-  const e=it.kind==='ytlist'?{type:'playlist',list:it.list,title:it.title}:{type:'video',id:it.id,title:it.title||it.nowTitle||'',artist:it.artist||it.nowArtist||''};
+  const it=cur();if(!it||!it.sourceId)return msgView('Nothing to Save','Select a downloaded song first.');
+  const e={type:'video',id:it.sourceId,title:it.title||'',artist:it.artist||''};
   if(!saved.some(s=>s.type===e.type&&(s.id||s.list)===(e.id||e.list))){saved.unshift(e);ls.set('ipod.saved',saved)}
   return msgView('Saved',(e.title||'Item')+' was added to Saved.');
 }
@@ -465,7 +463,7 @@ function list(title,items,extra={}){return {type:'list',title,items,sel:0,scroll
 const go=v=>()=>push(typeof v==='function'?v():v);
 function mainMenu(){
   return list('iPod',()=>[
-    {label:'Ad-Free Local Music',action:go(musicMenu),chev:1},
+    {label:'Offline Music',action:go(musicMenu),chev:1},
 
     {label:'YouTube → Save MP3',action:go(youtubeMenu),chev:1},
     {label:'Shuffle Songs',action:()=>shuffleAll()},
@@ -525,8 +523,8 @@ function settingsMenu(){
       {label:'Test Haptic',action:()=>triggerHaptic('success')}]:[]),
     {label:'Color',val:settings.theme,action:tog('theme',['Silver','Black'])},
     {label:'YouTube Downloads',val:'Offline MP3'},
-    ...(settings.showYouTube?[{label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
-      {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)}]:[]),
+    {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
+    {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
     {label:'Clear Library',chev:1,action:go(()=>list('Clear Library?',[
       {label:'Cancel',action:()=>pop()},
       {label:'Erase All Songs',action:async()=>{audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
@@ -542,7 +540,7 @@ const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
 const videoView=()=>({type:'video',title:'Now Playing'});
-const nowView=()=>isYT(cur())?videoView():{type:'now',title:'Now Playing'};
+const nowView=()=>({type:'now',title:'Now Playing'});
 
 function push(v){stack.push(v);scrub=false;render()}
 function pop(){if(stack.length>1){stack.pop();scrub=false;render()}}
@@ -562,12 +560,9 @@ function renderHdr(){
 }
 function render(){
   const v=top();
-  const isVid=v.type==='video';
+  const isVid=false;
   screenEl.classList.toggle('video',isVid);
-  // YouTube's rules: the video must stay visible while it plays. Pause when it's off screen, resume on return.
-  if(!isVid&&isYT(cur())&&ytReady&&isPlaying()){try{yt.pauseVideo();ytAutoPaused=true}catch(e){}}
-  if(isVid&&ytAutoPaused&&ytReady){ytAutoPaused=false;try{yt.playVideo()}catch(e){}}
-  if(!isVid)hideHint();
+
   renderHdr();
   if(v.type==='list'){
     const it=itemsOf(v);
@@ -621,8 +616,7 @@ function tick(){
   else{$('#vprog').style.width=pct+'%';$('#vbar').style.setProperty('--x',pct+'%');$('#vel').textContent=fmt(c);$('#vrem').textContent='-'+fmt(d-c);
     if(!isPlaying())$('#vo').classList.add('on')}
 }
-setInterval(()=>{tick();if(isYT(cur())){renderHdr();
-  if(top().type!=='video'&&ytReady&&isPlaying()){try{yt.pauseVideo();ytAutoPaused=true}catch(e){}}}},300);
+setInterval(tick,300);
 audio.addEventListener('timeupdate',()=>{tick();
   if('mediaSession' in navigator&&navigator.mediaSession.setPositionState&&!isYT(cur())&&isFinite(audio.duration)&&audio.duration>0)
     try{navigator.mediaSession.setPositionState({duration:audio.duration,position:Math.min(audio.currentTime,audio.duration),playbackRate:audio.playbackRate||1})}catch(e){}});
