@@ -182,6 +182,21 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .flow .cap span{display:block;font-size:11px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .flow .cnt{position:absolute;right:9px;top:6px;font-size:9px;font-weight:700;color:#fff;opacity:.45;letter-spacing:.05em}
 .modern.lightui .flow .cnt{color:#111827}
+
+/* ================= header status (iTunes-style sync bar) ================= */
+.hdr .task{position:absolute;left:34px;right:36px;top:2px;bottom:2px;display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none}
+.hdr.busy #htitle{display:none}
+.hdr.busy .task{display:flex}
+.hdr .task .tl{font-size:10px;font-weight:700;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.hdr .task .tb{width:100%;max-width:150px;height:5px;border-radius:3px;background:rgba(0,0,0,.14);box-shadow:inset 0 1px 1px rgba(0,0,0,.18);overflow:hidden}
+.hdr .task .tb i{display:block;height:100%;width:0;border-radius:3px;transition:width .25s ease;
+  background:repeating-linear-gradient(-45deg,#5aa9f5 0 5px,#2f80d9 5px 10px);background-size:14px 14px;animation:barber .6s linear infinite}
+.hdr.done .task .tb i{background:#3ca62b;animation:none}
+@keyframes barber{to{background-position:14px 0}}
+.modern .hdr .task{left:auto;right:42px;width:46%;align-items:flex-end}
+.modern .hdr .task .tl{color:inherit}
+.modern .hdr .task .tb{background:rgba(255,255,255,.18);box-shadow:none}
+.modern.lightui .hdr .task .tb{background:rgba(17,24,39,.12)}
 /* hold switch on the top edge */
 .hold{position:absolute;top:-7px;right:44px;width:34px;height:10px;border-radius:5px 5px 0 0;background:linear-gradient(#cfd2d7,#9ea3aa);box-shadow:inset 0 1px 0 #fff8,0 0 0 1px #0002;cursor:pointer;z-index:2}
 .hold::before{content:"";position:absolute;top:2px;left:3px;width:14px;height:6px;border-radius:3px;background:linear-gradient(#fafafa,#c9ccd1);box-shadow:0 0 0 1px #0003;transition:left .18s}
@@ -322,7 +337,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
   <div class="ipod" id="ipod">
     <div class="hold" id="hold" title="Hold"></div>
     <div class="bezel"><div class="screen" id="screen">
-      <div class="hdr"><span id="hclock"></span><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="bat"><i id="batlvl"></i></span></div>
+      <div class="hdr"><span id="hclock"></span><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="bat"><i id="batlvl"></i></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
       <div id="body"></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
@@ -497,18 +512,38 @@ const FMT={'audio/mpeg':'MP3','audio/mp3':'MP3','audio/mp4':'AAC','audio/x-m4a':
 const fmtOf=s=>FMT[(s&&(s.mimeType||(s.blob&&s.blob.type)))||'']||'AUDIO';
 const outputName=()=>/iPhone/.test(navigator.userAgent)?'iPhone':/iPad/.test(navigator.userAgent)?'iPad':/Android/.test(navigator.userAgent)?'This Phone':'This Device';
 function hydrate(r){return {...r,kind:'file',url:URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):r.artworkUrl||null}}
+// ----- header status bar: replaces the screen title while a task runs (like iTunes' sync display) -----
+let hdrTask=null,hdrTaskTimer=null;
+function setHdrTask(label,pct,done){
+  clearTimeout(hdrTaskTimer);hdrTask={label,pct,done};
+  const h=$('.hdr');h.classList.add('busy');h.classList.toggle('done',!!done);
+  $('#tasktl').textContent=label;$('#taskbar').style.width=Math.max(4,Math.round((pct||0)*100))+'%';
+  if(done)hdrTaskTimer=setTimeout(clearHdrTask,2200);
+}
+function clearHdrTask(){hdrTask=null;const h=$('.hdr');h.classList.remove('busy','done')}
+// Imports run in the background: the header shows "Syncing 3 of 12" and you can keep using the iPod.
+let importing=false;
 async function addFiles(files){
-  let n=0;
-  for(const f of files){
-    const t=await readTags(f),fn=fromName(f.name);
-    const rec={id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),blob:f,
-      title:t.title||fn.title||'Untitled',artist:t.artist||fn.artist||'Unknown Artist',album:t.album||'Unknown Album',track:parseInt(t.track)||0,art:t.art||null};
-    await dbPut(rec);songs.push(hydrate(rec));n++;
-  }
-  sortSongs();stack=[mainMenu()];push(msgView('Music Added',`${n} song${n===1?'':'s'} added to your iPod.`));
+  if(importing)return;importing=true;
+  let n=0,failed=0;const total=files.length;
+  try{
+    for(let i=0;i<total;i++){
+      const f=files[i];setHdrTask(`Syncing ${i+1} of ${total}`,i/total);
+      try{
+        const t=await readTags(f),fn=fromName(f.name);
+        const rec={id:Date.now().toString(36)+Math.random().toString(36).slice(2,7),blob:f,
+          title:t.title||fn.title||'Untitled',artist:t.artist||fn.artist||'Unknown Artist',album:t.album||'Unknown Album',track:parseInt(t.track)||0,art:t.art||null};
+        await dbPut(rec);songs.push(hydrate(rec));n++;
+      }catch(e){failed++}
+      setHdrTask(`Syncing ${i+1} of ${total}`,(i+1)/total);
+    }
+  }finally{importing=false}
+  sortSongs();
+  setHdrTask(failed?`Sync done · ${failed} failed`:'Sync Complete',1,true);
+  const v=top();if(v&&v.type==='list'||v&&v.type==='flow')render();
 }
 function sortSongs(){songs.sort((a,b)=>a.title.localeCompare(b.title))}
-$('#file').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';if(f.length){push(loadingView('Syncing…'));addFiles(f)}});
+$('#file').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';if(f.length)addFiles(f)});
 
 
 /* Unified local/offline playback */
@@ -784,7 +819,7 @@ function aboutView(){return list('About',[
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
-  {label:'Version',val:'3.5'}])}
+  {label:'Version',val:'3.6'}])}
 function extrasMenu(){return list('Extras',[
   {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))}])}
