@@ -11,6 +11,46 @@ export default {
   if(request.method!=='POST')return json({error:'Method not allowed'},405);
   const url=new URL(request.url);
   try{
+   if(url.pathname==='/tornado-create'){
+    if(!env.TORNADO_API_KEY)return json({error:'TORNADO_API_KEY secret missing in Cloudflare'},503);
+    let input;try{input=await request.json()}catch{return json({error:'Invalid JSON'},400)}
+    const id=String(input?.videoId||'');
+    if(!/^[a-zA-Z0-9_-]{11}$/.test(id))return json({error:'Invalid video ID'},400);
+    if(input?.authorized!==true)return json({error:'Download authorization required'},400);
+    const upstream=await fetch('https://api.tornadoapi.io/jobs',{method:'POST',headers:{'x-api-key':env.TORNADO_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({url:'https://www.youtube.com/watch?v='+id,format:'mp3',audio_only:true,audio_codec:'mp3',audio_bitrate:'192k'}),signal:AbortSignal.timeout(25000)});
+    const data=await upstream.json().catch(()=>({}));
+    if(!upstream.ok)return json({error:data.error||data.message||'Tornado create HTTP '+upstream.status},upstream.status);
+    if(!/^[a-zA-Z0-9-]{16,80}$/.test(data.job_id||''))return json({error:'Tornado did not return a valid job ID'},502);
+    return json({jobId:data.job_id});
+   }
+   if(url.pathname==='/tornado-status'){
+    if(!env.TORNADO_API_KEY)return json({error:'TORNADO_API_KEY secret missing in Cloudflare'},503);
+    let input;try{input=await request.json()}catch{return json({error:'Invalid JSON'},400)}
+    const id=String(input?.jobId||'');
+    if(!/^[a-zA-Z0-9-]{16,80}$/.test(id))return json({error:'Invalid job ID'},400);
+    const upstream=await fetch('https://api.tornadoapi.io/jobs/'+encodeURIComponent(id),{headers:{'x-api-key':env.TORNADO_API_KEY},signal:AbortSignal.timeout(20000)});
+    const data=await upstream.json().catch(()=>({}));
+    if(!upstream.ok)return json({error:data.error||'Tornado status HTTP '+upstream.status},upstream.status);
+    const status=String(data.status||'');
+    return json({status,step:data.step||'',error:data.error||null,title:data.title||'',ready:status==='Completed'&&!!data.s3_url});
+   }
+   if(url.pathname==='/tornado-file'){
+    if(!env.TORNADO_API_KEY)return json({error:'TORNADO_API_KEY secret missing in Cloudflare'},503);
+    let input;try{input=await request.json()}catch{return json({error:'Invalid JSON'},400)}
+    const id=String(input?.jobId||'');
+    if(!/^[a-zA-Z0-9-]{16,80}$/.test(id))return json({error:'Invalid job ID'},400);
+    const lookup=await fetch('https://api.tornadoapi.io/jobs/'+encodeURIComponent(id),{headers:{'x-api-key':env.TORNADO_API_KEY},signal:AbortSignal.timeout(20000)});
+    if(!lookup.ok)return json({error:'Unable to verify Tornado job'},502);
+    const data=await lookup.json();
+    if(data.status!=='Completed'||!data.s3_url)return json({error:'Audio not ready'},409);
+    const remote=new URL(data.s3_url);
+    if(remote.protocol!=='https:')return json({error:'Invalid delivery URL'},502);
+    const file=await fetch(remote.href,{redirect:'follow',signal:AbortSignal.timeout(90000)});
+    if(!file.ok)return json({error:'Tornado file delivery HTTP '+file.status},502);
+    const type=(file.headers.get('content-type')||'').toLowerCase();
+    if(type.includes('text/html')||type.includes('application/json'))return json({error:'Delivery URL returned non-audio content'},502);
+    return new Response(file.body,{status:200,headers:{'Content-Type':'audio/mpeg','Cache-Control':'no-store'}});
+   }
    if(url.pathname==='/render-audio'){
     if(!env.AUDIO_API_KEY)return json({error:'Cloudflare AUDIO_API_KEY secret is not configured'},503);
     let input;try{input=await request.json()}catch{return json({error:'Invalid JSON'},400)}
