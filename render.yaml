@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: ipod-audio-api
+    runtime: docker
+    plan: free
+    rootDir: audio-api
+    healthCheckPath: /health
+    envVars:
+      - key: AUDIO_API_KEY
+        generateValue: true
