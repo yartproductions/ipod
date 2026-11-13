@@ -520,7 +520,7 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 const audio=new Audio(); audio.preload='auto';
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,lyricaUrl:'https://ipod-lyrica-api.onrender.com'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -644,7 +644,8 @@ function genArt(album,artist){
   g.shadowColor='rgba(0,0,0,.25)';g.shadowBlur=8;g.fillText(mono||'♪',120,128);
   const url=c.toDataURL('image/jpeg',.88);genArtCache.set(key,url);return url;
 }
-const artFor=s=>s?(s.artUrl||genArt(s.album,s.artist)):null;
+const isYoutubeThumbnail=url=>/^https?:\/\/(?:i|img)\.ytimg\.com\/vi\//i.test(String(url||''));
+const artFor=s=>s?((s.artUrl&&!(settings.artworkMode==='Strict'&&isYoutubeThumbnail(s.artUrl)))?s.artUrl:genArt(s.album,s.artist)):null;
 // Average colour of the artwork, darkened, used as the Modern Now Playing background.
 const toneCache=new Map(),TONE0={dark:'#1c2a3c',light:'#eef1f5'};
 function artTone(url,cb){
@@ -805,7 +806,7 @@ function videoSearchItems(result){
   return (result.items||[]).filter(x=>x.id&&x.id.videoId&&x.snippet)
     .map(x=>{const info=recommendationTrackInfo(x);const id=x.id.videoId;
       return {kind:'yt',id,title:info.title,artist:info.artist,
-        art:'https://i.ytimg.com/vi/'+encodeURIComponent(id)+'/hqdefault.jpg'}});
+        art:settings.artworkMode==='Strict'?genArt(info.title,info.artist):'https://i.ytimg.com/vi/'+encodeURIComponent(id)+'/hqdefault.jpg'}});
 }
 async function openMusicSearchFlow(query,label){
   if(!settings.ytKey)return push(msgView('YouTube Key Needed','Add your YouTube API key under YouTube → YouTube Key to explore music.'));
@@ -1487,16 +1488,21 @@ function recommendationSeeds(){
   return seeds;
 }
 // Keep recommendation titles and artwork tied to the actual music video, rather than a seed artist.
+function cleanMusicVideoText(x){
+  return String(x||'').replace(/[\u200b-\u200d\uFEFF]/g,'')
+    .replace(/\s*[\[(]\s*(?:(?:official|original)\s+)?(?:(?:music|lyric|lyrics)\s+video|(?:official\s+)?audio|visuali[sz]er|performance video|music visual|video clip|4k|hd|high definition)\b[^\])]*[\])]/gi,'')
+    .replace(/\s*(?:\||·|•)\s*(?:(?:official|music|lyric|lyrics)\b.*|4k|hd)$/gi,'')
+    .replace(/\s*[-–—]\s*(?:official\s+)?(?:music video|visuali[sz]er|lyric video|official audio)\s*$/gi,'')
+    .replace(/\s+/g,' ').trim();
+}
 function recommendationTrackInfo(video){
-  const raw=decodeHTML(video.snippet.title||'Untitled');
-  const channel=decodeHTML(video.snippet.channelTitle||'Unknown Artist')
-    .replace(/\s*-\s*Topic$/i,'').replace(/\s*VEVO$/i,'').trim();
-  const clean=x=>x.replace(/\s*[\[(](?:official\s+)?(?:music\s+video|official\s+video|official\s+audio|audio|lyrics?|visuali[sz]er|hd|4k)[^\])]*[\])]/ig,'')
-    .replace(/\s*(?:\||·)\s*(?:official.*|lyrics?.*)$/i,'').trim();
+  const raw=decodeHTML(video?.snippet?.title||'Untitled');
+  const channel=cleanMusicVideoText(decodeHTML(video?.snippet?.channelTitle||'Unknown Artist')
+    .replace(/\s*-\s*Topic$/i,'').replace(/\s*VEVO$/i,''));
   const parts=raw.split(/\s+[-–—]\s+/);
-  const artist=parts.length>1?clean(parts.shift()):channel;
-  const title=clean(parts.length?parts.join(' - '):raw)||raw;
-  return {title,artist:artist||channel};
+  const artist=parts.length>1?cleanMusicVideoText(parts.shift()):channel;
+  const title=cleanMusicVideoText(parts.length?parts.join(' - '):raw)||raw;
+  return {title,artist:artist||channel||'Unknown Artist',rawTitle:raw};
 }
 function recommendationAddPage(v,result,seedIndex){
   const group=[];
@@ -1506,7 +1512,7 @@ function recommendationAddPage(v,result,seedIndex){
     v.seen.add(id);
     const info=recommendationTrackInfo(x);
     const it={kind:'yt',id,title:info.title,artist:info.artist,
-      art:'https://i.ytimg.com/vi/'+encodeURIComponent(id)+'/hqdefault.jpg'};
+      art:settings.artworkMode==='Strict'?genArt(info.title,info.artist):'https://i.ytimg.com/vi/'+encodeURIComponent(id)+'/hqdefault.jpg'};
     group.push(it);
   }
   v.groups[seedIndex].push(...group);
@@ -1546,7 +1552,7 @@ function recommendationMaybeLoadMore(v){
 // Prefer a confidently matched recording cover to a YouTube video thumbnail.
 // iTunes Search needs no API key. MusicBrainz/Cover Art Archive is the fallback.
 const recommendationArtCache=new Map();
-const ART_CACHE_KEY='ipod.artworkMatches.v2';
+const ART_CACHE_KEY='ipod.artworkMatches.v3';
 const artSaved=ls.get(ART_CACHE_KEY,{});
 let artSaveTimer=null;
 function artworkNormalize(x){
@@ -1567,16 +1573,20 @@ function artworkSimilarity(a,b){
   const common=[...x].filter(w=>y.has(w)).length;
   return common/Math.max(x.size,y.size);
 }
+// Exact title/artist + matching edition matter more than resemblance: never attach a
+// "live" cover to a studio track, or artwork from a similarly named song.
+function artworkEdition(x){
+  const text=String(x||'').toLowerCase();
+  return ['live','remix','acoustic','instrumental','karaoke','demo','cover','extended','sped up','slowed','radio edit','re-recorded']
+    .filter(tag=>new RegExp('\\b'+tag.replace(/ /g,'\\s+')+'\\b','i').test(text)).sort().join('|');
+}
 function artworkScore(it,c){
-  const artist=artworkNormalize(it.artist),ca=artworkNormalize(c.artistName);
-  const titleVariants=artworkVariants(it.title),candidateVariants=artworkVariants(c.trackName);
-  const title=Math.max(0,...titleVariants.flatMap(x=>candidateVariants.map(y=>artworkSimilarity(x,y))));
-  const artistMatch=artworkSimilarity(artist,ca);
-  if(!artist||!ca||artistMatch<.85||title<.82)return 0;
-  const name=String(it.title||'').toLowerCase(),matchName=String(c.trackName||'').toLowerCase();
-  const versionPattern=/\b(live|remix|acoustic|instrumental|karaoke|sped up|slowed)\b/;
-  if(versionPattern.test(name)!==versionPattern.test(matchName))return 0;
-  return .58*title+.42*artistMatch;
+  const artist=artworkNormalize(it.artist),candidateArtist=artworkNormalize(c.artistName);
+  const title=artworkNormalize(it.title),candidateTitle=artworkNormalize(c.trackName);
+  if(!artist||!candidateArtist||!title||!candidateTitle)return 0;
+  if(artist!==candidateArtist||title!==candidateTitle)return 0;
+  if(artworkEdition(it.title)!==artworkEdition(c.trackName))return 0;
+  return 1;
 }
 function artworkCacheKey(it){return artworkNormalize(it.artist)+'|'+artworkNormalize(it.title)}
 function artworkStore(key,record){
@@ -1596,7 +1606,7 @@ async function artworkFromITunes(it){
   const best=candidates[0];
   if(!best||best.score<.92)return null;
   const u=best.item.artworkUrl100;
-  return {url:u.replace(/100x100(?:bb|-75)/,'600x600bb').replace(/^http:/,'https:'),source:'itunes',score:best.score};
+  return {url:u.replace(/100x100(?:bb|-75)/,'600x600bb').replace(/^http:/,'https:'),source:'itunes',score:best.score,album:best.item.collectionName||''};
 }
 async function artworkFromMusicBrainz(it){
   if(!known(it.artist)||!known(it.title))return null;
@@ -1614,7 +1624,7 @@ async function artworkFromMusicBrainz(it){
         if(resp.ok&&/^image\//.test(resp.headers.get('content-type')||'')){
           // Close the validation response without downloading a second copy here.
           if(resp.body)await resp.body.cancel();
-          return {url,source:'coverartarchive',score:.95};
+          return {url,source:'coverartarchive',score:1,album:release.title||''};
         }
       }catch(e){}
     }
