@@ -168,6 +168,8 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .np.lyrics-np .times{bottom:10px;color:rgba(255,255,255,.7)}
 .np.lyrics-np .vol{background:#111820;color:#fff}
 @media(max-width:360px){.np.lyrics-np .top{gap:8px;left:9px;right:9px}.np.lyrics-np .np-lyrics .lyric-lines{font-size:10px}}
+.np.lyrics-np .np-lyrics .lrc-line{opacity:.45;margin:6px 0;transition:opacity .2s,color .2s,transform .2s}
+.np.lyrics-np .np-lyrics .lrc-line.active{opacity:1;color:#fff;transform:translateX(2px);font-weight:800}
 /* lyrics */
 .lyr{position:absolute;top:22px;left:0;right:0;bottom:0;overflow:hidden;background:var(--tone,#0d1520);color:#fff}
 .lyr .in{padding:10px 14px 30px;font-size:14px;font-weight:700;line-height:1.45;white-space:pre-wrap;transition:transform .15s}
@@ -1285,18 +1287,16 @@ function render(){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
     body.innerHTML=`<div class="np lyrics-np" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><div class="cnt">${qi+1} of ${queue.length}</div>
       <div class="top"><div class="artcol"><div class="art${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
-      <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${s.lyrics?esc(s.lyrics):'<span class="lyric-placeholder">Lyrics unavailable<br>Embedded lyrics will appear here when present.</span>'}</div></div></div>
+      <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${s.lyrics?esc(s.lyrics):s.onlineLyrics?lyricMarkup(s.onlineLyrics):'<span class="lyric-placeholder">Finding lyrics…</span>'}</div></div></div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
       <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
       <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/></svg><div class="vb"><i id="vbi"></i></div>
       <svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/><path d="M8.5 3.5a3.5 3.5 0 010 5M10 2a5.5 5.5 0 010 8" stroke="#333" fill="none"/></svg></div></div>`;
     lastArtId=s.id;tick();
-    // Load embedded ID3 lyrics asynchronously for offline tracks, without blocking playback.
-    if(s.lyrics==null&&s.blob&&!s._npLyricsPending){
-      s._npLyricsPending=true;
-      readLyrics(s.blob).then(t=>{s.lyrics=t||'';const el=$('#np-lyric-lines');if(el&&cur()?.id===s.id&&top().type==='now')el.innerHTML=t?esc(t):'<span class="lyric-placeholder">Lyrics unavailable<br>Embedded lyrics will appear here when present.</span>'}).catch(()=>{s.lyrics=''}).finally(()=>{s._npLyricsPending=false});
-    }
+    // Embedded lyrics first; otherwise resolve full lyrics from LRCLIB in the background.
+    if(!s.lyrics&&!s.onlineLyrics)populateLyrics(s).then(data=>fillNowLyrics(s,data)).catch(()=>fillNowLyrics(s,null));
+    else if(s.onlineLyrics?.lines?.length)syncLyricLine();
   }else if(isVid){
     body.innerHTML='';renderVideoMeta();$('#vbar').classList.toggle('scrub',scrub);flashVo();
   }
@@ -1315,7 +1315,7 @@ setInterval(()=>{if(screenEl.classList.contains('splitmode')&&$('#split').classL
 function tick(){
   const v=top();if(v.type!=='now'&&v.type!=='video')return;
   const d=dur(),c=curTime(),pct=d?c/d*100:0;
-  if(v.type==='now'){const p=$('#prog');if(!p)return;p.style.width=pct+'%';$('#bar').style.setProperty('--x',pct+'%');$('#el').textContent=fmt(c);$('#rem').textContent='-'+fmt(d-c)}
+  if(v.type==='now'){const p=$('#prog');if(!p)return;p.style.width=pct+'%';$('#bar').style.setProperty('--x',pct+'%');$('#el').textContent=fmt(c);$('#rem').textContent='-'+fmt(d-c);syncLyricLine()}
   else{$('#vprog').style.width=pct+'%';$('#vbar').style.setProperty('--x',pct+'%');$('#vel').textContent=fmt(c);$('#vrem').textContent='-'+fmt(d-c);
     if(!isPlaying())$('#vo').classList.add('on')}
 }
@@ -1826,9 +1826,57 @@ async function readLyrics(blob){
   }catch(e){}
   return '';
 }
+/* LRCLIB: no API key; short-lived in-memory cache and conservative match checks. */
+const onlineLyricsCache=new Map();
+let lrclibNextAt=0,lrclibBackoffUntil=0,lrclibChain=Promise.resolve();
+function lyricNorm(x){return String(x||'').toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'').replace(/\\b(official|music video|lyrics|visualizer|audio)\\b/gi,'').replace(/[^a-z0-9]+/g,' ').trim()}
+function lrcLines(lrc){return String(lrc||'').split(/\\r?\\n/).map(line=>{const m=line.match(/^\\[(\\d{1,2}):(\\d{2})(?:\\.(\\d+))?\\](.*)$/);return m?{at:Number(m[1])*60+Number(m[2])+Number('0.'+(m[3]||'0')),text:m[4].trim()}:null}).filter(x=>x&&x.text)}
+function lyricMarkup(data){const lines=data?.lines||[];return lines.length?lines.map((x,i)=>`<div class="lrc-line" data-line="${i}">${esc(x.text)}</div>`).join(''):data?.text?esc(data.text):'<span class="lyric-placeholder">No lyrics found for this song.</span>'}
+function syncLyricLine(){const node=$('#np-lyric-lines');const s=cur();if(!node||!s?.onlineLyrics?.lines?.length)return;const ls=s.onlineLyrics.lines,t=curTime();let idx=-1;for(let i=0;i<ls.length;i++){if(ls[i].at<=t+.10)idx=i;else break}if(node.dataset.active===String(idx))return;node.dataset.active=String(idx);node.querySelector('.lrc-line.active')?.classList.remove('active');const active=node.querySelector('.lrc-line[data-line="'+idx+'"]');if(active){active.classList.add('active');node.scrollTop=Math.max(0,active.offsetTop-node.offsetTop-node.clientHeight*.38)}}
+function lrclibRequest(url){
+  const job=lrclibChain.catch(()=>{}).then(async()=>{
+    const delay=Math.max(0,lrclibNextAt-Date.now(),lrclibBackoffUntil-Date.now());
+    if(delay>0)await new Promise(resolve=>setTimeout(resolve,delay));
+    lrclibNextAt=Date.now()+400;
+    const res=await fetch(url,{headers:{'Lrclib-Client':'Yart iPod 1.0 (https://yartproductions.github.io/ipod/)'}});
+    if(res.status===429){const retry=Math.max(30,Number(res.headers.get('Retry-After'))||60);lrclibBackoffUntil=Date.now()+retry*1000;return null}
+    if(!res.ok)return null;return res.json();
+  });
+  lrclibChain=job.catch(()=>{});return job;
+}
+async function fetchOnlineLyrics(s){
+  const key=lyricNorm(s.artist)+'|'+lyricNorm(s.title);
+  if(onlineLyricsCache.has(key))return onlineLyricsCache.get(key);
+  if(s.onlineLyrics)return s.onlineLyrics;
+  if(!s.title||!s.artist)return null;
+  const query=new URLSearchParams({track_name:s.title,artist_name:s.artist});
+  let r=await lrclibRequest('https://lrclib.net/api/get?'+query.toString()).catch(()=>null);
+  const exact=x=>x&&!x.instrumental&&lyricNorm(x.artistName)===lyricNorm(s.artist)&&lyricNorm(x.trackName)===lyricNorm(s.title);
+  if(!exact(r)){const results=await lrclibRequest('https://lrclib.net/api/search?'+query.toString()).catch(()=>null);r=Array.isArray(results)?results.find(exact):null}
+  if(!exact(r))return null;
+  const lines=lrcLines(r.syncedLyrics);
+  const data={text:r.plainLyrics||lines.map(x=>x.text).join('\\n'),lines,source:'LRCLIB'};
+  if(!data.text)return null;
+  onlineLyricsCache.set(key,data);if(onlineLyricsCache.size>40)onlineLyricsCache.delete(onlineLyricsCache.keys().next().value);
+  s.onlineLyrics=data;return data;
+}
+async function populateLyrics(s){
+  if(s._lyricsLoading)return s._lyricsLoading;
+  s._lyricsLoading=(async()=>{
+    if(s.lyrics==null&&s.blob)try{s.lyrics=await readLyrics(s.blob)}catch(e){s.lyrics=''}
+    if(s.lyrics)return {text:s.lyrics,lines:[],source:'Embedded'};
+    return await fetchOnlineLyrics(s);
+  })().finally(()=>{s._lyricsLoading=null});
+  return s._lyricsLoading;
+}
+function fillNowLyrics(s,data){
+  const node=$('#np-lyric-lines');if(!node||cur()?.id!==s.id||top().type!=='now')return;
+  node.innerHTML=data?lyricMarkup(data):'<span class="lyric-placeholder">Lyrics unavailable for this track.</span>';
+  if(data?.lines?.length){node.dataset.active='';syncLyricLine()}
+}
 async function openLyrics(s){
-  const v={type:'lyrics',title:'Lyrics',song:s,text:s.lyrics,off:0};push(v);
-  if(s.lyrics==null&&s.blob){s.lyrics=await readLyrics(s.blob);v.text=s.lyrics;if(top()===v)render()}
+  const v={type:'lyrics',title:'Lyrics',song:s,text:s.lyrics||s.onlineLyrics?.text||null,off:0};push(v);
+  if(!v.text){const data=await populateLyrics(s);v.text=data?.text||'';if(top()===v)render()}
 }
 function renderLyrics(v){
   const s=v.song;
