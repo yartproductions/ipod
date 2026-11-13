@@ -292,6 +292,38 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .fnp.showvol .times{visibility:hidden}
 /* artwork candidates */
 .row.th.big{height:27px}
+
+/* ================= update / What's New sheet ================= */
+.sheet{position:absolute;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:10px;background:rgba(0,0,0,.28)}
+.sheet.on{display:flex;animation:sheetIn .22s ease-out}
+@keyframes sheetIn{from{opacity:0}to{opacity:1}}
+.sheet .card{width:100%;max-height:100%;display:flex;flex-direction:column;overflow:hidden;background:#fff;border:1px solid #6c737c;border-radius:4px;box-shadow:0 6px 18px rgba(0,0,0,.45);animation:cardIn .26s cubic-bezier(.2,1.3,.4,1)}
+@keyframes cardIn{from{transform:translateY(14px) scale(.96)}to{transform:none}}
+.sheet .st{flex:none;padding:5px 9px;font-size:12.5px;font-weight:700;color:#fff;text-align:center;background:linear-gradient(#6db6f8,#2b7fde 60%,#1f6ccb);text-shadow:0 -1px 0 rgba(0,0,0,.25)}
+.sheet .sbody{flex:1;min-height:0;overflow:hidden;position:relative;font-size:11px;color:#222;line-height:1.35}
+.sheet .sbody .in{padding:7px 10px;transition:transform .15s}
+.sheet .sbody p{margin:0 0 5px}
+.sheet .cl{margin:0;padding:0;list-style:none}
+.sheet .cl li{padding:4px 0;border-bottom:1px solid #e3e6ea;display:flex;gap:6px}
+.sheet .cl li:last-child{border-bottom:0}
+.sheet .cl .d{flex:none;width:38px;color:#7a8494;font-size:10px;font-weight:700;padding-top:1px}
+.sheet .cl .x{flex:1;font-weight:600}
+.sheet .cl .x small{display:block;font-weight:500;color:#7a8494;font-size:9.5px}
+.sheet .btns{flex:none;border-top:1px solid #c9ccd0}
+.sheet .bt{height:25px;line-height:25px;padding:0 10px;font-size:13px;font-weight:700;color:#111;cursor:pointer}
+.sheet .bt.sel{color:#fff;background:linear-gradient(#5fb4f8,#2b7fde 55%,#1f6ccb)}
+.sheet .hint{font-size:9.5px;color:#7a8494;text-align:center;padding:2px 0 4px}
+.modern .sheet{background:rgba(0,0,0,.45);backdrop-filter:blur(3px)}
+.modern .sheet .card{border:0;border-radius:14px;background:#1b2533;box-shadow:0 10px 30px rgba(0,0,0,.55)}
+.modern .sheet .st{background:none;color:#f2f5f9;text-shadow:none;font-size:13.5px;padding:10px 12px 2px;text-align:left}
+.modern .sheet .sbody{color:#c9d3df}.modern .sheet .cl li{border-color:rgba(255,255,255,.08)}.modern .sheet .cl .d,.modern .sheet .cl .x small,.modern .sheet .hint{color:#7f8da1}
+.modern .sheet .btns{border:0;display:flex;gap:6px;padding:6px 8px 8px}
+.modern .sheet .bt{flex:1;text-align:center;border-radius:9px;height:28px;line-height:28px;font-size:12.5px;color:#e9eef5;background:rgba(255,255,255,.08)}
+.modern .sheet .bt.sel{background:#3b82f6;color:#fff}
+.modern.lightui .sheet{background:rgba(15,23,42,.25)}
+.modern.lightui .sheet .card{background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.25)}
+.modern.lightui .sheet .st{color:#0b1220}.modern.lightui .sheet .sbody{color:#374151}.modern.lightui .sheet .cl li{border-color:#eef1f5}
+.modern.lightui .sheet .bt{color:#111827;background:#eef1f5}.modern.lightui .sheet .bt.sel{background:#2563eb;color:#fff}
 /* hold switch on the top edge */
 .hold{position:absolute;top:-7px;right:44px;width:34px;height:10px;border-radius:5px 5px 0 0;background:linear-gradient(#cfd2d7,#9ea3aa);box-shadow:inset 0 1px 0 #fff8,0 0 0 1px #0002;cursor:pointer;z-index:2}
 .hold::before{content:"";position:absolute;top:2px;left:3px;width:14px;height:6px;border-radius:3px;background:linear-gradient(#fafafa,#c9ccd1);box-shadow:0 0 0 1px #0003;transition:left .18s}
@@ -435,7 +467,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
       <div class="hdr"><span id="hclock"></span><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="bat"><i id="batlvl"></i></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
-      <div id="body"></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div><div class="np" id="splitnp"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
+      <div id="body"></div><div class="sheet" id="sheet"><div class="card"><div class="st" id="sheetT"></div><div class="sbody" id="sheetB"><div class="in" id="sheetIn"></div></div><div class="btns" id="sheetBtns"></div></div></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div><div class="np" id="splitnp"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
       
       <div class="vo" id="vo">
         <div class="vt" id="vot"></div>
@@ -1118,11 +1150,13 @@ function settingsMenu(){
     {label:'Clear YouTube History',action:go(()=>{history=[];ls.set('ipod.history',[]);return msgView('Cleared','Recently Played is empty.')})},
   ])}
 function aboutView(){return list('About',[
+  {label:'What’s New',chev:1,action:()=>showWhatsNew(null)},
+  {label:'Check for Updates',chev:1,action:()=>checkForUpdate(true)},
   {label:'Songs',val:String(songs.length)},
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
-  {label:'Version',val:'3.12'}])}
+  {label:'Version',val:'3.13'}])}
 function extrasMenu(){return list('Extras',[
   {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))}])}
@@ -1944,6 +1978,7 @@ function showLetter(v){const x=itemsOf(v)[v.sel];if(!x)return;const ch=(String(x
 function scroll(dir){
   wake();
   if(holdOn){showLock();return}
+  if(sheet){sheetScroll(dir);return}
   const v=top();
   if(v.type==='brick'){brickInput(v,null,dir);return}
   if(v.type==='music-home'){const ns=Math.max(0,Math.min(3,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();renderMusicHome(v)}return}
@@ -1963,6 +1998,7 @@ function scroll(dir){
 function press(btn){
   wake();
   if(holdOn){showLock();return}
+  if(sheet){sheetPress(btn);return}
   if(top().type==='brick'&&btn!=='menu'){click();brickInput(top(),btn,0);return}
   click();
   if(btn==='select')triggerHaptic('confirm');
@@ -2026,8 +2062,102 @@ if(navigator.getBattery)navigator.getBattery().then(b=>{const upd=()=>{const el=
   el.style.background=b.charging?'linear-gradient(#ffe066,#e7b400)':b.level<=.2?'linear-gradient(#ff8a80,#d32f2f)':'';};
   upd();b.addEventListener('levelchange',upd);b.addEventListener('chargingchange',upd)}).catch(()=>{});
 
+
+/* ---------- updates: detect a newly published version, offer to reload, show What's New ----------
+   Works with GitHub Pages deploying straight from main (no build step): the iPod fingerprints the page
+   it is running and periodically compares it with the page currently published. Any push changes the
+   fingerprint. The changelog comes from GitHub's public commit history (merged PR titles). */
+const REPO_API='https://api.github.com/repos/yartproductions/ipod';
+const sha256hex=async t=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)))].map(b=>b.toString(16).padStart(2,'0')).join('');
+let runningHash=null,updateHash=null,laterHash=null,updTimer=null,changelogCache=null;
+const pageUrl=()=>location.origin+location.pathname;
+async function pageHash(mode){const r=await fetch(pageUrl(),{cache:mode});if(!r.ok)throw new Error('HTTP '+r.status);return sha256hex(await r.text())}
+async function changelog(){
+  if(changelogCache&&Date.now()-changelogCache.at<10*60e3)return changelogCache.list;
+  try{
+    const r=await fetch(REPO_API+'/commits?sha=main&per_page=60',{headers:{Accept:'application/vnd.github+json'}});if(!r.ok)throw 0;
+    const all=await r.json(),by=new Map(all.map(c=>[c.sha,c]));let c=all[0];const out=[];
+    while(c&&out.length<25){                                   // first-parent walk = what actually landed on main
+      const msg=(c.commit&&c.commit.message||'').trim(),lines=msg.split('\n').map(x=>x.trim()).filter(Boolean);
+      const pr=/^Merge pull request #(\d+)/.exec(lines[0]||'');
+      const title=pr?(lines[1]||lines[0]):lines[0];
+      if(title&&!/^Merge (branch|remote-tracking)/.test(title))out.push({sha:c.sha,date:(c.commit.committer||c.commit.author||{}).date,title,pr:pr?+pr[1]:null});
+      c=c.parents&&c.parents[0]?by.get(c.parents[0].sha):null;
+    }
+    changelogCache={at:Date.now(),list:out};ls.set('ipod.changelog',out);return out;
+  }catch(e){return changelogCache?changelogCache.list:ls.get('ipod.changelog',[])}
+}
+const fmtDay=d=>{try{return new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric'})}catch(e){return ''}};
+function changelogHTML(list,limit){
+  if(!list.length)return '<p>No change notes available right now.</p>';
+  return '<ul class="cl">'+list.slice(0,limit||list.length).map(e=>`<li><span class="d">${esc(fmtDay(e.date))}</span><span class="x">${esc(e.title)}${e.pr?`<small>#${e.pr}</small>`:''}</span></li>`).join('')+'</ul>';
+}
+// ----- sheet (modal frame) -----
+let sheet=null;   // {kind, sel, buttons:[{label, run}], off}
+function openSheet(kind,title,html,buttons){
+  sheet={kind,sel:0,buttons,off:0,scrolls:kind==='whatsnew'};$('#sheetT').textContent=title;$('#sheetIn').innerHTML=html;$('#sheetIn').style.transform='';
+  $('#sheetBtns').innerHTML=buttons.map((b,i)=>`<div class="bt${i===0?' sel':''}" data-b="${i}">${esc(b.label)}</div>`).join('')+
+    (settings.style==='Modern'?'':'<div class="hint">Spin to choose · Center to select</div>');
+  $('#sheet').classList.add('on');triggerHaptic('success');
+}
+function closeSheet(){sheet=null;$('#sheet').classList.remove('on')}
+function sheetSel(i){if(!sheet)return;sheet.sel=i;document.querySelectorAll('#sheetBtns .bt').forEach((el,k)=>el.classList.toggle('sel',k===i))}
+function sheetScroll(dir){
+  if(!sheet)return;const inn=$('#sheetIn'),box=$('#sheetB'),max=Math.max(0,inn.scrollHeight-box.clientHeight);
+  if(sheet.scrolls&&max>0&&!(dir>0&&sheet.off>=max&&sheet.buttons.length>1)&&!(dir<0&&sheet.off<=0&&sheet.sel>0)){   // scroll text first, then move between buttons
+    const no=Math.max(0,Math.min(max,sheet.off+dir*20));if(no!==sheet.off){sheet.off=no;inn.style.transform=`translateY(${-no}px)`;click();return}}
+  const ns=Math.max(0,Math.min(sheet.buttons.length-1,sheet.sel+dir));if(ns!==sheet.sel){sheetSel(ns);click()}
+}
+function sheetPress(btn){
+  if(!sheet)return false;click();
+  if(btn==='menu'){const b=sheet.buttons.find(x=>x.cancel)||sheet.buttons[sheet.buttons.length-1];closeSheet();b.run&&b.run();return true}
+  if(btn==='select'){const b=sheet.buttons[sheet.sel];closeSheet();b.run&&b.run();return true}
+  return true;   // swallow ⏮ ⏭ ⏯ while the frame is up
+}
+$('#sheetBtns').addEventListener('click',e=>{const el=e.target.closest('[data-b]');if(!el||!sheet)return;sheetSel(+el.dataset.b);sheetPress('select')});
+// ----- applying an update -----
+async function applyUpdate(){
+  setHdrTask('Updating…',.5);
+  try{await fetch(pageUrl(),{cache:'reload'})}catch(e){}        // refresh the browser's copy of the page first
+  try{if(navigator.serviceWorker){for(const r of await navigator.serviceWorker.getRegistrations())await r.unregister()}}catch(e){}
+  try{if(window.caches){for(const k of await caches.keys())await caches.delete(k)}}catch(e){}
+  ls.set('ipod.updatedFrom',{hash:runningHash,at:Date.now()});
+  location.reload();
+}
+async function showUpdatePrompt(){
+  if(sheet)return;
+  openSheet('update','Update Available','<p>A new version of your iPod has been published.</p><p style="opacity:.7">Loading change notes…</p>',
+    [{label:'Update Now',run:applyUpdate},{label:'Later',cancel:true,run:()=>{laterHash=updateHash}}]);
+  const list=await changelog(),since=ls.get('ipod.seenAt',0);
+  const fresh=list.filter(e=>!since||new Date(e.date).getTime()>since);
+  const show=fresh.length?fresh:list,more=show.length-2;
+  if(sheet&&sheet.kind==='update')$('#sheetIn').innerHTML=`<p>A new version is ready:</p>${changelogHTML(show,2)}${more>0?`<p style="opacity:.6;margin-top:3px">and ${more} more change${more===1?'':'s'} in What’s New</p>`:''}`;
+}
+async function checkForUpdate(manual){
+  if(!runningHash||!navigator.onLine){if(manual)push(msgView(navigator.onLine?'Checking…':'You’re Offline',navigator.onLine?'Try again in a moment.':'Connect to the internet to check for updates.'));return}
+  let h;try{h=await pageHash('no-store')}catch(e){if(manual)push(msgView('Couldn’t Check','The update server didn’t respond. Try again later.'));return}
+  if(h!==runningHash){updateHash=h;if(manual||h!==laterHash)showUpdatePrompt()}
+  else if(manual)push(msgView('Up to Date','You have the latest version of iPod.'));
+}
+function showWhatsNew(auto){
+  openSheet('whatsnew','What’s New','<p style="opacity:.7">Loading…</p>',[{label:'Done',cancel:true}]);
+  changelog().then(list=>{if(!sheet||sheet.kind!=='whatsnew')return;
+    const since=auto&&auto.at?auto.at:0,fresh=since?list.filter(e=>new Date(e.date).getTime()>since-6e4):list;
+    $('#sheetIn').innerHTML=(auto&&fresh.length?`<p>Your iPod was updated. Here’s what changed:</p>`:'')+changelogHTML(fresh.length?fresh:list,auto?8:25)});
+}
+async function initUpdates(){
+  if(!/^https?:$/.test(location.protocol)||!(window.crypto&&crypto.subtle))return;
+  try{runningHash=await pageHash('force-cache')}catch(e){return}   // the copy this page was loaded from
+  const prev=ls.get('ipod.runningHash',null),from=ls.get('ipod.updatedFrom',null);
+  if(prev&&prev!==runningHash){ls.set('ipod.updatedFrom',null);setTimeout(()=>showWhatsNew(from||{at:ls.get('ipod.seenAt',0)}),900)}
+  ls.set('ipod.runningHash',runningHash);if(!prev||prev!==runningHash)ls.set('ipod.seenAt',Date.now());
+  const poll=()=>checkForUpdate(false);
+  clearInterval(updTimer);updTimer=setInterval(poll,5*60e3);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')poll()});
+  addEventListener('online',poll);setTimeout(poll,4000);
+}
 /* ---------- boot ---------- */
-stack=[mainMenu()];render();wake();
+stack=[mainMenu()];render();wake();initUpdates();
 dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 })();
 </script>
