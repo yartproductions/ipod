@@ -821,6 +821,62 @@ function downloadsMenu(){return list('Downloads',()=>{
  return jobs.length?jobs.map(j=>({label:(j.state==='Done'?'✓ ':j.state==='Failed'?'! ':'↓ ')+j.title,val:j.state==='Done'?'Saved':j.state==='Failed'?'Error':'…',
  action:()=>{const song=songs.find(s=>s.sourceId===j.id);if(song)playList([song],0);else if(j.state==='Failed')push(msgView('Download Failed',j.error||'Please try again.'));else push(msgView(j.state,j.title))}})):[{label:'No active downloads'}];
 })}
+
+/* ---------- YouTube liked videos import (Google OAuth, metadata preview) ---------- */
+let likedImport=[],likedToken='';
+function likedSyncMenu(){return list('Liked Songs Sync',()=>[
+ {label:'Connect & Scan Likes',chev:1,action:()=>startLikedScan()},
+ {label:'Review Imported Likes',val:String(likedImport.length),chev:1,action:go(likedPreview)},
+ {label:'Google OAuth Client ID',val:localStorage.getItem('ipod.googleClientId')?'Set':'Required',chev:1,action:go(()=>inputView('Google Client ID','Google OAuth web client ID',v=>{localStorage.setItem('ipod.googleClientId',v.trim());replaceTop(msgView('Client ID Saved','Add this site to authorized JavaScript origins in Google Cloud.'))},localStorage.getItem('ipod.googleClientId')||''))},
+ {label:'How It Works',chev:1,action:go(()=>msgView('YouTube Likes','Connect your Google account to scan liked YouTube videos. YouTube Music-only likes may not be included. No audio downloads happen until you select a track.'))}
+])}
+function likedPreview(){return list('Liked Videos',()=>[
+ {label:'Scan Again',action:()=>startLikedScan()},
+ ...likedImport.map(it=>({label:it.title||'Untitled',val:songs.some(s=>s.sourceId===it.id)?'Offline':'View',chev:1,action:go(()=>list('Liked Track',[
+  {label:it.title||'Untitled'},
+  {label:it.artist||'YouTube'},
+  {label:songs.some(s=>s.sourceId===it.id)?'Already Downloaded':'Download MP3',action:()=>{enqueueYT(it).then(()=>render()).catch(e=>replaceTop(msgView('Download Failed',e.message)));render()}},
+  {label:'Back',action:()=>pop()}
+ ]))}))
+ ])}
+function loadGoogleIdentity(){return new Promise((resolve,reject)=>{
+ if(window.google?.accounts?.oauth2){resolve();return}
+ const existing=document.querySelector('script[data-ipod-google]');
+ if(existing){existing.addEventListener('load',resolve,{once:true});existing.addEventListener('error',()=>reject(new Error('Google sign-in unavailable')),{once:true});return}
+ const script=document.createElement('script');script.src='https://accounts.google.com/gsi/client';script.async=true;script.dataset.ipodGoogle='1';script.onload=resolve;script.onerror=()=>reject(new Error('Google sign-in unavailable'));document.head.appendChild(script)
+})}
+async function startLikedScan(){
+ const clientId=(localStorage.getItem('ipod.googleClientId')||'').trim();
+ if(!clientId){push(msgView('Setup Required','Enter a Google OAuth web client ID in Liked Songs Sync first.'));return}
+ try{
+  await loadGoogleIdentity();
+  window.google.accounts.oauth2.initTokenClient({
+   client_id:clientId,scope:'https://www.googleapis.com/auth/youtube.readonly',
+   callback:async response=>{
+    if(response.error||!response.access_token){replaceTop(msgView('Sign-in Failed',response.error||'No access token received.'));return}
+    likedToken=response.access_token;
+    replaceTop(loadingView('Scanning liked videos…'));
+    try{
+     let page='',all=[],pages=0;
+     do{
+      const u=new URL('https://www.googleapis.com/youtube/v3/videos');
+      u.searchParams.set('part','snippet');u.searchParams.set('myRating','like');u.searchParams.set('maxResults','50');
+      if(page)u.searchParams.set('pageToken',page);
+      const r=await fetch(u,{headers:{Authorization:'Bearer '+likedToken}});
+      const data=await r.json();if(!r.ok)throw new Error(data.error?.message||'YouTube API error');
+      for(const v of data.items||[]){if(v.id&&v.snippet)all.push({kind:'yt',id:v.id,title:v.snippet.title||'',artist:v.snippet.channelTitle||'',thumb:v.snippet.thumbnails?.medium?.url||''})}
+      page=data.nextPageToken||'';pages++;
+      setHdrTask('Scanning likes',Math.min(.95,pages/Math.max(pages+1,2)));
+     }while(page&&pages<100);
+     likedImport=[...new Map(all.map(it=>[it.id,it])).values()];
+     setHdrTask('Likes scanned',1,true);
+     replaceTop(likedPreview());
+    }catch(e){replaceTop(msgView('Scan Failed',e.message))}
+   }
+  }).requestAccessToken({prompt:'consent'});
+ }catch(e){push(msgView('Google Sign-in',e.message))}
+}
+
 function youtubeMenu(){return list('YouTube',()=>[
   {label:'Search',chev:1,action:go(()=>inputView('Search',settings.musicOnly?'Songs, artists…':'Search YouTube',q=>{replaceTop(loadingView('Searching…'));doSearch(q)}))},
   {label:'Paste Link',chev:1,action:go(()=>inputView('Paste Link','youtube.com/watch?v=… or playlist',s=>{
@@ -828,6 +884,7 @@ function youtubeMenu(){return list('YouTube',()=>[
     if(l&&!id){replaceTop(loadingView('Loading…'));openPlaylist(l)}
     else if(id){playYT([{kind:'yt',id,title:'',artist:''}],0)}
     else replaceTop(msgView('Not a YouTube Link','Paste a video or playlist link from YouTube or YouTube Music.'))}))},
+  {label:'Liked Songs Sync',chev:1,action:go(likedSyncMenu)},
   {label:'Saved',chev:1,action:go(()=>entriesView('Saved',saved,true))},
   {label:'Recently Played',chev:1,action:go(()=>entriesView('Recently Played',history))},
   ...(isYT(cur())?[{label:'Save Now Playing',action:go(saveCurrent)}]:[]),
@@ -922,6 +979,7 @@ function settingsMenu(){
     {label:'Find Missing Artwork',chev:1,action:()=>findMissingArtwork()},
     ...(settings.menuStyle==='List'?[{label:'Split Screen',val:settings.split,action:tog('split',['Album Art','Now Playing','Off'])}]:[]),
     {label:'YouTube Downloads',val:'Offline MP3'},
+    {label:'YouTube Liked Sync',chev:1,action:go(likedSyncMenu)},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
     {label:'Tornado Usage',chev:1,action:go(tornadoUsageView)},
     {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
