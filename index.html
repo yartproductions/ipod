@@ -1829,8 +1829,8 @@ async function readLyrics(blob){
 /* LRCLIB: no API key; short-lived in-memory cache and conservative match checks. */
 const onlineLyricsCache=new Map();
 let lrclibNextAt=0,lrclibBackoffUntil=0,lrclibChain=Promise.resolve();
-function lyricNorm(x){return String(x||'').toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g,'').replace(/\\b(official|music video|lyrics|visualizer|audio)\\b/gi,'').replace(/[^a-z0-9]+/g,' ').trim()}
-function lrcLines(lrc){return String(lrc||'').split(/\\r?\\n/).map(line=>{const m=line.match(/^\\[(\\d{1,2}):(\\d{2})(?:\\.(\\d+))?\\](.*)$/);return m?{at:Number(m[1])*60+Number(m[2])+Number('0.'+(m[3]||'0')),text:m[4].trim()}:null}).filter(x=>x&&x.text)}
+function lyricNorm(x){return String(x||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\b(official|music video|lyrics|visualizer|audio)\b/gi,'').replace(/[^a-z0-9]+/g,' ').trim()}
+function lrcLines(lrc){return String(lrc||'').split(/\r?\n/).map(line=>{const m=line.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d+))?\](.*)$/);return m?{at:Number(m[1])*60+Number(m[2])+Number('0.'+(m[3]||'0')),text:m[4].trim()}:null}).filter(x=>x&&x.text)}
 function lyricMarkup(data){const lines=data?.lines||[];return lines.length?lines.map((x,i)=>`<div class="lrc-line" data-line="${i}">${esc(x.text)}</div>`).join(''):data?.text?esc(data.text):'<span class="lyric-placeholder">No lyrics found for this song.</span>'}
 function syncLyricLine(){const node=$('#np-lyric-lines');const s=cur();if(!node||!s?.onlineLyrics?.lines?.length)return;const ls=s.onlineLyrics.lines,t=curTime();let idx=-1;for(let i=0;i<ls.length;i++){if(ls[i].at<=t+.10)idx=i;else break}if(node.dataset.active===String(idx))return;node.dataset.active=String(idx);node.querySelector('.lrc-line.active')?.classList.remove('active');const active=node.querySelector('.lrc-line[data-line="'+idx+'"]');if(active){active.classList.add('active');node.scrollTop=Math.max(0,active.offsetTop-node.offsetTop-node.clientHeight*.38)}}
 function lrclibRequest(url){
@@ -1846,7 +1846,7 @@ function lrclibRequest(url){
 }
 async function fetchOnlineLyrics(s){
   const key=lyricNorm(s.artist)+'|'+lyricNorm(s.title);
-  if(onlineLyricsCache.has(key))return onlineLyricsCache.get(key);
+  if(onlineLyricsCache.has(key)){s.onlineLyrics=onlineLyricsCache.get(key);return s.onlineLyrics;}
   if(s.onlineLyrics)return s.onlineLyrics;
   if(!s.title||!s.artist)return null;
   const query=new URLSearchParams({track_name:s.title,artist_name:s.artist});
@@ -1855,7 +1855,7 @@ async function fetchOnlineLyrics(s){
   if(!exact(r)){const results=await lrclibRequest('https://lrclib.net/api/search?'+query.toString()).catch(()=>null);r=Array.isArray(results)?results.find(exact):null}
   if(!exact(r))return null;
   const lines=lrcLines(r.syncedLyrics);
-  const data={text:r.plainLyrics||lines.map(x=>x.text).join('\\n'),lines,source:'LRCLIB'};
+  const data={text:r.plainLyrics||lines.map(x=>x.text).join('\n'),lines,source:'LRCLIB'};
   if(!data.text)return null;
   onlineLyricsCache.set(key,data);if(onlineLyricsCache.size>40)onlineLyricsCache.delete(onlineLyricsCache.keys().next().value);
   s.onlineLyrics=data;return data;
