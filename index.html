@@ -708,12 +708,54 @@ function parseYT(str){
   if(!id&&!list&&/^(PL|OL|RD|UU|LL|FL)[A-Za-z0-9_-]+$/.test(str))list=str;
   return {id,list};
 }
-async function doSearch(q,pageToken,prevItems){
-  if(!settings.ytKey){replaceTop(msgView('Search Needs a Key','Add a free YouTube API key in Settings → YouTube Key. Paste Link works without one.'));return}
+// Browse YouTube songs with the same 3D artwork shelf used by Recommendation Flow.
+function videoSearchItems(result){
+  return (result.items||[]).filter(x=>x.id&&x.id.videoId&&x.snippet)
+    .map(x=>{const info=recommendationTrackInfo(x);const id=x.id.videoId;
+      return {kind:'yt',id,title:info.title,artist:info.artist,
+        art:'https://i.ytimg.com/vi/'+encodeURIComponent(id)+'/hqdefault.jpg'}});
+}
+async function openMusicSearchFlow(query,label){
+  if(!settings.ytKey)return push(msgView('YouTube Key Needed','Add your YouTube API key under YouTube → YouTube Key to explore music.'));
+  const waiting=loadingView('Exploring music…');push(waiting);
   try{
-    const j=await ytApi('search',{part:'snippet',type:'video',maxResults:25,q,videoEmbeddable:'true',videoCategoryId:settings.musicOnly?'10':'',pageToken});
-    const items=(prevItems||[]).concat(j.items.filter(x=>x.id&&x.id.videoId).map(x=>({kind:'yt',id:x.id.videoId,title:decodeHTML(x.snippet.title),artist:decodeHTML(x.snippet.channelTitle)})));
-    const v=ytListView(`“${q}”`,items,j.nextPageToken?()=>{const keep=top().sel;replaceTop(loadingView('Searching…'));doSearch(q,j.nextPageToken,items).then(()=>{top().sel=keep;render()})}:null);
+    const q=String(query||'').trim();
+    if(!q)throw new Error('Choose a genre, mood, or enter a search.');
+    const result=await ytApi('search',{part:'snippet',type:'video',maxResults:RECOMMEND_PAGE_SIZE,
+      q,videoCategoryId:'10',videoEmbeddable:'true'});
+    const v={type:'flow',title:label||'Search Flow',recommendItems:[],albums:[],sel:0,
+      groups:[[]],queries:[q],seen:new Set(),pageTokens:[result.nextPageToken||null],loadingMore:false};
+    recommendationAddPage(v,result,0);
+    if(!v.recommendItems.length)throw new Error('No music found. Try another search.');
+    if(top()===waiting){replaceTop(v);recommendationArtPreview(v,0);recommendationMaybeLoadMore(v)}
+  }catch(e){if(top()===waiting)replaceTop(msgView('Search Unavailable',e.message||'Please try again.'))}
+}
+async function doSearch(q,pageToken,prevItems,mode='flow'){
+  q=String(q||'').trim();
+  if(!q){replaceTop(msgView('Search Empty','Enter an artist, song, or genre.'));return}
+  if(!settings.ytKey){replaceTop(msgView('Search Needs a Key','Add a YouTube API key under YouTube → YouTube Key.'));return}
+  if(mode==='flow'){
+    // An input view has already been replaced by a loading screen.
+    const loading=top();
+    try{
+      const result=await ytApi('search',{part:'snippet',type:'video',maxResults:RECOMMEND_PAGE_SIZE,
+        q,videoCategoryId:settings.musicOnly?'10':'',videoEmbeddable:'true'});
+      const v={type:'flow',title:'Search Flow',recommendItems:[],albums:[],sel:0,
+        groups:[[]],queries:[q],seen:new Set(),pageTokens:[result.nextPageToken||null],loadingMore:false};
+      recommendationAddPage(v,result,0);
+      if(!v.recommendItems.length)throw new Error('No results. Try another search.');
+      if(top()===loading){replaceTop(v);recommendationArtPreview(v,0);recommendationMaybeLoadMore(v)}
+    }catch(e){if(top()===loading)replaceTop(msgView('Search Failed',e.message||'Search unavailable.'))}
+    return;
+  }
+  try{
+    const j=await ytApi('search',{part:'snippet',type:'video',maxResults:25,
+      q,videoEmbeddable:'true',videoCategoryId:settings.musicOnly?'10':'',pageToken});
+    const items=(prevItems||[]).concat(videoSearchItems(j));
+    const v=ytListView('“'+q+'”',items,j.nextPageToken?()=>{
+      const keep=top().sel;replaceTop(loadingView('Searching…'));
+      doSearch(q,j.nextPageToken,items,'list').then(()=>{if(top().type==='list'){top().sel=keep;render()}})
+    }:null);
     replaceTop(v);
   }catch(e){replaceTop(msgView('Search Failed',e.message))}
 }
@@ -854,6 +896,7 @@ function list(title,items,extra={}){return {type:'list',title,items,sel:0,scroll
 const go=v=>()=>push(typeof v==='function'?v():v);
 function mainMenu(){
   return list('iPod',()=>[
+    {label:'Music Home',action:go(musicHome),chev:1},
     {label:'Offline Music',action:go(musicMenu),chev:1},
     {label:'Album Flow',action:()=>openFlow(),chev:1},
     {label:'Song Flow',action:()=>openSongFlow(),chev:1},
@@ -875,7 +918,9 @@ function downloadsMenu(){return list('Downloads',()=>{
  action:()=>{const song=songs.find(s=>s.sourceId===j.id);if(song)playList([song],0);else if(j.state==='Failed')push(msgView('Download Failed',j.error||'Please try again.'));else push(msgView(j.state,j.title))}})):[{label:'No active downloads'}];
 })}
 function youtubeMenu(){return list('YouTube',()=>[
-  {label:'Search',chev:1,action:go(()=>inputView('Search',settings.musicOnly?'Songs, artists…':'Search YouTube',q=>{replaceTop(loadingView('Searching…'));doSearch(q)}))},
+  {label:'Search Flow',chev:1,action:go(()=>inputView('Search Flow','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'flow')}))},
+  {label:'Search (List)',chev:1,action:go(()=>inputView('Search List','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'list')}))},
+  {label:'Music Home',chev:1,action:go(musicHome)},
   {label:'Paste Link',chev:1,action:go(()=>inputView('Paste Link','youtube.com/watch?v=… or playlist',s=>{
     const {id,list:l}=parseYT(s);
     if(l&&!id){replaceTop(loadingView('Loading…'));openPlaylist(l)}
@@ -887,7 +932,37 @@ function youtubeMenu(){return list('YouTube',()=>[
   {label:'YouTube Key',val:settings.ytKey?'Set':'None',chev:0,action:go(keyView)},
 ])}
 function keyView(){return inputView('YouTube Key','Paste API key',k=>{settings.ytKey=k.trim();saveSettings();replaceTop(msgView('Key Saved',settings.ytKey?'Search is ready.':'Key cleared.'))},settings.ytKey)}
+/* ---------- Music Home: curated search entry points, no external recommendation account ---------- */
+const MUSIC_GENRES=['Pop','Hip-Hop','R&B','Rock','Alternative','Indie','Electronic','Jazz','Classical',
+  'Latin','Reggaeton','Afrobeats','K-Pop','Country','Metal','Soul','Funk','Blues','Lo-fi','Dance'];
+const MUSIC_MOODS=['Chill','Focus','Workout','Late Night','Road Trip','Party','Romantic',
+  'Sad','Energetic','Relaxing','Sleep','Throwbacks','Feel Good','Study'];
+const MUSIC_DECADES=['2020s','2010s','2000s','1990s','1980s','1970s','1960s'];
+function musicExploreCategory(title,names,kind){
+  return list(title,names.map(name=>({label:name,chev:1,action:()=>{
+    let query;
+    if(kind==='genre')query=name+' music official songs';
+    else if(kind==='mood')query=name+' music songs official audio';
+    else query=name+' hits music official songs';
+    openMusicSearchFlow(query,name+' Flow');
+  }})));
+}
+function musicHome(){
+  return list('Music Home',()=>[
+    {label:'Discover For You',chev:1,action:()=>openRecommendationFlow()},
+    {label:'Search Music',chev:1,action:go(()=>inputView('Search Music','Artist, song or genre…',
+      q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'flow')}))},
+    {label:'Genres',chev:1,action:go(()=>musicExploreCategory('Genres',MUSIC_GENRES,'genre'))},
+    {label:'Moods & Activities',chev:1,action:go(()=>musicExploreCategory('Moods',MUSIC_MOODS,'mood'))},
+    {label:'Decades',chev:1,action:go(()=>musicExploreCategory('Decades',MUSIC_DECADES,'decade'))},
+    {label:'Explore Any Artist',chev:1,action:go(()=>inputView('Explore Artist','Artist name…',
+      q=>{replaceTop(loadingView('Exploring artist…'));doSearch(q+' official music',null,null,'flow')}))},
+    {label:'Saved Music',chev:1,action:go(()=>entriesView('Saved',saved,true))},
+    {label:'Your Library',chev:1,action:go(musicMenu)}
+  ]);
+}
 function musicMenu(){return list('Local Music',[
+  {label:'Music Home',action:go(musicHome),chev:1},
   {label:'Artists',action:go(artistsMenu),chev:1},
   {label:'Album Flow',action:()=>openFlow(),chev:1},
   {label:'Song Flow',action:()=>openSongFlow(),chev:1},
