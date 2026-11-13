@@ -1898,7 +1898,7 @@ function lrclibRequest(url){
     const delay=Math.max(0,lrclibNextAt-Date.now(),lrclibBackoffUntil-Date.now());
     if(delay>0)await new Promise(resolve=>setTimeout(resolve,delay));
     lrclibNextAt=Date.now()+400;
-    const res=await fetch(url,{headers:{'Lrclib-Client':'Yart iPod 1.0 (https://yartproductions.github.io/ipod/)'}});
+    const res=await fetch(url,{headers:{Accept:'application/json'}});
     if(res.status===429){const retry=Math.max(30,Number(res.headers.get('Retry-After'))||60);lrclibBackoffUntil=Date.now()+retry*1000;return null}
     if(!res.ok)return null;return res.json();
   });
