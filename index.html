@@ -856,14 +856,22 @@ function tornadoUsageView(){
       });
       const data=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(data.error||'Usage request failed (HTTP '+response.status+')');
+      const allowanceGB=100;
+      const periodUsed=typeof data.billingPeriodUsedGB==='number'&&Number.isFinite(data.billingPeriodUsedGB)
+        ?data.billingPeriodUsedGB:null;
+      const officialRemaining=typeof data.remainingGB==='number'&&Number.isFinite(data.remainingGB)
+        ?data.remainingGB:null;
+      const calculatedRemaining=periodUsed===null?null:Math.max(0,allowanceGB-periodUsed);
       view.items=[
-        {label:'Remaining',val:gb(data.remainingGB)},
-        {label:'Allowance',val:gb(data.limitGB)},
-        {label:'Quota Used',val:gb(data.effectiveUsedGB)},
+        {label:'Remaining (est.)',val:gb(calculatedRemaining)},
+        {label:'Plan Allowance',val:gb(allowanceGB)},
+        {label:'Period Used',val:gb(periodUsed)},
+        {label:'Official Remaining',val:gb(officialRemaining)},
+        {label:'Total API Usage',val:gb(data.effectiveUsedGB)},
         {label:'Transferred',val:gb(data.usedGB)},
         {label:'In Progress',val:gb(data.reservedGB)},
-        {label:'Billing Period',val:gb(data.billingPeriodUsedGB)},
         {label:'Total Jobs',val:data.jobs==null?'Unavailable':String(data.jobs)},
+        {label:periodUsed===null?'Estimate needs period usage':'Estimate = 100 GB - period used'},
         {label:'Refresh',action:()=>replaceTop(tornadoUsageView())}
       ];
     }catch(e){
