@@ -148,6 +148,26 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .mnp.ctl .hint{display:block}.mnp.ctl .times{visibility:hidden}
 .mnp .toast{position:absolute;left:50%;top:84px;transform:translateX(-50%);padding:5px 10px;border-radius:12px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;font-weight:600;white-space:nowrap;opacity:0;transition:opacity .2s;pointer-events:none}
 .mnp .toast.on{opacity:1}
+/* Classic Now Playing: cover at left, lyrics at right, with a soft artwork wash. */
+.np.lyrics-np{background:radial-gradient(ellipse at 10% 12%,rgba(79,104,139,.32),transparent 72%),linear-gradient(135deg,#20252d,#0b0d12);color:#fff}
+.np.lyrics-np .cnt{color:rgba(255,255,255,.65)}
+.np.lyrics-np .top{position:absolute;left:12px;right:12px;top:22px;bottom:76px;display:flex;align-items:stretch;gap:12px;min-height:0}
+.np.lyrics-np .artcol{width:40%;flex:none;align-self:center;position:relative}
+.np.lyrics-np .artcol:before{content:"";position:absolute;inset:-12px;background:var(--np-art) center/cover;filter:blur(20px);opacity:.48;border-radius:30px}
+.np.lyrics-np .art{position:relative;width:100%;height:auto;aspect-ratio:1;max-height:130px;background-size:cover;background-position:center;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5)}
+.np.lyrics-np .refl{display:none}
+.np.lyrics-np .np-lyrics{min-width:0;flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;text-align:left;mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%);-webkit-mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%)}
+.np.lyrics-np .np-lyrics .lyric-lines{max-height:100%;overflow-y:auto;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.65;font-weight:650;color:rgba(255,255,255,.92)}
+.np.lyrics-np .np-lyrics .lyric-lines::-webkit-scrollbar{display:none}
+.np.lyrics-np .np-lyrics .lyric-placeholder{font-size:11px;line-height:1.5;color:rgba(255,255,255,.58);font-weight:500}
+.np.lyrics-np .meta{position:absolute;left:14px;right:14px;bottom:44px;text-align:left}
+.np.lyrics-np .meta .t{font-size:12px;font-weight:700;color:#fff}
+.np.lyrics-np .meta .a,.np.lyrics-np .meta .al{font-size:10px;color:rgba(255,255,255,.68)}
+.np.lyrics-np .bar{bottom:28px;background:rgba(255,255,255,.24)}
+.np.lyrics-np .bar i{background:#fff}
+.np.lyrics-np .times{bottom:10px;color:rgba(255,255,255,.7)}
+.np.lyrics-np .vol{background:#111820;color:#fff}
+@media(max-width:360px){.np.lyrics-np .top{gap:8px;left:9px;right:9px}.np.lyrics-np .np-lyrics .lyric-lines{font-size:10px}}
 /* lyrics */
 .lyr{position:absolute;top:22px;left:0;right:0;bottom:0;overflow:hidden;background:var(--tone,#0d1520);color:#fff}
 .lyr .in{padding:10px 14px 30px;font-size:14px;font-weight:700;line-height:1.45;white-space:pre-wrap;transition:transform .15s}
@@ -1263,15 +1283,20 @@ function render(){
     lastArtId=s.id;tick();
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
-    body.innerHTML=`<div class="np" id="np"><div class="cnt">${qi+1} of ${queue.length}</div>
-      <div class="top"><div class="artcol"><div class="art${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div>
-        <div class="refl" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
-      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div></div>
+    body.innerHTML=`<div class="np lyrics-np" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><div class="cnt">${qi+1} of ${queue.length}</div>
+      <div class="top"><div class="artcol"><div class="art${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
+      <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${s.lyrics?esc(s.lyrics):'<span class="lyric-placeholder">Lyrics unavailable<br>Embedded lyrics will appear here when present.</span>'}</div></div></div>
+      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
       <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
       <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/></svg><div class="vb"><i id="vbi"></i></div>
       <svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/><path d="M8.5 3.5a3.5 3.5 0 010 5M10 2a5.5 5.5 0 010 8" stroke="#333" fill="none"/></svg></div></div>`;
     lastArtId=s.id;tick();
+    // Load embedded ID3 lyrics asynchronously for offline tracks, without blocking playback.
+    if(s.lyrics==null&&s.blob&&!s._npLyricsPending){
+      s._npLyricsPending=true;
+      readLyrics(s.blob).then(t=>{s.lyrics=t||'';const el=$('#np-lyric-lines');if(el&&cur()?.id===s.id&&top().type==='now')el.innerHTML=t?esc(t):'<span class="lyric-placeholder">Lyrics unavailable<br>Embedded lyrics will appear here when present.</span>'}).catch(()=>{s.lyrics=''}).finally(()=>{s._npLyricsPending=false});
+    }
   }else if(isVid){
     body.innerHTML='';renderVideoMeta();$('#vbar').classList.toggle('scrub',scrub);flashVo();
   }
