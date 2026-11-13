@@ -805,6 +805,7 @@ function mainMenu(){
     {label:'Offline Music',action:go(musicMenu),chev:1},
     {label:'Album Flow',action:()=>openFlow(),chev:1},
     {label:'Song Flow',action:()=>openSongFlow(),chev:1},
+    {label:'Recommendation Flow',action:()=>openRecommendationFlow(),chev:1},
 
     {label:'YouTube → Save MP3',action:go(youtubeMenu),chev:1},
     {label:'Shuffle Songs',action:()=>shuffleAll()},
@@ -838,6 +839,7 @@ function musicMenu(){return list('Local Music',[
   {label:'Artists',action:go(artistsMenu),chev:1},
   {label:'Album Flow',action:()=>openFlow(),chev:1},
   {label:'Song Flow',action:()=>openSongFlow(),chev:1},
+  {label:'Recommendation Flow',action:()=>openRecommendationFlow(),chev:1},
   {label:'Albums',action:go(()=>albumsMenu(songs,'Albums')),chev:1},
   {label:'Songs',action:go(()=>songsMenu(songs,'Songs')),chev:1},
   {label:'Favorites',action:go(()=>{const f=songs.filter(s=>s.favorite);const v=songsMenu(f,'Favorites');v.emptyText='Tap ☆ on Now Playing to add favorites.';return v}),chev:1},
@@ -1228,6 +1230,58 @@ function openSongFlow(){
   push({type:'flow',title:'Song Flow',songList:list,sel:start,
     albums:list.map(s=>({album:s.title,artist:s.artist+(known(s.album)?' — '+s.album:''),art:artFor(s),songs:[s]}))});
 }
+/* ---------- Recommendation Flow: discover music using the existing 3D shelf ---------- */
+function recommendationSeeds(){
+  const pool=[...(cur()&&cur().artist?[cur()]:[]),...songs.filter(s=>s.favorite),
+    ...history.filter(h=>h.type==='video').map(h=>({artist:h.artist,title:h.title})),...songs];
+  const used=new Set(),seeds=[];
+  for(const s of pool){
+    const artist=String(s.artist||'').trim();
+    if(!artist||/^(unknown artist|various artists)$/i.test(artist))continue;
+    const key=artist.toLowerCase();
+    if(used.has(key))continue;
+    used.add(key);seeds.push(artist);
+    if(seeds.length>=3)break;
+  }
+  return seeds;
+}
+async function openRecommendationFlow(){
+  if(!settings.ytKey)return push(msgView('YouTube Key Needed','Add your YouTube API key under YouTube → YouTube Key to discover recommended songs.'));
+  const seeds=recommendationSeeds();
+  if(!seeds.length)return push(msgView('No Listening History','Add songs or play music to start discovering recommendations.'));
+  const loading=loadingView('Finding recommendations…');push(loading);
+  try{
+    const results=await Promise.allSettled(seeds.slice(0,2).map(artist=>
+      ytApi('search',{part:'snippet',type:'video',videoCategoryId:'10',videoEmbeddable:'true',
+        maxResults:15,q:artist+' similar songs official music'})));
+    const seen=new Set(songs.map(s=>s.sourceId).filter(Boolean)),groups=[];
+    for(const result of results){
+      if(result.status!=='fulfilled')continue;
+      const group=[];
+      for(const x of result.value.items||[]){
+        const id=x.id&&x.id.videoId,d=x.snippet;
+        if(!id||!d||seen.has(id))continue;
+        seen.add(id);
+        group.push({kind:'yt',id,title:decodeHTML(d.title||'Untitled'),
+          artist:decodeHTML(d.channelTitle||'Unknown Artist'),
+          art:'https://i.ytimg.com/vi/'+encodeURIComponent(id)+'/hqdefault.jpg'});
+      }
+      groups.push(group);
+    }
+    const items=[];
+    while(groups.some(g=>g.length))for(const group of groups)if(group.length)items.push(group.shift());
+    if(!items.length){
+      const failure=results.find(x=>x.status==='rejected');
+      throw new Error(failure?String(failure.reason.message||failure.reason):'No recommendations found. Try again later.');
+    }
+    // Online results are suggestions, not part of the offline library until played.
+    const view={type:'flow',title:'Recommendation Flow',recommendItems:items,sel:0,
+      albums:items.map(it=>({album:it.title,artist:it.artist,art:it.art,songs:[]}))};
+    if(top()===loading)replaceTop(view);
+  }catch(e){
+    if(top()===loading)replaceTop(msgView('Recommendations Unavailable',e.message||'Discovery failed.'));
+  }
+}
 // Big shelves only build the covers near the selection (±12) and rebuild as you spin past the edge.
 const FLOW_WIN=12;
 function renderFlow(v,from){
@@ -1492,12 +1546,12 @@ function press(btn){
   if(btn==='menu'){if(v.type==='input')try{$('#inpt').blur()}catch(e){}if(v.type==='now'&&ctl!=null){ctl=null;applyCtlFocus()}else if(scrub){scrub=false;render()}else pop()}
   else if(btn==='next')next(true);
   else if(btn==='prev')prev();
-  else if(btn==='play'&&v.type==='flow'){if(v.songList)playList(v.songList,v.sel);else playList(v.albums[v.sel].songs,0)}
+  else if(btn==='play'&&v.type==='flow'){if(v.recommendItems)playYT(v.recommendItems,v.sel);else if(v.songList)playList(v.songList,v.sel);else playList(v.albums[v.sel].songs,0)}
   else if(btn==='play'){playPause();if(v.type==='video')flashVo()}
   else if(btn==='select'){
     if(v.type==='list'){const x=itemsOf(v)[v.sel];if(x&&x.action)x.action()}
     else if(v.type==='msg')pop();
-    else if(v.type==='flow'){if(v.songList)playList(v.songList,v.sel);else{const a=v.albums[v.sel];push(songsMenu(a.songs,a.album))}}
+    else if(v.type==='flow'){if(v.recommendItems)playYT(v.recommendItems,v.sel);else if(v.songList)playList(v.songList,v.sel);else{const a=v.albums[v.sel];push(songsMenu(a.songs,a.album))}}
     else if(v.type==='input')submitInput();
     else if(v.type==='now'&&cur()){
       // Double-tap (two presses within 300 ms) opens the song menu; a single press keeps its normal job.
