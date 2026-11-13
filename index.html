@@ -1582,7 +1582,7 @@ function artworkSimilarity(a,b){
 // "live" cover to a studio track, or artwork from a similarly named song.
 function artworkEdition(x){
   const text=String(x||'').toLowerCase();
-  return ['live','remix','acoustic','instrumental','karaoke','demo','cover','extended','sped up','slowed','radio edit','re-recorded']
+  return ['live','remix','acoustic','instrumental','karaoke','demo','cover','extended','sped up','slowed','radio edit','re-recorded','remaster','remastered']
     .filter(tag=>new RegExp('\\b'+tag.replace(/ /g,'\\s+')+'\\b','i').test(text)).sort().join('|');
 }
 function artworkScore(it,c){
@@ -1609,7 +1609,9 @@ async function artworkFromITunes(it){
   const specificAlbum=known(it.album)&&it.album!=='Offline Music';
   const candidates=(data.results||[]).filter(x=>x.kind==='song'&&x.artworkUrl100)
     .filter(x=>!specificAlbum||artworkNormalize(x.collectionName)===artworkNormalize(it.album))
-    .map(x=>({item:x,score:artworkScore(it,x)})).sort((a,b)=>b.score-a.score);
+    .map(x=>({item:x,score:artworkScore(it,x)}))
+    .sort((a,b)=>b.score-a.score||Number(!!a.item.isCompilation)-Number(!!b.item.isCompilation)
+      ||(Date.parse(a.item.releaseDate||'9999-12-31')-Date.parse(b.item.releaseDate||'9999-12-31')));
   const best=candidates[0];
   if(!best||best.score<.92)return null;
   const u=best.item.artworkUrl100;
