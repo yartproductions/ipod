@@ -372,7 +372,7 @@ def main():
         check('shelf reopens on the card you last used', pg.text_content('#fal') == 'Settings', pg.text_content('#fal'))
         for _ in range(12): key(pg, 'ArrowUp', wait=40)
         c0 = pg.text_content('#fal')
-        check('caption shows the selected item', c0 == 'Offline Music', c0)
+        check('caption shows the selected item', c0 == 'Music Home', c0)
         tfs = pg.evaluate('[...document.querySelectorAll("#flow .cv")].slice(0,2).map(e=>e.style.transform)')
         check('front card faces you, next card is angled', 'rotateY(0deg)' in tfs[0] and '-62deg' in tfs[1], tfs)
         for _ in range(12):
