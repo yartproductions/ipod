@@ -801,6 +801,7 @@ function mainMenu(){
   return list('iPod',()=>[
     {label:'Offline Music',action:go(musicMenu),chev:1},
     {label:'Album Flow',action:()=>openFlow(),chev:1},
+    {label:'Song Flow',action:()=>openSongFlow(),chev:1},
 
     {label:'YouTube → Save MP3',action:go(youtubeMenu),chev:1},
     {label:'Shuffle Songs',action:()=>shuffleAll()},
@@ -833,6 +834,7 @@ function keyView(){return inputView('YouTube Key','Paste API key',k=>{settings.y
 function musicMenu(){return list('Local Music',[
   {label:'Artists',action:go(artistsMenu),chev:1},
   {label:'Album Flow',action:()=>openFlow(),chev:1},
+  {label:'Song Flow',action:()=>openSongFlow(),chev:1},
   {label:'Albums',action:go(()=>albumsMenu(songs,'Albums')),chev:1},
   {label:'Songs',action:go(()=>songsMenu(songs,'Songs')),chev:1},
   {label:'Favorites',action:go(()=>{const f=songs.filter(s=>s.favorite);const v=songsMenu(f,'Favorites');v.emptyText='Tap ☆ on Now Playing to add favorites.';return v}),chev:1},
@@ -930,7 +932,7 @@ function aboutView(){return list('About',[
   {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
-  {label:'Version',val:'3.10'}])}
+  {label:'Version',val:'3.11'}])}
 function extrasMenu(){return list('Extras',[
   {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))}])}
@@ -1216,15 +1218,27 @@ function openFlow(){
   const p=cur(),start=p?Math.max(0,albums.findIndex(a=>a.songs.some(s=>s.id===p.id))):0;
   push({type:'flow',title:'Album Flow',albums,sel:start});
 }
-function renderFlow(v){
-  body.innerHTML=`<div class="flow instant" id="flow"><div class="cnt" id="fcnt"></div><div class="stage">${
-    v.albums.map((a,i)=>`<div class="cv" data-i="${i}" style="background-image:url(&quot;${esc(a.art)}&quot;)"></div>`).join('')}</div>
+// Song Flow: one card per song; center / ⏯ plays from that song onward.
+function openSongFlow(){
+  if(!songs.length)return push(msgView('No Songs','Add music to browse your songs.'));
+  const list=songs.slice(),p=cur(),start=p?Math.max(0,list.findIndex(s=>s.id===p.id)):0;
+  push({type:'flow',title:'Song Flow',songList:list,sel:start,
+    albums:list.map(s=>({album:s.title,artist:s.artist+(known(s.album)?' — '+s.album:''),art:artFor(s),songs:[s]}))});
+}
+// Big shelves only build the covers near the selection (±12) and rebuild as you spin past the edge.
+const FLOW_WIN=12;
+function renderFlow(v,from){
+  const n=v.albums.length,lo=n>40?Math.max(0,v.sel-FLOW_WIN):0,hi=n>40?Math.min(n-1,v.sel+FLOW_WIN):n-1;v._lo=lo;v._hi=hi;
+  let cards='';for(let i=lo;i<=hi;i++)cards+=`<div class="cv" data-i="${i}" style="background-image:url(&quot;${esc(v.albums[i].art)}&quot;)"></div>`;
+  body.innerHTML=`<div class="flow instant" id="flow"><div class="cnt" id="fcnt"></div><div class="stage">${cards}</div>
     <div class="cap"><b id="fal"></b><span id="far"></span></div></div>`;
+  if(from!=null&&from!==v.sel){const to=v.sel;v.sel=from;flowUpdate(v);v.sel=to;
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#flow');if(f){f.classList.remove('instant');flowUpdate(v)}}));return}
   flowUpdate(v);requestAnimationFrame(()=>{const f=$('#flow');if(f)f.classList.remove('instant')});
 }
 function flowUpdate(v){
   const els=document.querySelectorAll('#flow .cv');
-  els.forEach((el,i)=>{const d=i-v.sel,ad=Math.abs(d);
+  els.forEach((el,i)=>{const d=(el.dataset.i!=null?+el.dataset.i:i)-v.sel,ad=Math.abs(d);
     const tf=d===0?'translateX(0) translateZ(36px) rotateY(0deg)'
       :`translateX(${Math.sign(d)*(64+(ad-1)*20)}px) translateZ(0) rotateY(${d<0?62:-62}deg)`;
     el.style.transform=tf;el.style.zIndex=String(200-ad);el.style.opacity=ad>6?'0':'1';
@@ -1430,7 +1444,8 @@ function scroll(dir){
   if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v)}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
   if(v.type==='list'){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}}
-  else if(v.type==='flow'){const ns=Math.max(0,Math.min(v.albums.length-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowUpdate(v)}}
+  else if(v.type==='flow'){const n=v.albums.length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){const was=v.sel;v.sel=ns;click();
+    if(v._lo!=null&&((v.sel<v._lo+6&&v._lo>0)||(v.sel>v._hi-6&&v._hi<n-1)))renderFlow(v,was);else flowUpdate(v)}}
   else if(v.type==='lyrics'){const el=$('#lyr .in');if(!el)return;const max=Math.max(0,el.scrollHeight-150);const no=Math.max(0,Math.min(max,v.off+dir*22));if(no!==v.off){v.off=no;click();el.style.transform=`translateY(${-no}px)`}}
   else if(v.type==='now'&&ctl!=null){click();ctl=(ctl+dir+ACTS.length)%ACTS.length;applyCtlFocus()}
   else if(v.type==='now'||v.type==='video'){
@@ -1449,12 +1464,12 @@ function press(btn){
   if(btn==='menu'){if(v.type==='input')try{$('#inpt').blur()}catch(e){}if(v.type==='now'&&ctl!=null){ctl=null;applyCtlFocus()}else if(scrub){scrub=false;render()}else pop()}
   else if(btn==='next')next(true);
   else if(btn==='prev')prev();
-  else if(btn==='play'&&v.type==='flow'){const a=v.albums[v.sel];playList(a.songs,0)}
+  else if(btn==='play'&&v.type==='flow'){if(v.songList)playList(v.songList,v.sel);else playList(v.albums[v.sel].songs,0)}
   else if(btn==='play'){playPause();if(v.type==='video')flashVo()}
   else if(btn==='select'){
     if(v.type==='list'){const x=itemsOf(v)[v.sel];if(x&&x.action)x.action()}
     else if(v.type==='msg')pop();
-    else if(v.type==='flow'){const a=v.albums[v.sel];push(songsMenu(a.songs,a.album))}
+    else if(v.type==='flow'){if(v.songList)playList(v.songList,v.sel);else{const a=v.albums[v.sel];push(songsMenu(a.songs,a.album))}}
     else if(v.type==='input')submitInput();
     else if(v.type==='now'&&settings.style==='Modern'){       // center cycles: normal → scrub → controls (center then opens)
       if(ctl!=null)npAction(ACTS[ctl]);else if(scrub){scrub=false;ctl=0;render()}else{scrub=true;render()}}
