@@ -137,6 +137,25 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .modern.lightui .mnp .vol .vb{background:rgba(11,18,32,.14)}.modern.lightui .mnp .vol .vb i{background:#111827}
 .modern.lightui .screen.nowmod .hdr{background:linear-gradient(rgba(255,255,255,.55),transparent)}
 .modern.lightui .lyr{background:var(--tint,#f5f7fa);color:#111827}
+/* Shared lyrics surface for Modern and Flow Now Playing. */
+.mnp .np-lyrics{position:absolute;left:47%;right:9px;top:13px;height:106px;z-index:2;overflow:hidden;-webkit-mask-image:linear-gradient(transparent,#000 12%,#000 87%,transparent);mask-image:linear-gradient(transparent,#000 12%,#000 87%,transparent)}
+.mnp .np-lyrics .lyric-lines{max-height:100%;overflow-y:auto;scrollbar-width:none;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.5;font-weight:650;color:inherit}
+.mnp .np-lyrics .lyric-lines::-webkit-scrollbar{display:none}
+.mnp .np-lyrics .lyric-placeholder{font-size:10px;opacity:.75}
+.mnp .meta{left:12px!important;right:45%!important;top:102px!important}
+.mnp .meta .t{font-size:11px!important;white-space:normal!important;line-height:1.12}
+.mnp .meta .a,.mnp .meta .al{font-size:9px!important}
+.mnp .row2{top:137px!important}.mnp .times{top:160px!important}.mnp .bar{top:175px!important}
+.mnp .np-lyrics .lrc-line,.fnp .np-lyrics .lrc-line{opacity:.48;margin:5px 0;transition:opacity .2s}
+.mnp .np-lyrics .lrc-line.active,.fnp .np-lyrics .lrc-line.active{opacity:1;font-weight:800}
+.fnp.lyrics-flow .stage{left:27%;top:18px}
+.fnp.lyrics-flow .np-lyrics{position:absolute;top:18px;left:54%;right:8px;height:95px;overflow:hidden;-webkit-mask-image:linear-gradient(transparent,#000 10%,#000 88%,transparent);mask-image:linear-gradient(transparent,#000 10%,#000 88%,transparent)}
+.fnp.lyrics-flow .np-lyrics .lyric-lines{max-height:100%;overflow-y:auto;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;line-height:1.5;font-weight:700;text-align:left}
+.fnp.lyrics-flow .np-lyrics .lyric-placeholder{opacity:.6;font-size:10px}
+.fnp.lyrics-flow .cap{top:116px}
+.fnp.lyrics-flow .bar{top:157px}
+.fnp.lyrics-flow .times{top:165px}
+.fnp.lyrics-flow .vol{top:162px}
 /* ================= interactive Now Playing controls ================= */
 .mnp [data-act]{cursor:pointer;border-radius:8px;transition:background .15s,box-shadow .15s}
 .mnp .ic[data-act]{padding:2px;width:22px;height:22px;margin:-2px}
@@ -1305,6 +1324,7 @@ function render(){
     const s=cur(),art=artFor(s);screenEl.classList.add('nowmod');if(scrub)ctl=null;
     body.innerHTML=`<div class="mnp" id="np">
       <div class="bg${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(art)}&quot;)"></div><div class="shade"></div>
+      <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
       <div class="cnt">${qi+1} of ${queue.length}</div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
       <div class="row2"><span class="fmt"><svg viewBox="0 0 13 10"><rect x=".5" y=".5" width="12" height="9" rx="2" fill="none" stroke="currentColor"/><path d="M3 3v4M5.5 2v6M8 3.5v3M10.5 4.5v1" stroke="currentColor" stroke-linecap="round"/></svg>${fmtOf(s)}</span>
@@ -1322,21 +1342,19 @@ function render(){
       <div class="hint">Spin to choose · Center to open · MENU to exit</div><div class="toast" id="nptoast"></div></div>`;
     applyCtlFocus();
     const np=$('#np');artTone(art,t=>{if(np&&np.isConnected){np.style.setProperty('--tone',t.dark);np.style.setProperty('--tint',t.light)}});
-    lastArtId=s.id;tick();
+    lastArtId=s.id;tick();ensureNowLyrics(s);
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
     body.innerHTML=`<div class="np lyrics-np" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><div class="cnt">${qi+1} of ${queue.length}</div>
       <div class="top"><div class="artcol"><div class="art${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
-      <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${s.lyrics?esc(s.lyrics):s.onlineLyrics?lyricMarkup(s.onlineLyrics):'<span class="lyric-placeholder">Finding lyrics…</span>'}</div></div></div>
+      <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div></div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
       <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
       <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/></svg><div class="vb"><i id="vbi"></i></div>
       <svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/><path d="M8.5 3.5a3.5 3.5 0 010 5M10 2a5.5 5.5 0 010 8" stroke="#333" fill="none"/></svg></div></div>`;
     lastArtId=s.id;tick();
-    // Embedded lyrics first; otherwise resolve full lyrics from LRCLIB in the background.
-    if(!s.lyrics&&!s.onlineLyrics)populateLyrics(s).then(data=>fillNowLyrics(s,data)).catch(()=>fillNowLyrics(s,null));
-    else if(s.onlineLyrics?.lines?.length)syncLyricLine();
+    ensureNowLyrics(s);
   }else if(isVid){
     body.innerHTML='';renderVideoMeta();$('#vbar').classList.toggle('scrub',scrub);flashVo();
   }
@@ -1670,6 +1688,7 @@ function renderFlow(v,from){
   const n=v.albums.length,lo=n>40?Math.max(0,v.sel-FLOW_WIN):0,hi=n>40?Math.min(n-1,v.sel+FLOW_WIN):n-1;v._lo=lo;v._hi=hi;
   let cards='';for(let i=lo;i<=hi;i++)cards+=`<div class="cv" data-i="${i}" style="background-image:url(&quot;${esc(v.albums[i].art)}&quot;)"></div>`;
   body.innerHTML=`<div class="flow instant" id="flow"><div class="cnt" id="fcnt"></div><div class="stage">${cards}</div>
+    <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
     <div class="cap"><b id="fal"></b><span id="far"></span></div></div>`;
   if(from!=null&&from!==v.sel){const to=v.sel;v.sel=from;flowUpdate(v);v.sel=to;
     requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#flow');if(f){f.classList.remove('instant');flowUpdate(v)}}));return}
@@ -1695,7 +1714,7 @@ function renderNowFlow(){
   const s=cur(),from=flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
   const lo=Math.max(0,qi-5),hi=Math.min(queue.length-1,qi+5);let cards='';
   for(let i=lo;i<=hi;i++)cards+=`<div class="cv" data-q="${i}" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div>`;
-  body.innerHTML=`<div class="fnp instant" id="np"><span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
+  body.innerHTML=`<div class="fnp instant lyrics-flow" id="np"><span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
     <div class="stage">${cards}</div>
     <div class="cap"><b>${esc(s.title)}</b><span>${esc(s.artist)}${s.album?' — '+esc(s.album):''}</span></div>
     <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
@@ -1707,7 +1726,7 @@ function renderNowFlow(){
   requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#np');if(!f)return;f.classList.remove('instant');
     els.forEach(el=>nowFlowPos(el,+el.dataset.q-qi))}));        // … and glide to the new song
   els.forEach(el=>el.addEventListener('click',()=>{const q=+el.dataset.q;if(q!==qi){click();qi=q;load(true)}}));
-  flowNpQi=qi;tick();
+  flowNpQi=qi;tick();ensureNowLyrics(s);
 }
 
 /* ---------- Artwork lookup: MusicBrainz (find the release) + Cover Art Archive (the cover) ---------- */
@@ -1934,6 +1953,14 @@ async function populateLyrics(s){
     return await fetchOnlineLyrics(s);
   })().finally(()=>{s._lyricsLoading=null});
   return s._lyricsLoading;
+}
+function nowLyricsHTML(s){
+  return s.lyrics?esc(s.lyrics):s.onlineLyrics?lyricMarkup(s.onlineLyrics):'<span class="lyric-placeholder">Finding lyrics…</span>';
+}
+function ensureNowLyrics(s){
+  if(!s)return;
+  if(!s.lyrics&&!s.onlineLyrics)populateLyrics(s).then(data=>fillNowLyrics(s,data)).catch(()=>fillNowLyrics(s,null));
+  else if(s.onlineLyrics?.lines?.length)syncLyricLine();
 }
 function fillNowLyrics(s,data){
   const node=$('#np-lyric-lines');if(!node||cur()?.id!==s.id||top().type!=='now')return;
