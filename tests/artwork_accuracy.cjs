@@ -29,7 +29,7 @@ test('Different title rejected',()=>assert.equal(score({artist:'Frank Ocean',tit
 test('Different artist rejected',()=>assert.equal(score({artist:'SZA',title:'Snooze'},{artistName:'Another Artist',trackName:'Snooze'}),0));
 test('Album Flow renders without Now Playing lyrics reference',()=>{
  const body={innerHTML:''},nodes=new Map(),dom={querySelectorAll(){return []}};
- const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:''});return nodes.get(id)};
+ const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:'',classList:{remove(){}}});return nodes.get(id)};
  const renderFlow=new Function('body','document','$','requestAnimationFrame','recommendationArtPreview','esc',
  section('const FLOW_WIN=12;','/* ---------- Flow Now Playing')+'return renderFlow;')(body,dom,node,fn=>fn(),()=>{},String);
  renderFlow({type:'flow',sel:0,albums:[{art:'cover',album:'Test Album',artist:'Test Artist'}]});
