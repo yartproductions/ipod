@@ -947,8 +947,13 @@ async function acquireYT(it,onProgress=()=>{}){
  const blob=await response.blob();
  onProgress('Saving offline…',92);
  if(blob.size<1024)throw new Error('Audio file was empty or incomplete.');
- const rec={id:'yt-'+id,sourceId:id,blob,title:info.title||it.title||'Untitled',artist:it.artist||'Unknown Artist',album:'Offline Music',artworkUrl:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg'};
- await dbPut(rec);const song=hydrate(rec);songs.push(song);sortSongs();return song;
+ const parsed=cleanMusicVideoText(it.title||info.title||'Untitled');
+ const rec={id:'yt-'+id,sourceId:id,blob,title:parsed||'Untitled',
+  artist:it.artist||'Unknown Artist',album:'Offline Music',
+  artworkUrl:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg',artSource:'youtube-thumb'};
+ await dbPut(rec);const song=hydrate(rec);songs.push(song);sortSongs();
+ if(settings.autoArt) Promise.resolve().then(()=>repairSongArtwork(song,{preferred:it.artSource==='matched-cover'?it.art:null})).catch(()=>{});
+ return song;
 }
 async function playYT(items,i){
  if(!items.length||!items[i])return;
@@ -1591,7 +1596,7 @@ function artworkScore(it,c){
 function artworkCacheKey(it){return artworkNormalize(it.artist)+'|'+artworkNormalize(it.title)}
 function artworkStore(key,record){
   if(!record||!record.url)return;
-  artSaved[key]={url:record.url,source:record.source,score:record.score,at:Date.now()};
+  artSaved[key]={url:record.url,source:record.source,score:record.score,album:record.album||'',at:Date.now()};
   const keys=Object.keys(artSaved);
   if(keys.length>350)keys.sort((a,b)=>(artSaved[a].at||0)-(artSaved[b].at||0)).slice(0,keys.length-350).forEach(k=>delete artSaved[k]);
   clearTimeout(artSaveTimer);artSaveTimer=setTimeout(()=>ls.set(ART_CACHE_KEY,artSaved),250);
@@ -1772,17 +1777,74 @@ async function fetchCover(url){
   const r=await fetch(url);if(!r.ok)throw new Error(r.status===404?'No cover for this release.':'Cover download failed ('+r.status+').');
   const b=await r.blob();if(!/^image\//.test(b.type)||b.size<2048)throw new Error('That cover isn’t a valid image.');return b;
 }
-async function saveArtwork(s,blob){
-  // The chosen song always gets the cover; other songs from the same album only if they have no artwork of their own.
+function artworkProtected(s){
+  return !!s.art&&(s.artworkLocked||!s.artSource||s.artSource==='embedded'||s.artSource==='manual');
+}
+function artworkNeedsRepair(s){
+  return !s.art&&(!s.artUrl||isYoutubeThumbnail(s.artUrl)) || s.artSource==='youtube-thumb';
+}
+function artworkMetadata(s,match){
+  s.artSource=match.source||'manual';
+  s.artConfidence=match.score||1;
+  if(match.source==='manual')s.artworkLocked=true;
+  // Only replace an obvious placeholder album; never overwrite a tagged album.
+  if(match.album&&(!s.album||s.album==='Offline Music'||s.album==='Unknown Album'))s.album=match.album;
+}
+async function saveArtwork(s,blob,match={source:'manual',score:1},{manual=false}={}){
   const lib=songs.find(x=>x.id===s.id)||s;
-  const targets=[lib,...songs.filter(x=>x!==lib&&x.album===s.album&&x.artist===s.artist&&!x.art)];
+  const share=!manual&&lib.album!=='Offline Music'&&known(lib.album);
+  const targets=[lib,...(share?songs.filter(x=>x.id!==lib.id&&x.album===lib.album&&x.artist===lib.artist&&!x.art):[])];
+  let saved=0;
   for(const t of targets){
-    if(t.artUrl&&t.artUrl.startsWith('blob:'))URL.revokeObjectURL(t.artUrl);
-    t.art=blob;t.artSource='coverartarchive';t.artUrl=URL.createObjectURL(blob);
-    queue.forEach(q=>{if(q.id===t.id){q.art=blob;q.artUrl=t.artUrl}});
-    try{const {kind,url,artUrl,...rec}=t;await dbPut(rec)}catch(e){}
+    if(t.deleted||!songs.some(x=>x.id===t.id))continue;
+    const oldUrl=t.artUrl;
+    const nextUrl=URL.createObjectURL(blob);
+    t.art=blob;t.artUrl=nextUrl;
+    artworkMetadata(t,manual?{...match,source:'manual'}:match);
+    try{await dbPut(songRecord(t));saved++}
+    catch(e){URL.revokeObjectURL(nextUrl);t.artUrl=oldUrl;throw e}
+    if(oldUrl&&oldUrl.startsWith('blob:'))URL.revokeObjectURL(oldUrl);
+    queue.forEach(q=>{if(q.id===t.id){q.art=t.art;q.artUrl=t.artUrl;q.album=t.album;q.artSource=t.artSource;q.artConfidence=t.artConfidence}});
   }
-  setSession();return targets.length;
+  if(saved){setSession();if(top()?.type==='now'&&cur()?.id===lib.id)render()}
+  return saved;
+}
+async function saveMatchedArtworkURL(s,match){
+  const lib=songs.find(x=>x.id===s.id)||s;
+  if(!songs.some(x=>x.id===lib.id))return false;
+  const old=lib.artUrl;
+  lib.artUrl=match.url;lib.artworkUrl=match.url;
+  artworkMetadata(lib,match);
+  try{await dbPut(songRecord(lib))}
+  catch(e){lib.artUrl=old;throw e}
+  if(old&&old.startsWith('blob:'))URL.revokeObjectURL(old);
+  queue.forEach(q=>{if(q.id===lib.id){q.artUrl=lib.artUrl;q.album=lib.album;q.artSource=lib.artSource}});
+  if(cur()?.id===lib.id){setSession();if(top()?.type==='now')render()}
+  return true;
+}
+async function repairSongArtwork(s,{force=false,preferred=null}={}){
+  const lib=songs.find(x=>x.id===s.id)||s;
+  if(!lib.blob||lib.deleted||!songs.some(x=>x.id===lib.id))return null;
+  if(artworkProtected(lib))return null;
+  if(!force&&!artworkNeedsRepair(lib))return null;
+  if(!known(lib.artist)||!known(lib.title))return null;
+  let match=null;
+  const saved=artSaved[artworkCacheKey(lib)];
+  if(preferred&&saved&&saved.url===preferred)match={...saved};
+  if(!match)try{match=await artworkFromITunes(lib)}catch(e){}
+  if(!match)try{match=await artworkFromMusicBrainz(lib)}catch(e){}
+  if(!match||!match.url)return null;
+  if(lib.deleted||!songs.some(x=>x.id===lib.id))return null;
+  try{
+    const blob=await fetchCover(match.url);
+    await saveArtwork(lib,blob,match);
+  }catch(e){
+    // An image can display in the page even when its CDN disallows fetch/Blob CORS.
+    // Keep the matched URL rather than reverting to a YouTube frame.
+    await saveMatchedArtworkURL(lib,match);
+  }
+  artworkStore(artworkCacheKey(lib),match);
+  return match;
 }
 async function getArtwork(s){
   push(loadingView('Searching…'));
