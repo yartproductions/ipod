@@ -1105,8 +1105,8 @@ function settingsMenu(){
     {label:'YouTube Downloads',val:'Offline MP3'},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
     {label:'Lyrica API URL',val:settings.lyricaUrl?'Set':'Not Set',chev:1,action:go(()=>inputView('Lyrica API URL','https://your-service.onrender.com',url=>{
-      const clean=url.trim().replace(/\\/+$/,'');
-      if(clean&&!/^https:\\/\\/[a-z0-9.-]+(?::\\d+)?$/i.test(clean))return replaceTop(msgView('Invalid URL','Enter the HTTPS root URL of your Render Lyrica service, without /lyrics/.'));
+      const clean=url.trim().replace(/\/+$/,'');
+      if(clean&&!/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(clean))return replaceTop(msgView('Invalid URL','Enter the HTTPS root URL of your Render Lyrica service, without /lyrics/.'));
       settings.lyricaUrl=clean;saveSettings();onlineLyricsCache.clear();replaceTop(msgView('Lyrica',clean?'Endpoint saved. New lyric searches will try Lyrica first, then LRCLIB.':'Endpoint cleared. LRCLIB remains enabled.'));
     },settings.lyricaUrl))},
     {label:'Tornado Usage',chev:1,action:go(tornadoUsageView)},
@@ -1858,7 +1858,7 @@ async function lyricaRequest(s){
     if(!resp.ok)return null;
     const payload=await resp.json(),d=payload?.data;
     if(payload?.status!=='success'||!d)return null;
-    const norm=x=>lyricNorm(x).replace(/\\b(feat|ft)\\b.*$/,'').trim();
+    const norm=x=>lyricNorm(x).replace(/\b(feat|ft)\b.*$/,'').trim();
     if(d.artist&&norm(d.artist)!==norm(s.artist))return null;
     if(d.title&&norm(d.title)!==norm(s.title))return null;
     const raw=Array.isArray(d.timed_lyrics)?d.timed_lyrics:[];
@@ -1868,7 +1868,7 @@ async function lyricaRequest(s){
       words:Array.isArray(line.words)?line.words.map(w=>({text:String(w.word||''),at:Number(w.start)/1000,end:Number(w.end)/1000})).filter(w=>w.text&&Number.isFinite(w.at)):[],
     })).filter(line=>line.text&&Number.isFinite(line.at)).sort((a,b)=>a.at-b.at);
     const plain=String(d.lyrics||'').trim();
-    const text=plain||lines.map(line=>line.text).join('\\n');
+    const text=plain||lines.map(line=>line.text).join('\n');
     return text?{text,lines,source:'Lyrica ('+String(d.source||'unknown')+')'}:null;
   }catch(e){return null}
   finally{clearTimeout(timeout)}
