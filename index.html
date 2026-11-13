@@ -1161,6 +1161,7 @@ function settingsMenu(){
       if(clean&&!/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(clean))return replaceTop(msgView('Invalid URL','Enter the HTTPS root URL of your Render Lyrica service, without /lyrics/.'));
       settings.lyricaUrl=clean;saveSettings();onlineLyricsCache.clear();replaceTop(msgView('Lyrica',clean?'Endpoint saved. New lyric searches will try Lyrica first, then LRCLIB.':'Endpoint cleared. LRCLIB remains enabled.'));
     },settings.lyricaUrl))},
+    {label:'Test Lyrics API',chev:1,action:()=>checkLyricsAPI()},
     {label:'Tornado Usage',chev:1,action:go(tornadoUsageView)},
     {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
     {label:'Clear Library',chev:1,action:go(()=>list('Clear Library?',[
@@ -1903,10 +1904,27 @@ function lrclibRequest(url){
   });
   lrclibChain=job.catch(()=>{});return job;
 }
+async function checkLyricsAPI(){
+  const url=settings.lyricaUrl;
+  if(!url)return push(msgView('Lyrica Not Configured','Enter your Lyrica API URL first.'));
+  push(loadingView('Testing Lyrica…'));
+  try{
+    const ac=new AbortController(),timer=setTimeout(()=>ac.abort(),75000);
+    let resp;
+    try{resp=await fetch(url+'/lyrics/?'+new URLSearchParams({artist:'Coldplay',song:'Yellow',timestamps:'true'}),{signal:ac.signal})}
+    finally{clearTimeout(timer)}
+    if(!resp.ok)throw Error('HTTP '+resp.status);
+    const j=await resp.json();
+    const ok=j?.status==='success'&&Boolean(j?.data?.lyrics||j?.data?.timed_lyrics?.length);
+    replaceTop(msgView(ok?'Lyrics API Connected':'Lyrics API Responded',ok?'Render delivered lyrics successfully. Try Now Playing again.':'Lyrica responded but did not return lyrics for the test song.'));
+  }catch(e){
+    replaceTop(msgView('Lyrics API Error',e?.name==='AbortError'?'Render did not respond before the timeout. It may be sleeping.':'Request failed: '+String(e.message||e)+'. Check the Render service and browser CORS settings.'));
+  }
+}
 async function lyricaRequest(s){
   if(!settings.lyricaUrl)return null;
   const qs=new URLSearchParams({artist:s.artist,song:s.title,timestamps:'true',word:'true'});
-  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),9500);
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),70000);
   try{
     const resp=await fetch(settings.lyricaUrl+'/lyrics/?'+qs.toString(),{signal:controller.signal,headers:{Accept:'application/json'}});
     if(!resp.ok)return null;
@@ -1927,23 +1945,43 @@ async function lyricaRequest(s){
   }catch(e){return null}
   finally{clearTimeout(timeout)}
 }
-async function fetchOnlineLyrics(s){
-  const key=lyricNorm(s.artist)+'|'+lyricNorm(s.title);
-  if(onlineLyricsCache.has(key)){s.onlineLyrics=onlineLyricsCache.get(key);return s.onlineLyrics;}
-  if(s.onlineLyrics)return s.onlineLyrics;
-  if(!s.title||!s.artist)return null;
+async function fetchLrclibLyrics(s){
   const query=new URLSearchParams({track_name:s.title,artist_name:s.artist});
-  const remote=await lyricaRequest(s);
-  if(remote){onlineLyricsCache.set(key,remote);s.onlineLyrics=remote;return remote}
   let r=await lrclibRequest('https://lrclib.net/api/get?'+query.toString()).catch(()=>null);
   const exact=x=>x&&!x.instrumental&&lyricNorm(x.artistName)===lyricNorm(s.artist)&&lyricNorm(x.trackName)===lyricNorm(s.title);
-  if(!exact(r)){const results=await lrclibRequest('https://lrclib.net/api/search?'+query.toString()).catch(()=>null);r=Array.isArray(results)?results.find(exact):null}
+  if(!exact(r)){
+    const matches=await lrclibRequest('https://lrclib.net/api/search?'+query.toString()).catch(()=>null);
+    r=Array.isArray(matches)?matches.find(exact):null;
+  }
   if(!exact(r))return null;
   const lines=lrcLines(r.syncedLyrics);
-  const data={text:r.plainLyrics||lines.map(x=>x.text).join('\n'),lines,source:'LRCLIB'};
-  if(!data.text)return null;
-  onlineLyricsCache.set(key,data);if(onlineLyricsCache.size>40)onlineLyricsCache.delete(onlineLyricsCache.keys().next().value);
-  s.onlineLyrics=data;return data;
+  const text=r.plainLyrics||lines.map(x=>x.text).join('\n');
+  return text?{text,lines,source:'LRCLIB'}:null;
+}
+async function fetchOnlineLyrics(s){
+  const key=lyricNorm(s.artist)+'|'+lyricNorm(s.title);
+  if(onlineLyricsCache.has(key)){s.onlineLyrics=onlineLyricsCache.get(key);return s.onlineLyrics}
+  if(s.onlineLyrics)return s.onlineLyrics;
+  if(!s.title||!s.artist)return null;
+  // Render's free instance may need to wake from sleep; don't block a fast LRCLIB result.
+  const lyrica=lyricaRequest(s).then(data=>{
+    if(data){
+      const current=s.onlineLyrics;
+      if(!current||data.lines.length>current.lines.length){
+        s.onlineLyrics=data;onlineLyricsCache.set(key,data);
+        if(cur()?.id===s.id&&top().type==='now')fillNowLyrics(s,data);
+      }
+    }
+    return data;
+  });
+  const local=fetchLrclibLyrics(s);
+  let data;
+  try{
+    data=await Promise.any([lyrica.then(r=>{if(!r)throw Error('Lyrica empty');return r}),local.then(r=>{if(!r)throw Error('LRCLIB empty');return r})]);
+  }catch(e){return null}
+  if(!s.onlineLyrics){s.onlineLyrics=data;onlineLyricsCache.set(key,data)}
+  if(onlineLyricsCache.size>40)onlineLyricsCache.delete(onlineLyricsCache.keys().next().value);
+  return s.onlineLyrics;
 }
 async function populateLyrics(s){
   if(s._lyricsLoading)return s._lyricsLoading;
