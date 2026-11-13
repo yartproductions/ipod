@@ -65,6 +65,15 @@ def music_label(pg):
 def wait_sync(pg, timeout=20000):
     pg.wait_for_function('!document.querySelector(".hdr").classList.contains("busy") || document.querySelector(".hdr").classList.contains("done")', timeout=timeout)
     pg.wait_for_timeout(100)
+def all_rows(pg):
+    for _ in range(200): pg.keyboard.press('ArrowUp')
+    out = [sel(pg)]
+    for _ in range(300):
+        b = selpos(pg); pg.keyboard.press('ArrowDown')
+        if selpos(pg) == b: break
+        out.append(sel(pg))
+    for _ in range(300): pg.keyboard.press('ArrowUp')
+    return out
 def home(pg):
     for _ in range(8):
         if pg.text_content('#htitle') == 'iPod': return
@@ -176,7 +185,7 @@ def main():
         check('format badge shows the file type', 'MP3' in pg.text_content('.mnp .fmt'))
         key(pg, 'ArrowUp', wait=100)
         check('volume overlay works in Modern', 'showvol' in pg.get_attribute('#np', 'class'))
-        key(pg, 'Enter', wait=200)
+        key(pg, 'Enter', wait=450)
         check('scrubbing works in Modern', 'scrub' in pg.get_attribute('.mnp .bar', 'class'))
         home(pg); choose(pg, 'Settings'); choose(pg, 'Style')
         check('back to Classic', 'modern' not in pg.get_attribute('#ipod', 'class'))
@@ -219,14 +228,14 @@ def main():
         pg.click('.mnp [data-act="out"]'); pg.wait_for_timeout(200)
         check('tapping the output row explains how to switch output', 'Playing on' in pg.inner_text('#body'))
         key(pg, 'Enter', wait=200)
-        # wheel path: center → scrub → controls
-        key(pg, 'Enter', wait=200)
+        # wheel path: center → scrub → controls (single presses, >300 ms apart)
+        key(pg, 'Enter', wait=450)
         check('center #1 → scrub', 'scrub' in pg.get_attribute('.mnp .bar', 'class'))
-        key(pg, 'Enter', wait=200)
+        key(pg, 'Enter', wait=450)
         check('center #2 → controls with focus ring on ☆', 'ctl' in pg.get_attribute('#np', 'class') and 'focus' in pg.get_attribute('.mnp [data-act="fav"]', 'class'))
         key(pg, 'ArrowDown', wait=120)
         check('spinning moves the focus to ⋯', 'focus' in pg.get_attribute('.mnp [data-act="more"]', 'class'))
-        key(pg, 'Enter', wait=250)
+        key(pg, 'Enter', wait=450)
         check('center opens the ⋯ song menu', pg.text_content('#htitle') == 'Song' and 'Play Next' in pg.inner_text('#body'))
         choose(pg, 'Song Info'); 
         check('Song Info shows format + favorite', 'MP3' in pg.inner_text('#body') and 'Yes' in pg.inner_text('#body'), pg.inner_text('#body'))
@@ -239,7 +248,7 @@ def main():
         pg.click('.mnp [data-act="queue"]'); pg.wait_for_timeout(200)
         check('Play Next puts it right after the current song', rows(pg)[:2] == ['▶ Lyric Test', 'Lyric Test'], rows(pg)[:3])
         key(pg, 'Escape', wait=150)
-        key(pg, 'Enter', wait=150); key(pg, 'Enter', wait=150)   # → controls
+        key(pg, 'Enter', wait=450); key(pg, 'Enter', wait=450)   # → controls
         key(pg, 'Escape', wait=150)
         check('MENU leaves controls but stays on Now Playing', pg.text_content('#htitle') == 'Now Playing' and 'ctl' not in pg.get_attribute('#np', 'class'))
         # favourites persist + list
@@ -413,10 +422,12 @@ def main():
         check('tapping the previous cover jumps back to it', 'Blue Hour Track' in pg.text_content('.fnp .cap b'), pg.text_content('.fnp .cap b'))
         key(pg, 'ArrowUp', wait=150)
         check('wheel still controls volume', 'showvol' in pg.get_attribute('#np', 'class'))
-        key(pg, 'Enter', wait=200)
-        check('center #1 scrubs', 'scrub' in pg.get_attribute('.fnp .bar', 'class'))
-        key(pg, 'Enter', wait=300)
-        check('center #2 opens the song menu with Get Artwork', pg.text_content('#htitle') == 'Song' and ('Get Artwork' in pg.inner_text('#body') or 'Replace Artwork' in pg.inner_text('#body')))
+        key(pg, 'Enter', wait=450)
+        check('single center press scrubs', 'scrub' in pg.get_attribute('.fnp .bar', 'class'))
+        key(pg, 'Enter', wait=450)
+        check('a second single press turns scrubbing off (no menu)', pg.text_content('#htitle') == 'Now Playing' and 'scrub' not in pg.get_attribute('.fnp .bar', 'class'))
+        key(pg, 'Enter', wait=80); key(pg, 'Enter', wait=400)
+        check('double-tap center opens the song menu with Get Artwork', pg.text_content('#htitle') == 'Song' and ('Get Artwork' in pg.inner_text('#body') or 'Replace Artwork' in pg.inner_text('#body')))
         key(pg, 'Escape', wait=200)
 
         # ---- Get Artwork (pick a candidate) ----
@@ -489,6 +500,78 @@ def main():
         pg.set_input_files('#file', [str(FIX / 'song1.mp3')]); pg.wait_for_timeout(300); wait_sync(pg); pg.wait_for_timeout(3500)
         check('albums already tried are not looked up again', not any(c in mb_calls[calls0:calls1] for c in mb_calls[calls1:]), mb_calls[calls1:])
         home(pg); choose(pg, 'Settings'); choose(pg, 'Auto Artwork'); home(pg)
+
+        # ---- Song Flow ----
+        home(pg); choose(pg, music_label(pg)); choose(pg, 'Song Flow'); pg.wait_for_timeout(500)
+        total = int(pg.text_content('#fcnt').split(' OF ')[1])
+        n_cards = pg.evaluate('document.querySelectorAll("#flow .cv").length')
+        check('Song Flow shows one card per song', total >= 45 and pg.text_content('#htitle') == 'Song Flow', total)
+        check('big library builds only nearby covers (windowed)', n_cards <= 25, n_cards)
+        for _ in range(200): pg.keyboard.press('ArrowUp')
+        pg.wait_for_timeout(300)
+        check('Song Flow starts at the first song', pg.text_content('#fcnt').startswith('1 OF'))
+        seen = set()
+        for _ in range(30):
+            key(pg, 'ArrowDown', wait=50); seen.add(pg.text_content('#fcnt'))
+        pg.wait_for_timeout(400)
+        pos = int(pg.text_content('#fcnt').split(' OF ')[0])
+        check('spinning far past the window keeps working', pos == 31 and len(seen) == 30, (pos, len(seen)))
+        sel_card = pg.evaluate('(()=>{const c=[...document.querySelectorAll("#flow .cv")].find(e=>e.style.transform.includes("rotateY(0deg)"));return c&&+c.dataset.i})()')
+        check('the front card is the selected song after re-windowing', sel_card == pos - 1, (sel_card, pos))
+        want_title = pg.text_content('#fal')
+        check('caption shows song title + artist', want_title != '' and pg.text_content('#far') != '')
+        key(pg, 'Enter', wait=800)
+        now_title = pg.evaluate('(document.querySelector(".fnp .cap b")||document.querySelector(".mnp .t")||document.querySelector(".np .t")||{}).textContent')
+        check('center plays the selected song', pg.text_content('#htitle') == 'Now Playing' and now_title == want_title, (want_title, now_title))
+        cnt = pg.evaluate('(document.querySelector(".np .cnt")||document.querySelector(".mnp .cnt")||{textContent:""}).textContent')
+        key(pg, ' ', wait=150)
+        check('it plays on through the rest of your songs (queue = whole library)', cnt == '' or cnt.endswith(str(total)), cnt)
+        home(pg); choose(pg, 'Song Flow'); pg.wait_for_timeout(400)
+        check('Song Flow opens on the playing song (from the main menu too)', pg.text_content('#fal') == want_title)
+        key(pg, 'Escape', wait=200)
+
+        # ---- Delete Song (double-tap center → song menu → Delete Song) ----
+        def db_titles():
+            return pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();q.onsuccess=()=>res(q.result.map(s=>s.title))}})''')
+        home(pg); choose(pg, music_label(pg)); choose(pg, 'Songs')
+        for _ in range(80):
+            if sel(pg) == 'Green Room Track': break
+            key(pg, 'ArrowDown', wait=25)
+        key(pg, 'Enter', wait=700); key(pg, ' ', wait=150)
+        key(pg, 'Enter', wait=80); key(pg, 'Enter', wait=400)
+        check('double-tap opens the song menu with Delete Song', pg.text_content('#htitle') == 'Song' and 'Delete Song' in all_rows(pg))
+        choose(pg, 'Delete Song')
+        check('delete asks for confirmation', pg.text_content('#htitle') == 'Delete Song?' and rows(pg) == ['Cancel', 'Delete “Green Room Track”'], rows(pg))
+        choose(pg, 'Cancel')
+        check('Cancel keeps the song', 'Green Room Track' in db_titles() and pg.text_content('#htitle') == 'Song')
+        choose(pg, 'Delete Song'); choose(pg, 'Delete “Green Room Track”'); pg.wait_for_timeout(400)
+        check('song is deleted from storage', 'Green Room Track' not in db_titles())
+        check('confirmation message shown', 'Song Deleted' in pg.inner_text('#body'), pg.inner_text('#body'))
+        key(pg, 'Enter', wait=300)
+        check('back on Now Playing with the next song (not stuck on the deleted one)', pg.text_content('#htitle') in ('Now Playing', 'Songs')
+              and 'Green Room Track' not in (pg.evaluate('(document.querySelector(".fnp .cap b")||document.querySelector(".mnp .t")||document.querySelector(".np .t")||{textContent:""}).textContent')))
+        home(pg); choose(pg, music_label(pg)); choose(pg, 'Songs')
+        check('deleted song is gone from Songs', 'Green Room Track' not in all_rows(pg))
+        key(pg, 'Escape', wait=150); choose(pg, 'Song Flow'); pg.wait_for_timeout(400)
+        titles = set()
+        for _ in range(200): pg.keyboard.press('ArrowUp')
+        for _ in range(80):
+            titles.add(pg.text_content('#fal')); before = pg.text_content('#fcnt'); pg.keyboard.press('ArrowDown')
+            if pg.text_content('#fcnt') == before: break
+        check('deleted song is gone from Song Flow', 'Green Room Track' not in titles and len(titles) > 5, len(titles))
+        key(pg, 'Escape', wait=150); pg.reload(); pg.wait_for_timeout(1500)
+        check('deletion persists after reload', 'Green Room Track' not in db_titles())
+
+        # ---- Brick: haptic tick when the paddle moves ----
+        pg.evaluate("window.__h=[];window.webkit={messageHandlers:{ipodHaptics:{postMessage:m=>window.__h.push(typeof m==='string'?m:m.kind)}}}")
+        home(pg); choose(pg, 'Extras'); choose(pg, 'Brick'); pg.wait_for_timeout(300)
+        pg.evaluate('window.__h=[]')
+        key(pg, 'ArrowDown', n=3, wait=60)
+        check('moving the paddle gives a haptic tick per step', pg.evaluate('window.__h.filter(k=>k==="selection").length') == 3, pg.evaluate('window.__h'))
+        for _ in range(25): key(pg, 'ArrowDown', wait=45)
+        pg.evaluate('window.__h=[]'); key(pg, 'ArrowDown', n=3, wait=60)
+        check('no tick when the paddle is against the wall', pg.evaluate('window.__h.length') == 0, pg.evaluate('window.__h'))
+        key(pg, 'Escape', wait=200)
 
         check('no uncaught page errors', not errors, errors)
         ctx.close()
