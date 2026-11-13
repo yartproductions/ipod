@@ -1495,7 +1495,7 @@ function recommendationSeeds(){
 // Keep recommendation titles and artwork tied to the actual music video, rather than a seed artist.
 function cleanMusicVideoText(x){
   return String(x||'').replace(/[\u200b-\u200d\uFEFF]/g,'')
-    .replace(/\s*[\[(]\s*(?:(?:official|original)\s+)?(?:(?:music|lyric|lyrics)\s+video|(?:official\s+)?audio|visuali[sz]er|performance video|music visual|video clip|4k|hd|high definition)\b[^\])]*[\])]/gi,'')
+    .replace(/\s*[\[(]\s*(?:(?:official|original)\s+)?(?:(?:music|lyric|lyrics)\s+video|video|(?:official\s+)?audio|visuali[sz]er|performance video|music visual|video clip|4k|hd|high definition)\b[^\])]*[\])]/gi,'')
     .replace(/\s*(?:\||·|•)\s*(?:(?:official|music|lyric|lyrics)\b.*|4k|hd)$/gi,'')
     .replace(/\s*[-–—]\s*(?:official\s+)?(?:music video|visuali[sz]er|lyric video|official audio)\s*$/gi,'')
     .replace(/\s+/g,' ').trim();
@@ -1800,12 +1800,12 @@ async function saveArtwork(s,blob,match={source:'manual',score:1},{manual=false}
   let saved=0;
   for(const t of targets){
     if(t.deleted||!songs.some(x=>x.id===t.id))continue;
-    const oldUrl=t.artUrl;
+    const oldUrl=t.artUrl,oldArt=t.art,oldSource=t.artSource,oldConfidence=t.artConfidence,oldAlbum=t.album;
     const nextUrl=URL.createObjectURL(blob);
     t.art=blob;t.artUrl=nextUrl;
     artworkMetadata(t,manual?{...match,source:'manual'}:match);
     try{await dbPut(songRecord(t));saved++}
-    catch(e){URL.revokeObjectURL(nextUrl);t.artUrl=oldUrl;throw e}
+    catch(e){URL.revokeObjectURL(nextUrl);t.art=oldArt;t.artSource=oldSource;t.artConfidence=oldConfidence;t.album=oldAlbum;t.artUrl=oldUrl;throw e}
     if(oldUrl&&oldUrl.startsWith('blob:'))URL.revokeObjectURL(oldUrl);
     queue.forEach(q=>{if(q.id===t.id){q.art=t.art;q.artUrl=t.artUrl;q.album=t.album;q.artSource=t.artSource;q.artConfidence=t.artConfidence}});
   }
@@ -1815,20 +1815,20 @@ async function saveArtwork(s,blob,match={source:'manual',score:1},{manual=false}
 async function saveMatchedArtworkURL(s,match){
   const lib=songs.find(x=>x.id===s.id)||s;
   if(!songs.some(x=>x.id===lib.id))return false;
-  const old=lib.artUrl;
-  lib.artUrl=match.url;lib.artworkUrl=match.url;
+  const old=lib.artUrl,priorArt=lib.art;
+  lib.art=null;lib.artUrl=match.url;lib.artworkUrl=match.url;
   artworkMetadata(lib,match);
   try{await dbPut(songRecord(lib))}
-  catch(e){lib.artUrl=old;throw e}
+  catch(e){lib.art=priorArt;lib.artUrl=old;throw e}
   if(old&&old.startsWith('blob:'))URL.revokeObjectURL(old);
   queue.forEach(q=>{if(q.id===lib.id){q.artUrl=lib.artUrl;q.album=lib.album;q.artSource=lib.artSource}});
   if(cur()?.id===lib.id){setSession();if(top()?.type==='now')render()}
   return true;
 }
-async function repairSongArtwork(s,{force=false,preferred=null}={}){
+async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected=false}={}){
   const lib=songs.find(x=>x.id===s.id)||s;
   if(!lib.blob||lib.deleted||!songs.some(x=>x.id===lib.id))return null;
-  if(artworkProtected(lib))return null;
+  if(artworkProtected(lib)&&!overrideProtected)return null;
   if(!force&&!artworkNeedsRepair(lib))return null;
   if(!known(lib.artist)||!known(lib.title))return null;
   let match=null;
@@ -1883,7 +1883,7 @@ function artworkRepairMenu(s){
     {label:'Find Best Match',chev:1,action:async()=>{
       const waiting=loadingView('Matching cover…');push(waiting);
       try{
-        const match=await repairSongArtwork(s,{force:true});
+        const match=await repairSongArtwork(s,{force:true,overrideProtected:true});
         if(top()===waiting)replaceTop(msgView(match?'Cover Updated':'No Exact Match',match?'Saved '+match.source+' artwork to your device.':'No safe automatic match was found. Choose a cover manually or correct the song details.'));
       }catch(e){if(top()===waiting)replaceTop(msgView('Artwork Error',e.message||'Lookup failed.'))}
     }},
