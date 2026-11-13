@@ -1158,7 +1158,7 @@ function settingsMenu(){
     {label:'Menu Style',val:settings.menuStyle,action:tog('menuStyle',['List','Flow'])},
     {label:'Now Playing Style',val:settings.npStyle,action:tog('npStyle',['Standard','Flow'])},
     {label:'Auto Artwork',val:settings.autoArt?'On':'Off',action:tog('autoArt',[true,false])},
-    {label:'Find Missing Artwork',chev:1,action:()=>findMissingArtwork()},
+    {label:'Artwork Tools',chev:1,action:go(artworkToolsMenu)},
     ...(settings.menuStyle==='List'?[{label:'Split Screen',val:settings.split,action:tog('split',['Album Art','Now Playing','Off'])}]:[]),
     {label:'YouTube Downloads',val:'Offline MP3'},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
@@ -1606,7 +1606,9 @@ async function artworkFromITunes(it){
   const res=await fetch('https://itunes.apple.com/search?term='+q+'&entity=song&media=music&country=US&limit=25');
   if(!res.ok)throw new Error('iTunes returned '+res.status);
   const data=await res.json();
+  const specificAlbum=known(it.album)&&it.album!=='Offline Music';
   const candidates=(data.results||[]).filter(x=>x.kind==='song'&&x.artworkUrl100)
+    .filter(x=>!specificAlbum||artworkNormalize(x.collectionName)===artworkNormalize(it.album))
     .map(x=>({item:x,score:artworkScore(it,x)})).sort((a,b)=>b.score-a.score);
   const best=candidates[0];
   if(!best||best.score<.92)return null;
@@ -1621,7 +1623,8 @@ async function artworkFromMusicBrainz(it){
   for(const rec of (j.recordings||[])){
     const artist=(rec['artist-credit']||[]).map(x=>x.name||(x.artist&&x.artist.name)||'').join('');
     if(artworkScore(it,{trackName:rec.title,artistName:artist})<.92||(+rec.score||0)<90)continue;
-    const releases=(rec.releases||[]).filter(x=>x.id).slice(0,4);
+    const specificAlbum=known(it.album)&&it.album!=='Offline Music';
+    const releases=(rec.releases||[]).filter(x=>x.id&&(!specificAlbum||artworkNormalize(x.title)===artworkNormalize(it.album))).slice(0,4);
     for(const release of releases){
       const url=CAA+'/release/'+encodeURIComponent(release.id)+'/front-500';
       try{
@@ -1762,7 +1765,7 @@ async function artCandidates(s){
   if(!navigator.onLine)throw new Error('You’re offline.');
   if(!known(s.artist)&&!known(s.album))throw new Error('This song has no artist or album info to search with.');
   let rel=[];
-  if(known(s.album)){const j=await mbGet(`/release?query=${encodeURIComponent(`release:${mbq(s.album)}`+(known(s.artist)?` AND artist:${mbq(s.artist)}`:''))}&limit=8`);rel=j.releases||[]}
+  if(known(s.album)&&s.album!=='Offline Music'){const j=await mbGet(`/release?query=${encodeURIComponent(`release:${mbq(s.album)}`+(known(s.artist)?` AND artist:${mbq(s.artist)}`:''))}&limit=8`);rel=j.releases||[]}
   if(!rel.length&&s.title){const j=await mbGet(`/recording?query=${encodeURIComponent(`recording:${mbq(s.title)}`+(known(s.artist)?` AND artist:${mbq(s.artist)}`:''))}&limit=5`);
     rel=(j.recordings||[]).flatMap(rc=>(rc.releases||[]).map(x=>({...x,score:rc.score,'artist-credit':x['artist-credit']||rc['artist-credit']})))}
   const seen=new Set();
@@ -1847,33 +1850,98 @@ async function repairSongArtwork(s,{force=false,preferred=null}={}){
   return match;
 }
 async function getArtwork(s){
-  push(loadingView('Searching…'));
+  push(loadingView('Finding covers…'));
   try{
     const cands=await artCandidates(s);
-    if(!cands.length)return replaceTop(msgView('No Match','Couldn’t find this album in MusicBrainz. Check the song’s artist and album tags.'));
-    replaceTop(list('Choose Artwork',cands.map(c=>({label:`${c.title}${c.year?' ('+c.year+')':''}`,val:c.country||undefined,thumb:c.thumb,
-      action:async()=>{push(loadingView('Saving…'));try{const b=await fetchCover(c.full);const n=await saveArtwork(s,b);
-        replaceTop(msgView('Artwork Saved',`Added to ${n} song${n===1?'':'s'} from ${s.album||c.title}.`))}catch(e){replaceTop(msgView('Couldn’t Save',e.message))}}})),
-      {emptyText:'No covers found.'}));
+    if(!cands.length)return replaceTop(msgView('No Covers Found','No MusicBrainz releases matched. You can correct the artist and title in Artwork Tools.'));
+    replaceTop(list('Choose a Cover',cands.map(c=>({label:c.title+(c.year?' ('+c.year+')':''),val:c.country||undefined,thumb:c.thumb,
+      action:async()=>{
+        push(loadingView('Saving cover…'));
+        try{
+          const b=await fetchCover(c.full);
+          const n=await saveArtwork(s,b,{source:'manual',score:1,album:c.title},{manual:true});
+          replaceTop(msgView(n?'Artwork Saved':'Song Missing',n?'Saved locally. Manual covers are protected from auto-replacement.':'This song is no longer in the library.'));
+        }catch(e){replaceTop(msgView('Could Not Save',e.message))}
+      }}))));
   }catch(e){replaceTop(msgView('Artwork Search Failed',e.message||'Check your connection.'))}
 }
-let artBusy=false,artAgain=false;
-const artTried=new Set();     // album+artist keys already looked up this session by Auto Artwork (no repeat lookups)
-async function findMissingArtwork(quiet){
-  if(artBusy){if(quiet)artAgain=true;else push(msgView('Already Running','Artwork search is in progress; watch the bar at the top.'));return}
-  const groups=[...new Map(songs.filter(s=>!s.art).map(s=>[s.album+'\u0000'+s.artist,s])).entries()]
-    .filter(([k,s])=>(known(s.album)||known(s.artist))&&!(quiet&&artTried.has(k))).map(([k,s])=>(quiet&&artTried.add(k),s));
-  if(!groups.length){if(!quiet)push(msgView('All Set','Every song already has artwork, or there’s nothing to search with.'));return}
-  if(!navigator.onLine){if(!quiet)push(msgView('You’re Offline','Connect to the internet to look up artwork.'));return}
-  artBusy=true;if(!quiet)push(msgView('Finding Artwork',`Looking up ${groups.length} album${groups.length===1?'':'s'}. You can keep using the iPod; progress shows at the top.`));
-  let found=0;
-  try{for(let i=0;i<groups.length;i++){const s=groups[i];setHdrTask(`Artwork ${i+1} of ${groups.length}`,i/groups.length);
-    try{const c=(await artCandidates(s)).find(c=>confident(c,s));if(c){await saveArtwork(s,await fetchCover(c.full));found++}}catch(e){}
-    setHdrTask(`Artwork ${i+1} of ${groups.length}`,(i+1)/groups.length)}}
-  finally{artBusy=false}
-  setHdrTask(found?`Found ${found} cover${found===1?'':'s'}`:'No new covers found',1,true);render();
-  if(artAgain){artAgain=false;setTimeout(()=>findMissingArtwork(true),2400)}
+async function setSongArtworkMetadata(s,field,value){
+  const title=String(value||'').trim();
+  if(!title)return replaceTop(msgView('Invalid Entry','Enter a non-empty value.'));
+  const lib=songs.find(x=>x.id===s.id);
+  if(!lib)return replaceTop(msgView('Song Unavailable','This song is no longer in the library.'));
+  lib[field]=title;
+  if(s!==lib)s[field]=title;
+  if(field==='title'||field==='artist'){lib.onlineLyrics=null;s.onlineLyrics=null}
+  queue.forEach(q=>{if(q.id===lib.id)q[field]=title});
+  await dbPut(songRecord(lib));
+  setSession();sortSongs();
+  replaceTop(msgView('Metadata Saved','Artwork matching will use the corrected '+field+'.'));
 }
+function artworkRepairMenu(s){
+  return list('Repair Artwork',()=>[
+    {label:'Find Best Match',chev:1,action:async()=>{
+      const waiting=loadingView('Matching cover…');push(waiting);
+      try{
+        const match=await repairSongArtwork(s,{force:true});
+        if(top()===waiting)replaceTop(msgView(match?'Cover Updated':'No Exact Match',match?'Saved '+match.source+' artwork to your device.':'No safe automatic match was found. Choose a cover manually or correct the song details.'));
+      }catch(e){if(top()===waiting)replaceTop(msgView('Artwork Error',e.message||'Lookup failed.'))}
+    }},
+    {label:'Choose Album Cover',chev:1,action:()=>getArtwork(s)},
+    {label:'Correct Artist',chev:1,action:go(()=>inputView('Correct Artist','Artist name',v=>setSongArtworkMetadata(s,'artist',v),s.artist))},
+    {label:'Correct Title',chev:1,action:go(()=>inputView('Correct Title','Song name',v=>setSongArtworkMetadata(s,'title',v),s.title))},
+    {label:'Artwork Source',val:s.artSource|| (s.art?'Embedded':'Unmatched')},
+    {label:'Match Confidence',val:s.artConfidence?Math.round(s.artConfidence*100)+'%':'—'}
+  ]);
+}
+function artworkToolsMenu(){
+  const locked=songs.filter(artworkProtected).length;
+  const matched=songs.filter(s=>s.art&&['itunes','coverartarchive','manual'].includes(s.artSource)).length;
+  return list('Artwork Tools',()=>[
+    {label:'Fallback Mode',val:settings.artworkMode==='Strict'?'Strict':'Thumbnails',action:()=>{
+      settings.artworkMode=settings.artworkMode==='Strict'?'Thumbnails':'Strict';saveSettings();render();
+    }},
+    {label:'Find Missing Artwork',chev:1,action:()=>findMissingArtwork(false)},
+    {label:'Refresh All Artwork',chev:1,action:()=>refreshAllArtwork()},
+    {label:'Repair a Song',chev:1,action:go(()=>list('Select Song',()=>songs.map(s=>({
+      label:s.title,val:s.artSource==='youtube-thumb'?'Thumbnail':s.artSource|| (s.art?'Embedded':'Missing'),
+      chev:1,action:go(()=>artworkRepairMenu(s))
+    })),{emptyText:'No saved songs yet.'}))},
+    {label:'Saved Covers',val:String(matched)},
+    {label:'Protected Covers',val:String(locked)},
+    {label:'Songs',val:String(songs.length)}
+  ]);
+}
+let artBusy=false,artAgain=false;
+const artTried=new Set();
+async function artworkBatch(mode,quiet=false){
+  if(artBusy){if(quiet)artAgain=true;else push(msgView('Artwork Busy','An artwork scan is already running.'));return}
+  if(!navigator.onLine){if(!quiet)push(msgView('Offline','Connect to the internet to refresh covers.'));return}
+  const eligible=songs.filter(s=>s.blob&&!artworkProtected(s)
+    &&(mode==='all'||artworkNeedsRepair(s))&&(!quiet||!artTried.has(s.id)));
+  if(!eligible.length){if(!quiet)push(msgView('Nothing to Refresh','Your library has no eligible songs. Embedded and manually chosen covers are protected.'));return}
+  artBusy=true;
+  const view=quiet?null:msgView('Refreshing Covers','Checking '+eligible.length+' saved song'+(eligible.length===1?'':'s')+'. You can keep using the iPod.');
+  if(view)push(view);
+  let fixed=0,unmatched=0;
+  try{
+    for(let i=0;i<eligible.length;i++){
+      const song=eligible[i];if(quiet)artTried.add(song.id);
+      setHdrTask('Artwork '+(i+1)+' of '+eligible.length,i/eligible.length);
+      try{const result=await repairSongArtwork(song,{force:mode==='all'});if(result)fixed++;else unmatched++}
+      catch(e){unmatched++}
+      setHdrTask('Artwork '+(i+1)+' of '+eligible.length,(i+1)/eligible.length);
+      if(i<eligible.length-1)await new Promise(resolve=>setTimeout(resolve,800));
+    }
+  }finally{artBusy=false}
+  setHdrTask('Artwork '+fixed+' updated',1,true);
+  if(view&&top()===view)replaceTop(msgView('Artwork Complete',fixed+' covers updated. '+unmatched+' unchanged. Embedded and manually chosen art was preserved.'));
+  else if(top()?.type==='now'||top()?.type==='flow')render();
+  if(artAgain){artAgain=false;setTimeout(()=>findMissingArtwork(true),1500)}
+}
+function findMissingArtwork(quiet=false){return artworkBatch('missing',quiet)}
+function refreshAllArtwork(){return artworkBatch('all',false)}
+
 /* ---------- Modern Now Playing controls ---------- */
 const ACTS=['fav','more','lyrics','queue','out'];
 let ctl=null;                                   // index into ACTS while the wheel is driving the controls, else null
@@ -1928,7 +1996,7 @@ function songOptions(s){return list('Song',()=>[
   {label:s.favorite?'Remove from Favorites':'Add to Favorites',action:async()=>{await toggleFavorite(s);pop()}},
   {label:'Go to Album',chev:1,action:go(()=>songsMenu(albumSort(songs.filter(x=>x.album===s.album)),s.album))},
   {label:'Go to Artist',chev:1,action:go(()=>{const ss=songs.filter(x=>x.artist===s.artist);return new Set(ss.map(x=>x.album)).size>1?albumsMenu(ss,s.artist,true):songsMenu(albumSort(ss),s.artist)})},
-  {label:s.art?'Replace Artwork':'Get Artwork',chev:1,action:()=>getArtwork(s)},
+  {label:'Repair Artwork',chev:1,action:go(()=>artworkRepairMenu(s))},
   ...(songs.some(x=>x.id===s.id)?[{label:'Delete Song',chev:1,action:go(()=>confirmDelete(s))}]:[]),
   {label:'Song Info',chev:1,action:go(()=>list('Song Info',[
     {label:'Title',val:s.title},{label:'Artist',val:s.artist},{label:'Album',val:s.album},
