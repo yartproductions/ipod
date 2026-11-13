@@ -183,6 +183,23 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .flow .cnt{position:absolute;right:9px;top:6px;font-size:9px;font-weight:700;color:#fff;opacity:.45;letter-spacing:.05em}
 .modern.lightui .flow .cnt{color:#111827}
 
+
+/* Music Home: four large classic-iPod selectors, styled like the original LCD menu. */
+.music-home{position:absolute;inset:0;background:linear-gradient(#f8f9fb,#dfe3e9);padding:12px 12px 24px;color:#1c2530}
+.music-home .home-head{text-align:center;font-size:11px;font-weight:700;letter-spacing:.035em;margin-bottom:10px;color:#697484}
+.music-home .home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.music-home .home-card{height:88px;min-width:0;border:1px solid #b5bdc9;border-radius:9px;padding:8px 6px 7px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+  background:linear-gradient(180deg,#fff 0%,#e7eaf0 48%,#d7dce4 100%);box-shadow:inset 0 1px 1px #fff,0 2px 3px rgba(33,48,68,.16);color:#374253}
+.music-home .home-card svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.music-home .home-card span{font-size:11px;font-weight:700;white-space:nowrap}
+.music-home .home-card.sel{border-color:#286bad;background:linear-gradient(#83c6fa,#3f91e6 54%,#1567c4);color:#fff;text-shadow:0 1px 1px #16558c;
+  box-shadow:inset 0 1px 1px #b4e0ff,0 0 0 1px #1c6bbb,0 2px 5px rgba(18,87,169,.22)}
+.music-home .home-hint{text-align:center;font-size:10px;color:#637185;margin-top:10px}
+.modern.lightui .music-home{background:linear-gradient(#fff,#e5e9ef)}
+.modern:not(.lightui) .music-home{background:linear-gradient(#202936,#0e141f);color:#e5ecf5}
+.modern:not(.lightui) .music-home .home-card{background:linear-gradient(#3a4351,#202a38);border-color:#485569;color:#e3eaf5}
+.modern:not(.lightui) .music-home .home-card.sel{background:linear-gradient(#69b5f5,#217cdb 60%,#135ca7);border-color:#84cafa;color:#fff}
+.modern:not(.lightui) .music-home .home-head,.modern:not(.lightui) .music-home .home-hint{color:#a7b5c8}
 /* ================= header status (iTunes-style sync bar) ================= */
 .hdr .task{position:absolute;left:34px;right:36px;top:2px;bottom:2px;display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none}
 .hdr.busy #htitle{display:none}
@@ -948,18 +965,30 @@ function musicExploreCategory(title,names,kind){
   }})));
 }
 function musicHome(){
-  return list('Music Home',()=>[
-    {label:'Discover For You',chev:1,action:()=>openRecommendationFlow()},
-    {label:'Search Music',chev:1,action:go(()=>inputView('Search Music','Artist, song or genre…',
-      q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'flow')}))},
-    {label:'Genres',chev:1,action:go(()=>musicExploreCategory('Genres',MUSIC_GENRES,'genre'))},
-    {label:'Moods & Activities',chev:1,action:go(()=>musicExploreCategory('Moods',MUSIC_MOODS,'mood'))},
-    {label:'Decades',chev:1,action:go(()=>musicExploreCategory('Decades',MUSIC_DECADES,'decade'))},
-    {label:'Explore Any Artist',chev:1,action:go(()=>inputView('Explore Artist','Artist name…',
-      q=>{replaceTop(loadingView('Exploring artist…'));doSearch(q+' official music',null,null,'flow')}))},
-    {label:'Saved Music',chev:1,action:go(()=>entriesView('Saved',saved,true))},
-    {label:'Your Library',chev:1,action:go(musicMenu)}
-  ]);
+  // The four tiles are wheel-selectable, not a modern web dashboard.
+  return {type:'music-home',title:'Music Home',sel:0,choices:[
+    {label:'For You',icon:'music',action:()=>openRecommendationFlow()},
+    {label:'Genres',icon:'genres',action:go(()=>musicExploreCategory('Genres',MUSIC_GENRES,'genre'))},
+    {label:'Moods',icon:'moods',action:go(()=>musicExploreCategory('Moods',MUSIC_MOODS,'mood'))},
+    {label:'Decades',icon:'decades',action:go(()=>musicExploreCategory('Decades',MUSIC_DECADES,'decade'))}
+  ]};
+}
+const HOME_ICONS={
+  music:'<path d="M21 7v19"/><path d="M21 8l11-3v19"/><ellipse cx="17" cy="27" rx="5" ry="3"/><ellipse cx="28" cy="25" rx="5" ry="3"/>',
+  genres:'<circle cx="24" cy="24" r="14"/><circle cx="24" cy="24" r="4"/><path d="M24 10v10M10 24h10"/>',
+  moods:'<path d="M24 36S9 27 9 18a8 8 0 0 1 15-3 8 8 0 0 1 15 3c0 9-15 18-15 18Z"/>',
+  decades:'<circle cx="24" cy="24" r="15"/><path d="M24 14v11l8 5"/>'
+};
+function renderMusicHome(v){
+  v.sel=Math.max(0,Math.min(3,v.sel));
+  body.innerHTML='<div class="music-home"><div class="home-head">Explore Music</div><div class="home-grid">'+
+    v.choices.map((choice,i)=>'<div class="home-card'+(i===v.sel?' sel':'')+'" data-home-index="'+i+'">'+
+      '<svg viewBox="0 0 48 48" aria-hidden="true">'+HOME_ICONS[choice.icon]+'</svg>'+
+      '<span>'+esc(choice.label)+'</span></div>').join('')+
+    '</div><div class="home-hint">Spin to choose · Center to explore</div></div>';
+  body.querySelectorAll('[data-home-index]').forEach(el=>el.addEventListener('click',()=>{
+    v.sel=+el.dataset.homeIndex;renderMusicHome(v);click();v.choices[v.sel].action();
+  }));
 }
 function musicMenu(){return list('Local Music',[
   {label:'Music Home',action:go(musicHome),chev:1},
@@ -1171,7 +1200,9 @@ function render(){
   screenEl.classList.remove('nowmod');
   const wantSplit=!!(v.type==='list'&&v.split&&settings.split!=='Off'&&songs.length>0&&!isFlowMenu(v));   // must be a real boolean: classList.toggle(x, undefined) flips
   screenEl.classList.toggle('splitmode',wantSplit);if(wantSplit)splitStart();else splitStop();
-  if(v.type==='list'&&isFlowMenu(v)){
+  if(v.type==='music-home'){
+    renderMusicHome(v);
+  }else if(v.type==='list'&&isFlowMenu(v)){
     renderFlowMenu(v);
   }else if(v.type==='list'){
     const it=itemsOf(v);
@@ -1741,6 +1772,7 @@ function scroll(dir){
   if(holdOn){showLock();return}
   const v=top();
   if(v.type==='brick'){brickInput(v,null,dir);return}
+  if(v.type==='music-home'){const ns=Math.max(0,Math.min(3,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();renderMusicHome(v)}return}
   if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v)}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
   if(v.type==='list'){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}}
@@ -1767,6 +1799,7 @@ function press(btn){
   else if(btn==='play'&&v.type==='flow'){if(v.recommendItems)playYT(v.recommendItems,v.sel);else if(v.songList)playList(v.songList,v.sel);else playList(v.albums[v.sel].songs,0)}
   else if(btn==='play'){playPause();if(v.type==='video')flashVo()}
   else if(btn==='select'){
+    if(v.type==='music-home'){const x=v.choices[v.sel];if(x&&x.action)x.action()}
     if(v.type==='list'){const x=itemsOf(v)[v.sel];if(x&&x.action)x.action()}
     else if(v.type==='msg')pop();
     else if(v.type==='flow'){if(v.recommendItems)playYT(v.recommendItems,v.sel);else if(v.songList)playList(v.songList,v.sel);else{const a=v.albums[v.sel];push(songsMenu(a.songs,a.album))}}
