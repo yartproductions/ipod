@@ -1458,31 +1458,99 @@ async function recommendationLoadMore(v){
 function recommendationMaybeLoadMore(v){
   if(v&&v.recommendItems&&v.sel>=v.recommendItems.length-7)recommendationLoadMore(v).catch(()=>{v.loadingMore=false});
 }
-// Search iTunes for a close artist/title match; fall back to this video's own thumbnail.
-// Do not reuse an unrelated album cover just because its title contains a common word.
+// Prefer a confidently matched recording cover to a YouTube video thumbnail.
+// iTunes Search needs no API key. MusicBrainz/Cover Art Archive is the fallback.
 const recommendationArtCache=new Map();
-async function recommendationArtwork(it){
-  const key=(it.artist+'|'+it.title).toLowerCase();
-  if(recommendationArtCache.has(key))return recommendationArtCache.get(key);
-  let artwork=null;
-  try{
-    const q=encodeURIComponent(it.artist+' '+it.title);
-    const res=await fetch('https://itunes.apple.com/search?term='+q+'&entity=song&limit=12');
-    if(res.ok){
-      const data=await res.json();
-      const normalize=x=>String(x||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
-        .replace(/\b(feat|ft)\b.*$/,'').replace(/[^a-z0-9]+/g,' ').trim();
-      const title=normalize(it.title),artist=normalize(it.artist);
-      const candidate=(data.results||[]).find(x=>{
-        const t=normalize(x.trackName),a=normalize(x.artistName);
-        return t&&title&&(t===title||t.includes(title)&&title.length>8||title.includes(t)&&t.length>8)
-          &&a&&artist&&(a===artist||a.includes(artist)&&artist.length>5||artist.includes(a)&&a.length>5);
-      });
-      if(candidate&&candidate.artworkUrl100)artwork=candidate.artworkUrl100.replace(/100x100bb/g,'600x600bb');
+const ART_CACHE_KEY='ipod.artworkMatches.v2';
+const artSaved=ls.get(ART_CACHE_KEY,{});
+let artSaveTimer=null;
+function artworkNormalize(x){
+  return String(x||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+    .replace(/\b(feat(?:uring)?|ft)\.?\s+[^([]+/g,'')
+    .replace(/\b(official|music video|official audio|lyric video|visualizer|remastered|hd|4k)\b/g,'')
+    .replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+}
+function artworkVariants(x){
+  const whole=artworkNormalize(x);
+  const withoutVersion=artworkNormalize(String(x||'').replace(/\s*[\[(][^\])]*(?:remix|live|edit|version|remaster|acoustic|sped up|slowed)[^\])]*[\])]/ig,''));
+  return [...new Set([whole,withoutVersion].filter(Boolean))];
+}
+function artworkSimilarity(a,b){
+  if(!a||!b)return 0;
+  if(a===b)return 1;
+  const x=new Set(a.split(' ')),y=new Set(b.split(' '));
+  const common=[...x].filter(w=>y.has(w)).length;
+  return common/Math.max(x.size,y.size);
+}
+function artworkScore(it,c){
+  const artist=artworkNormalize(it.artist),ca=artworkNormalize(c.artistName);
+  const titleVariants=artworkVariants(it.title),candidateVariants=artworkVariants(c.trackName);
+  const title=Math.max(0,...titleVariants.flatMap(x=>candidateVariants.map(y=>artworkSimilarity(x,y))));
+  const artistMatch=artworkSimilarity(artist,ca);
+  if(!artist||!ca||artistMatch<.85||title<.82)return 0;
+  const name=String(it.title||'').toLowerCase(),matchName=String(c.trackName||'').toLowerCase();
+  const versionPattern=/\b(live|remix|acoustic|instrumental|karaoke|sped up|slowed)\b/;
+  if(versionPattern.test(name)!==versionPattern.test(matchName))return 0;
+  return .58*title+.42*artistMatch;
+}
+function artworkCacheKey(it){return artworkNormalize(it.artist)+'|'+artworkNormalize(it.title)}
+function artworkStore(key,record){
+  if(!record||!record.url)return;
+  artSaved[key]={url:record.url,source:record.source,score:record.score,at:Date.now()};
+  const keys=Object.keys(artSaved);
+  if(keys.length>350)keys.sort((a,b)=>(artSaved[a].at||0)-(artSaved[b].at||0)).slice(0,keys.length-350).forEach(k=>delete artSaved[k]);
+  clearTimeout(artSaveTimer);artSaveTimer=setTimeout(()=>ls.set(ART_CACHE_KEY,artSaved),250);
+}
+async function artworkFromITunes(it){
+  const q=encodeURIComponent(it.artist+' '+it.title);
+  const res=await fetch('https://itunes.apple.com/search?term='+q+'&entity=song&media=music&country=US&limit=25');
+  if(!res.ok)throw new Error('iTunes returned '+res.status);
+  const data=await res.json();
+  const candidates=(data.results||[]).filter(x=>x.kind==='song'&&x.artworkUrl100)
+    .map(x=>({item:x,score:artworkScore(it,x)})).sort((a,b)=>b.score-a.score);
+  const best=candidates[0];
+  if(!best||best.score<.92)return null;
+  const u=best.item.artworkUrl100;
+  return {url:u.replace(/100x100(?:bb|-75)/,'600x600bb').replace(/^http:/,'https:'),source:'itunes',score:best.score};
+}
+async function artworkFromMusicBrainz(it){
+  if(!known(it.artist)||!known(it.title))return null;
+  // mbGet already applies the app's MusicBrainz request throttling.
+  const query='recording:'+mbq(it.title)+' AND artist:'+mbq(it.artist);
+  const j=await mbGet('/recording?query='+encodeURIComponent(query)+'&limit=5');
+  for(const rec of (j.recordings||[])){
+    const artist=(rec['artist-credit']||[]).map(x=>x.name||(x.artist&&x.artist.name)||'').join('');
+    if(artworkScore(it,{trackName:rec.title,artistName:artist})<.92||(+rec.score||0)<90)continue;
+    const releases=(rec.releases||[]).filter(x=>x.id).slice(0,4);
+    for(const release of releases){
+      const url=CAA+'/release/'+encodeURIComponent(release.id)+'/front-500';
+      try{
+        const resp=await fetch(url,{method:'GET'});
+        if(resp.ok&&/^image\//.test(resp.headers.get('content-type')||'')){
+          // Close the validation response without downloading a second copy here.
+          if(resp.body)await resp.body.cancel();
+          return {url,source:'coverartarchive',score:.95};
+        }
+      }catch(e){}
     }
-  }catch(e){}
-  recommendationArtCache.set(key,artwork);
-  return artwork;
+  }
+  return null;
+}
+async function recommendationArtwork(it,force=false){
+  if(it.artworkLocked&&it.art)return it.art;
+  const key=artworkCacheKey(it);
+  if(!key||key==='|')return null;
+  if(!force&&recommendationArtCache.has(key))return recommendationArtCache.get(key);
+  if(!force&&artSaved[key]&&artSaved[key].url)return artSaved[key].url;
+  const task=(async()=>{
+    let match=null;
+    try{match=await artworkFromITunes(it)}catch(e){}
+    if(!match)try{match=await artworkFromMusicBrainz(it)}catch(e){}
+    if(match){artworkStore(key,match);return match.url}
+    return null; // Only use YouTube's thumbnail when no confident cover was found.
+  })();
+  recommendationArtCache.set(key,task);
+  try{return await task}catch(e){recommendationArtCache.delete(key);return null}
 }
 function recommendationArtPreview(v,from=0){
   // Only load art for cards nearby, to avoid dozens of external lookups per page.
@@ -1494,7 +1562,7 @@ function recommendationArtPreview(v,from=0){
     it.artLookedUp=true;
     recommendationArtwork(it).then(url=>{
       if(!url)return;
-      it.art=url;v.albums[i].art=url;
+      it.art=url;it.artSource='matched-cover';v.albums[i].art=url;
       if(top()===v){
         const node=document.querySelector('#flow .cv[data-i="'+i+'"]');
         if(node)node.style.backgroundImage='url("'+url.replace(/"/g,'%22')+'")';
