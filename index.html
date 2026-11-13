@@ -614,19 +614,71 @@ function dur(){return audio.duration||0}
 function seekTo(t){if(isFinite(t))audio.currentTime=t}
 function getVol(){return audio.volume}
 function setVol(v){audio.volume=Math.max(0,Math.min(1,v));return audio.volume}
-function load(play){const t=cur();if(!t)return;audio.src=t.url;if(play)audio.play().catch(()=>{});setSession();render()}
+/* iOS/CarPlay-connected audio: one persistent media element and hardware media controls.
+   This is web media playback, not a native CarPlay app entitlement. */
+function resumeAudio(){return audio.play().catch(e=>{
+  // iOS may block autoplay after a navigation/interrupt; user can tap Play again.
+  if(e&&e.name!=='AbortError')console.warn('iPod playback needs user interaction:',e);
+})}
+function load(play){
+  const t=cur();if(!t)return;
+  if(audio.src!==t.url)audio.src=t.url;
+  audio.preload='auto';
+  setSession();
+  if(play)resumeAudio();
+  render();
+}
 function next(manual){if(!cur())return;
- if(!manual&&settings.repeat==='One'){seekTo(0);audio.play().catch(()=>{});return}
+ if(!manual&&settings.repeat==='One'){seekTo(0);resumeAudio();return}
  if(qi<queue.length-1){qi++;load(true)}else if(settings.repeat==='All'||manual){qi=0;load(true)}
  else{audio.pause();audio.currentTime=0;render()}}
 function prev(){if(!cur())return;if(curTime()>3){seekTo(0);return}if(qi>0){qi--;load(true)}else seekTo(0)}
-function playPause(){if(!cur()){shuffleAll();return}audio.paused?audio.play().catch(()=>{}):audio.pause()}
+function playPause(){if(!cur()){shuffleAll();return}audio.paused?resumeAudio():audio.pause()}
+function syncMediaPlaybackState(){
+  if(!('mediaSession' in navigator))return;
+  try{navigator.mediaSession.playbackState=audio.paused?'paused':'playing'}catch(e){}
+}
+function syncMediaPosition(){
+  if(!('mediaSession' in navigator)||!navigator.mediaSession.setPositionState)return;
+  const duration=audio.duration,position=audio.currentTime;
+  if(!Number.isFinite(duration)||duration<=0||!Number.isFinite(position))return;
+  try{navigator.mediaSession.setPositionState({
+    duration,position:Math.max(0,Math.min(position,duration)),playbackRate:audio.playbackRate||1
+  })}catch(e){}
+}
 audio.addEventListener('ended',()=>next(false));
-['play','pause'].forEach(e=>audio.addEventListener(e,()=>{renderHdr();if('mediaSession' in navigator)navigator.mediaSession.playbackState=audio.paused?'paused':'playing'}));
-function setSession(){if(!('mediaSession' in navigator))return;const t=cur();if(!t)return;
- try{navigator.mediaSession.metadata=new MediaMetadata({title:t.title||'',artist:t.artist||'',album:t.album||'',artwork:[{src:artFor(t),sizes:'512x512'}]});
- const ms=navigator.mediaSession;ms.setActionHandler('play',()=>audio.play());ms.setActionHandler('pause',()=>audio.pause());
- ms.setActionHandler('nexttrack',()=>next(true));ms.setActionHandler('previoustrack',prev);ms.setActionHandler('seekto',d=>seekTo(d.seekTime))}catch(e){}}
+['play','pause','playing','waiting'].forEach(e=>audio.addEventListener(e,()=>{
+  renderHdr();syncMediaPlaybackState();
+}));
+['loadedmetadata','durationchange','seeked'].forEach(e=>audio.addEventListener(e,syncMediaPosition));
+// MediaSession metadata and position may be cleared when iOS changes audio route or suspends Safari.
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&cur()){setSession();syncMediaPlaybackState();syncMediaPosition()}
+});
+function safeMediaAction(name,callback){
+  if(!('mediaSession' in navigator))return;
+  try{navigator.mediaSession.setActionHandler(name,callback)}catch(e){}
+}
+function setSession(){
+  if(!('mediaSession' in navigator))return;
+  const t=cur();if(!t)return;
+  try{
+    navigator.mediaSession.metadata=new MediaMetadata({
+      title:t.title||'Unknown Song',artist:t.artist||'Unknown Artist',album:t.album||'',
+      artwork:[{src:artFor(t),sizes:'512x512'}]
+    });
+  }catch(e){}
+  safeMediaAction('play',()=>resumeAudio());
+  safeMediaAction('pause',()=>audio.pause());
+  safeMediaAction('stop',()=>{audio.pause();seekTo(0)});
+  safeMediaAction('nexttrack',()=>next(true));
+  safeMediaAction('previoustrack',()=>prev());
+  safeMediaAction('seekto',d=>{if(d&&Number.isFinite(d.seekTime)){seekTo(d.seekTime);syncMediaPosition()}});
+  safeMediaAction('seekbackward',d=>{seekTo(Math.max(0,curTime()-(d.seekOffset||10)));syncMediaPosition()});
+  safeMediaAction('seekforward',d=>{seekTo(Math.min(dur()||Infinity,curTime()+(d.seekOffset||10)));syncMediaPosition()});
+  syncMediaPlaybackState();
+  syncMediaPosition();
+}
 
 function shuffled(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
 function shuffleAll(){if(!songs.length){push(msgView('No Music','Choose “Add Music” to load songs, or open YouTube.'));return}
@@ -1136,9 +1188,7 @@ function tick(){
     if(!isPlaying())$('#vo').classList.add('on')}
 }
 setInterval(tick,300);
-audio.addEventListener('timeupdate',()=>{tick();
-  if('mediaSession' in navigator&&navigator.mediaSession.setPositionState&&isFinite(audio.duration)&&audio.duration>0)
-    try{navigator.mediaSession.setPositionState({duration:audio.duration,position:Math.min(audio.currentTime,audio.duration),playbackRate:audio.playbackRate||1})}catch(e){}});
+audio.addEventListener('timeupdate',()=>{tick();syncMediaPosition()});
 function showVol(){
   const v=top(),host=v.type==='video'?$('#vo'):$('#np');if(!host)return;
   if(v.type==='video')flashVo();
