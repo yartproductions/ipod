@@ -469,7 +469,7 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 const audio=new Audio(); audio.preload='auto';
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,lyricaUrl:''},ls.get('ipod.settings',{}));
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
@@ -1104,6 +1104,11 @@ function settingsMenu(){
     ...(settings.menuStyle==='List'?[{label:'Split Screen',val:settings.split,action:tog('split',['Album Art','Now Playing','Off'])}]:[]),
     {label:'YouTube Downloads',val:'Offline MP3'},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
+    {label:'Lyrica API URL',val:settings.lyricaUrl?'Set':'Not Set',chev:1,action:go(()=>inputView('Lyrica API URL','https://your-service.onrender.com',url=>{
+      const clean=url.trim().replace(/\\/+$/,'');
+      if(clean&&!/^https:\\/\\/[a-z0-9.-]+(?::\\d+)?$/i.test(clean))return replaceTop(msgView('Invalid URL','Enter the HTTPS root URL of your Render Lyrica service, without /lyrics/.'));
+      settings.lyricaUrl=clean;saveSettings();onlineLyricsCache.clear();replaceTop(msgView('Lyrica',clean?'Endpoint saved. New lyric searches will try Lyrica first, then LRCLIB.':'Endpoint cleared. LRCLIB remains enabled.'));
+    },settings.lyricaUrl))},
     {label:'Tornado Usage',chev:1,action:go(tornadoUsageView)},
     {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
     {label:'Clear Library',chev:1,action:go(()=>list('Clear Library?',[
@@ -1844,12 +1849,38 @@ function lrclibRequest(url){
   });
   lrclibChain=job.catch(()=>{});return job;
 }
+async function lyricaRequest(s){
+  if(!settings.lyricaUrl)return null;
+  const qs=new URLSearchParams({artist:s.artist,song:s.title,timestamps:'true',word:'true'});
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),9500);
+  try{
+    const resp=await fetch(settings.lyricaUrl+'/lyrics/?'+qs.toString(),{signal:controller.signal,headers:{Accept:'application/json'}});
+    if(!resp.ok)return null;
+    const payload=await resp.json(),d=payload?.data;
+    if(payload?.status!=='success'||!d)return null;
+    const norm=x=>lyricNorm(x).replace(/\\b(feat|ft)\\b.*$/,'').trim();
+    if(d.artist&&norm(d.artist)!==norm(s.artist))return null;
+    if(d.title&&norm(d.title)!==norm(s.title))return null;
+    const raw=Array.isArray(d.timed_lyrics)?d.timed_lyrics:[];
+    const lines=raw.map(line=>({
+      at:Number(line.start_time)/1000,
+      text:String(line.text||'').trim(),
+      words:Array.isArray(line.words)?line.words.map(w=>({text:String(w.word||''),at:Number(w.start)/1000,end:Number(w.end)/1000})).filter(w=>w.text&&Number.isFinite(w.at)):[],
+    })).filter(line=>line.text&&Number.isFinite(line.at)).sort((a,b)=>a.at-b.at);
+    const plain=String(d.lyrics||'').trim();
+    const text=plain||lines.map(line=>line.text).join('\\n');
+    return text?{text,lines,source:'Lyrica ('+String(d.source||'unknown')+')'}:null;
+  }catch(e){return null}
+  finally{clearTimeout(timeout)}
+}
 async function fetchOnlineLyrics(s){
   const key=lyricNorm(s.artist)+'|'+lyricNorm(s.title);
   if(onlineLyricsCache.has(key)){s.onlineLyrics=onlineLyricsCache.get(key);return s.onlineLyrics;}
   if(s.onlineLyrics)return s.onlineLyrics;
   if(!s.title||!s.artist)return null;
   const query=new URLSearchParams({track_name:s.title,artist_name:s.artist});
+  const remote=await lyricaRequest(s);
+  if(remote){onlineLyricsCache.set(key,remote);s.onlineLyrics=remote;return remote}
   let r=await lrclibRequest('https://lrclib.net/api/get?'+query.toString()).catch(()=>null);
   const exact=x=>x&&!x.instrumental&&lyricNorm(x.artistName)===lyricNorm(s.artist)&&lyricNorm(x.trackName)===lyricNorm(s.title);
   if(!exact(r)){const results=await lrclibRequest('https://lrclib.net/api/search?'+query.toString()).catch(()=>null);r=Array.isArray(results)?results.find(exact):null}
