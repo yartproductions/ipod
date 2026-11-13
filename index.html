@@ -1245,39 +1245,131 @@ function recommendationSeeds(){
   }
   return seeds;
 }
+// Keep recommendation titles and artwork tied to the actual music video, rather than a seed artist.
+function recommendationTrackInfo(video){
+  const raw=decodeHTML(video.snippet.title||'Untitled');
+  const channel=decodeHTML(video.snippet.channelTitle||'Unknown Artist')
+    .replace(/\s*-\s*Topic$/i,'').replace(/\s*VEVO$/i,'').trim();
+  const clean=x=>x.replace(/\s*[\[(](?:official\s+)?(?:music\s+video|official\s+video|official\s+audio|audio|lyrics?|visuali[sz]er|hd|4k)[^\])]*[\])]/ig,'')
+    .replace(/\s*(?:\||·)\s*(?:official.*|lyrics?.*)$/i,'').trim();
+  const parts=raw.split(/\s+[-–—]\s+/);
+  const artist=parts.length>1?clean(parts.shift()):channel;
+  const title=clean(parts.length?parts.join(' - '):raw)||raw;
+  return {title,artist:artist||channel};
+}
+function recommendationAddPage(v,result,seedIndex){
+  const group=[];
+  for(const x of result.items||[]){
+    const id=x.id&&x.id.videoId;
+    if(!id||!x.snippet||v.seen.has(id))continue;
+    v.seen.add(id);
+    const info=recommendationTrackInfo(x);
+    const it={kind:'yt',id,title:info.title,artist:info.artist,
+      art:'https://i.ytimg.com/vi/'+encodeURIComponent(id)+'/hqdefault.jpg'};
+    group.push(it);
+  }
+  v.groups[seedIndex].push(...group);
+  // Add all available discoveries without replacing the existing shelf/selection.
+  while(v.groups.some(g=>g.length))
+    for(const g of v.groups)if(g.length){
+      const it=g.shift();v.recommendItems.push(it);
+      v.albums.push({album:it.title,artist:it.artist,art:it.art,songs:[]});
+    }
+}
+const RECOMMEND_PAGE_SIZE=25;
+async function recommendationLoadMore(v){
+  if(v.loadingMore||!v.pageTokens.some(Boolean))return;
+  v.loadingMore=true;
+  const requests=v.pageTokens.map((token,i)=>token?{token,i}:null).filter(Boolean);
+  try{
+    const results=await Promise.allSettled(requests.map(({token,i})=>
+      ytApi('search',{part:'snippet',type:'video',videoCategoryId:'10',videoEmbeddable:'true',
+        maxResults:RECOMMEND_PAGE_SIZE,q:v.queries[i],pageToken:token})));
+    let added=false;
+    results.forEach((result,j)=>{
+      const i=requests[j].i;
+      if(result.status!=='fulfilled')return;
+      v.pageTokens[i]=result.value.nextPageToken||null;
+      const before=v.recommendItems.length;
+      recommendationAddPage(v,result.value,i);
+      if(v.recommendItems.length>before)added=true;
+    });
+    // If a page fails, stop automatic retries for this visit rather than spending API quota in a loop.
+    requests.forEach((r,j)=>{if(results[j].status==='rejected')v.pageTokens[r.i]=null});
+    if(added&&top()===v)renderFlow(v);
+  }finally{v.loadingMore=false}
+}
+function recommendationMaybeLoadMore(v){
+  if(v&&v.recommendItems&&v.sel>=v.recommendItems.length-7)recommendationLoadMore(v).catch(()=>{v.loadingMore=false});
+}
+// Search iTunes for a close artist/title match; fall back to this video's own thumbnail.
+// Do not reuse an unrelated album cover just because its title contains a common word.
+const recommendationArtCache=new Map();
+async function recommendationArtwork(it){
+  const key=(it.artist+'|'+it.title).toLowerCase();
+  if(recommendationArtCache.has(key))return recommendationArtCache.get(key);
+  let artwork=null;
+  try{
+    const q=encodeURIComponent(it.artist+' '+it.title);
+    const res=await fetch('https://itunes.apple.com/search?term='+q+'&entity=song&limit=12');
+    if(res.ok){
+      const data=await res.json();
+      const normalize=x=>String(x||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+        .replace(/\b(feat|ft)\b.*$/,'').replace(/[^a-z0-9]+/g,' ').trim();
+      const title=normalize(it.title),artist=normalize(it.artist);
+      const candidate=(data.results||[]).find(x=>{
+        const t=normalize(x.trackName),a=normalize(x.artistName);
+        return t&&title&&(t===title||t.includes(title)&&title.length>8||title.includes(t)&&t.length>8)
+          &&a&&artist&&(a===artist||a.includes(artist)&&artist.length>5||artist.includes(a)&&a.length>5);
+      });
+      if(candidate&&candidate.artworkUrl100)artwork=candidate.artworkUrl100.replace(/100x100bb/g,'600x600bb');
+    }
+  }catch(e){}
+  recommendationArtCache.set(key,artwork);
+  return artwork;
+}
+function recommendationArtPreview(v,from=0){
+  // Only load art for cards nearby, to avoid dozens of external lookups per page.
+  if(!v||!v.recommendItems)return;
+  const lo=Math.max(0,from-3),hi=Math.min(v.recommendItems.length,from+7);
+  for(let i=lo;i<hi;i++){
+    const it=v.recommendItems[i];
+    if(it.artLookedUp)continue;
+    it.artLookedUp=true;
+    recommendationArtwork(it).then(url=>{
+      if(!url)return;
+      it.art=url;v.albums[i].art=url;
+      if(top()===v){
+        const node=document.querySelector('#flow .cv[data-i="'+i+'"]');
+        if(node)node.style.backgroundImage='url("'+url.replace(/"/g,'%22')+'")';
+      }
+    }).catch(()=>{});
+  }
+}
 async function openRecommendationFlow(){
   if(!settings.ytKey)return push(msgView('YouTube Key Needed','Add your YouTube API key under YouTube → YouTube Key to discover recommended songs.'));
   const seeds=recommendationSeeds();
   if(!seeds.length)return push(msgView('No Listening History','Add songs or play music to start discovering recommendations.'));
   const loading=loadingView('Finding recommendations…');push(loading);
+  const queries=seeds.slice(0,2).map(artist=>artist+' similar songs official music');
   try{
-    const results=await Promise.allSettled(seeds.slice(0,2).map(artist=>
+    const results=await Promise.allSettled(queries.map(q=>
       ytApi('search',{part:'snippet',type:'video',videoCategoryId:'10',videoEmbeddable:'true',
-        maxResults:15,q:artist+' similar songs official music'})));
-    const seen=new Set(songs.map(s=>s.sourceId).filter(Boolean)),groups=[];
-    for(const result of results){
-      if(result.status!=='fulfilled')continue;
-      const group=[];
-      for(const x of result.value.items||[]){
-        const id=x.id&&x.id.videoId,d=x.snippet;
-        if(!id||!d||seen.has(id))continue;
-        seen.add(id);
-        group.push({kind:'yt',id,title:decodeHTML(d.title||'Untitled'),
-          artist:decodeHTML(d.channelTitle||'Unknown Artist'),
-          art:'https://i.ytimg.com/vi/'+encodeURIComponent(id)+'/hqdefault.jpg'});
+        maxResults:RECOMMEND_PAGE_SIZE,q})));
+    const v={type:'flow',title:'Recommendation Flow',recommendItems:[],albums:[],sel:0,
+      groups:queries.map(()=>[]),queries,seen:new Set(songs.map(s=>s.sourceId).filter(Boolean)),
+      pageTokens:queries.map(()=>null),loadingMore:false};
+    results.forEach((r,i)=>{
+      if(r.status==='fulfilled'){
+        v.pageTokens[i]=r.value.nextPageToken||null;
+        recommendationAddPage(v,r.value,i);
       }
-      groups.push(group);
-    }
-    const items=[];
-    while(groups.some(g=>g.length))for(const group of groups)if(group.length)items.push(group.shift());
-    if(!items.length){
+    });
+    if(!v.recommendItems.length){
       const failure=results.find(x=>x.status==='rejected');
       throw new Error(failure?String(failure.reason.message||failure.reason):'No recommendations found. Try again later.');
     }
-    // Online results are suggestions, not part of the offline library until played.
-    const view={type:'flow',title:'Recommendation Flow',recommendItems:items,sel:0,
-      albums:items.map(it=>({album:it.title,artist:it.artist,art:it.art,songs:[]}))};
-    if(top()===loading)replaceTop(view);
+    if(top()===loading){replaceTop(v);recommendationArtPreview(v,0);recommendationMaybeLoadMore(v)}
   }catch(e){
     if(top()===loading)replaceTop(msgView('Recommendations Unavailable',e.message||'Discovery failed.'));
   }
@@ -1291,7 +1383,8 @@ function renderFlow(v,from){
     <div class="cap"><b id="fal"></b><span id="far"></span></div></div>`;
   if(from!=null&&from!==v.sel){const to=v.sel;v.sel=from;flowUpdate(v);v.sel=to;
     requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#flow');if(f){f.classList.remove('instant');flowUpdate(v)}}));return}
-  flowUpdate(v);requestAnimationFrame(()=>{const f=$('#flow');if(f)f.classList.remove('instant')});
+  flowUpdate(v);if(v.recommendItems)recommendationArtPreview(v,v.sel);
+  requestAnimationFrame(()=>{const f=$('#flow');if(f)f.classList.remove('instant')});
 }
 function flowUpdate(v){
   const els=document.querySelectorAll('#flow .cv');
@@ -1527,7 +1620,7 @@ function scroll(dir){
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
   if(v.type==='list'){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}}
   else if(v.type==='flow'){const n=v.albums.length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){const was=v.sel;v.sel=ns;click();
-    if(v._lo!=null&&((v.sel<v._lo+6&&v._lo>0)||(v.sel>v._hi-6&&v._hi<n-1)))renderFlow(v,was);else flowUpdate(v)}}
+    if(v._lo!=null&&((v.sel<v._lo+6&&v._lo>0)||(v.sel>v._hi-6&&v._hi<n-1)))renderFlow(v,was);else flowUpdate(v);if(v.recommendItems){recommendationArtPreview(v,v.sel);recommendationMaybeLoadMore(v)}}}
   else if(v.type==='lyrics'){const el=$('#lyr .in');if(!el)return;const max=Math.max(0,el.scrollHeight-150);const no=Math.max(0,Math.min(max,v.off+dir*22));if(no!==v.off){v.off=no;click();el.style.transform=`translateY(${-no}px)`}}
   else if(v.type==='now'&&ctl!=null){click();ctl=(ctl+dir+ACTS.length)%ACTS.length;applyCtlFocus()}
   else if(v.type==='now'||v.type==='video'){
