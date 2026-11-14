@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const html=fs.readFileSync(require.resolve('../index.html'),'utf8');
-const code=html.slice(html.indexOf('const CROSSFADE_OPTIONS='),html.indexOf('function syncMediaPlaybackState'));
+const code=html.slice(html.indexOf('const CROSSFADE_OPTIONS='),html.indexOf('const playbackLog='));
 const test=new Function('assert',code+`
   const makeDeck=()=>({duration:100,currentTime:0,playbackRate:1,paused:true,
     async play(){this.paused=false},pause(){this.paused=true},removeAttribute(){this.src=''},load(){}});
@@ -12,6 +12,7 @@ const test=new Function('assert',code+`
   let audio=mainDeck,qi=0,importedPlayback=null;
   const queue=[{url:'blob:first'},{url:'blob:second'}],settings={crossfade:4,repeat:'Off'};
   function onActiveAudio(){}
+  function notePlayback(){}
   const setSession=()=>{},syncMediaPlaybackState=()=>{},syncMediaPosition=()=>{},render=()=>{};
   const setTimeout=()=>1,clearTimeout=()=>{};
   fadeContext={state:'running',currentTime:10};
