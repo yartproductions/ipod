@@ -6,14 +6,14 @@ const code=fs.readFileSync(path.join(__dirname,'../playlist-import.js'),'utf8');
 const matcherCode=fs.readFileSync(path.join(__dirname,'../track-match.js'),'utf8');
 new Function(html.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]);
 new Function(code);
-let screens=[],calls=[],storage=new Map(),playlistPages=0,denyPlaylist=false,flowCards;
+let screens=[],calls=[],storage=new Map(),playlistPages=0,denyPlaylist=false,flowCards,played;
 const bridge={
  list:(title,rows)=>({title,rows:typeof rows==='function'?rows():rows}),
  push:v=>screens.push(v),replaceTop:v=>screens[screens.length-1]=v,top:()=>screens.at(-1),
  msgView:(title,message)=>({title,message}),loadingView:title=>({title}),
  inputView:(title,hint,onSubmit)=>({title,hint,onSubmit}),
  openPlaylistFlow:cards=>{flowCards=cards},genArt:name=>'generated '+name,isYoutubeThumbnail:()=>false,
- settings:{ytKey:'sample'},playYT:()=>{},playList:()=>{},getSongs:()=>[],
+ settings:{ytKey:'sample'},playYT:(tracks,index)=>{played=tracks[index]},playList:()=>{},getSongs:()=>[],
  ytApi:async(endpoint)=>{
   calls.push(endpoint);
   if(endpoint==='playlistItems'){
@@ -75,7 +75,12 @@ assert.equal(qobuz[0].album,'Trilogy');
  importer.library();
  assert.equal(flowCards[0].album,'Qobuz Test');
  assert.equal(flowCards[0].getArt(),'generated Qobuz Test');
- assert(flowCards[0].action().rows.some(row=>row.label==='1. Wicked Games'));
+ const tracks=flowCards[0].action();
+ assert.equal(tracks.type,'flow');
+ assert.equal(tracks.albums[0].album,'Wicked Games');
+ tracks.albums[0].play();
+ assert.equal(played.id,'AAAAAAAAAAA');
+ assert.equal(tracks.albums.at(-1).action().title,'Qobuz Test');
  assert.equal(flowCards.at(-1).action().title,'Import Playlist');
  importer.open();
  screens.at(-1).rows.find(row=>row.label==='Paste Playlist Link').action();
