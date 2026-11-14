@@ -108,6 +108,13 @@ They don't call the live Audius service (this test environment can't reach it), 
 
 ### Import a Qobuz playlist
 
+**Easiest: Tune My Music.** Open [Qobuz → file](https://www.tunemymusic.com/transfer/qobuz-to-file),
+sign in to Qobuz, pick the playlist and export to **CSV**. On the iPod choose **Import Playlist ▸
+Import CSV / JSON / TXT** (or paste the Qobuz link and pick **Export With Tune My Music**). If the
+CSV contains several playlists, the iPod asks which one to import.
+
+**Advanced:**
+
 With an authorized Qobuz application, set `QOBUZ_APP_ID` in your terminal
 environment. If your access requires a user token, set
 `QOBUZ_USER_AUTH_TOKEN` too. Run from the repository root:
