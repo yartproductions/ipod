@@ -105,3 +105,26 @@ They don't call the live Audius service (this test environment can't reach it), 
 
 ## Maintenance
 `apply_patch.py` applies the haptic bridge change to an older `index.html`. It's idempotent, and safe to rerun on the current file.
+
+### Import a Qobuz playlist
+
+With an authorized Qobuz application, set `QOBUZ_APP_ID` in your terminal
+environment. If your access requires a user token, set
+`QOBUZ_USER_AUTH_TOKEN` too. Run from the repository root:
+
+```sh
+python3 scripts/qobuz-playlist.py https://open.qobuz.com/playlist/65537360 > qobuz-playlist.json
+```
+
+In the iPod, open **YouTube → Import Playlist → Import CSV / JSON / TXT**,
+choose that file, and save the preview. The extractor requests up to 500
+tracks per page and follows pagination. It writes metadata in playlist order.
+
+If you already have the full playlist metadata response in your browser,
+copy the response body containing `tracks.items`. Enter the Qobuz link under
+**Paste Playlist Link**, then choose **Paste Playlist JSON**. For a partial
+response, use the extractor to obtain the complete tracklist.
+
+Once saved, choose **Match Unresolved** to check local music and then search
+YouTube in batches. Previously verified matches can be reused across saved
+playlists. Review ambiguous results in the playlist.

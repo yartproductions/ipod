@@ -13,10 +13,11 @@ function duration(x){if(typeof x==='number')return x>100000?Math.round(x/1000):M
  const s=text(x);if(/^\d+:\d\d(?::\d\d)?$/.test(s)){return s.split(':').map(Number).reduce((a,b)=>a*60+b,0)}return /^\d+$/.test(s)?Number(s):0}
 function normalize(s){return text(s).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim().replace(/\s+/g,' ')}
 function toTrack(item){
+ if(!item||typeof item!=='object')return null;
  const title=clean(item.title||item.track||item.name);
  let artist=item.artist||item.artistName||item.performer;
- if(typeof artist==='object')artist=artist.name||artist.title;
- if(Array.isArray(artist))artist=artist.map(a=>typeof a==='string'?a:a.name||'').join(', ');
+ if(Array.isArray(artist))artist=artist.map(a=>typeof a==='string'?a:a?.name||'').join(', ');
+ else if(artist&&typeof artist==='object')artist=artist.name||artist.title;
  const album=item.album&&typeof item.album==='object'?(item.album.title||item.album.name):item.album;
  if(!title||!text(artist))return null;
  return {title,artist:clean(artist),album:clean(album),duration:duration(item.duration||item.length),
@@ -52,13 +53,37 @@ function parseFile(data,name){
  if(!tracks.length)throw Error('No tracks containing both artist and title were found.');
  return tracks;
 }
+function qobuzMetadata(data,link){
+ const collection=data?.tracks;
+ if(!Array.isArray(collection?.items))throw Error('Paste the playlist response JSON containing tracks.items.');
+ const total=collection.total??data.tracks_count;
+ if((collection.offset??0)!==0||(total!=null&&total!==collection.items.length)){
+  throw Error('This response contains only part of the playlist. Import the complete JSON from the extractor.');
+ }
+ const tracks=collection.items.map(row=>{
+  const item=row?.track&&typeof row.track==='object'?row.track:row;
+  const track=toTrack(item);
+  if(!track)return null;
+  const version=clean(item.version);
+  if(version&&!normalize(track.title).endsWith(normalize(version))){
+   track.title=clean(track.title+' ('+version+')');
+  }
+  return {...track,youtubeId:'',status:'unmatched'};
+ });
+ if(!tracks.length)throw Error('This Qobuz playlist is empty.');
+ if(tracks.some(t=>!t))throw Error('Some Qobuz rows are missing artist or title.');
+ const source=link||detect(data.source);
+ const id=source?.provider==='qobuz'?source.id:'';
+ return {name:clean(data.name)||'Qobuz Playlist',provider:'Qobuz',tracks,
+  source:id?'https://open.qobuz.com/playlist/'+id:''};
+}
 function detect(url){
  try{const u=new URL(text(url));if(!/^https?:$/.test(u.protocol))return null;
  const host=u.hostname.toLowerCase();
  if(['youtube.com','www.youtube.com','music.youtube.com','m.youtube.com'].includes(host)){
   const id=u.searchParams.get('list');return id&&/^[\w-]{10,90}$/.test(id)?{provider:'youtube',id}:null}
  if(['qobuz.com','www.qobuz.com','open.qobuz.com','play.qobuz.com'].includes(host)){
-  const m=u.pathname.match(/\/playlist\/(\d+)/);return m?{provider:'qobuz',id:m[1]}:null}
+  const m=u.pathname.match(/\/playlist\/(\d+)\/?$/);return m?{provider:'qobuz',id:m[1]}:null}
  }catch(e){}return null;
 }
 async function youtubeTracks(id){
@@ -81,8 +106,12 @@ async function youtubeTracks(id){
 function save(data){
  const library=read(),pl={id:'playlist-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9),
   name:clean(data.name)||'Imported Playlist',provider:data.provider||'File',source:data.source||'',
-  tracks:data.tracks.slice(0,LIMIT),createdAt:Date.now()};
+  tracks:data.tracks,createdAt:Date.now()};
  library.unshift(pl);write(library);return pl;
+}
+function matchKey(t){
+ return JSON.stringify([text(t.isrc).toUpperCase().replace(/-/g,''),text(t.artist).toLowerCase(),
+  text(t.title).toLowerCase(),text(t.album).toLowerCase(),t.duration||0]);
 }
 function available(t){return getSongs().find(s=>s.sourceId&&s.sourceId===t.youtubeId)||
  getSongs().find(s=>(matcher()?.exactCandidate?.(t,s)||
@@ -130,8 +159,15 @@ function picker(){
  el.addEventListener('change',async()=>{
   const file=el.files?.[0];el.remove();if(!file)return;
   const loading=loadingView('Reading Playlist…');push(loading);
-  try{const content=await file.text();const tracks=parseFile(content,file.name);
-   if(top()===loading)replaceTop(preview({name:file.name.replace(/\.[^.]+$/,''),provider:'File',tracks,source:''}));}
+  try{
+   if(file.size>3000000)throw Error('The maximum file size is 3 MB.');
+   const content=await file.text();
+   const data=/\.json$/i.test(file.name)?JSON.parse(content):null;
+   const playlist=data?.provider==='Qobuz'&&data.tracks?.items?qobuzMetadata(data):{
+    name:file.name.replace(/\.[^.]+$/,''),provider:'File',tracks:parseFile(content,file.name),source:''
+   };
+   if(top()===loading)replaceTop(preview(playlist));
+  }
   catch(e){if(top()===loading)replaceTop(msgView('Import Failed',e.message));}
  },{once:true});el.click();
 }
@@ -141,7 +177,14 @@ function linkInput(){push(inputView('Playlist Link','YouTube Music or Qobuz URL'
  if(info.provider==='qobuz')return replaceTop(list('Qobuz Playlist',[
   {label:'Playlist ID',val:info.id},
   {label:'Import Export File',action:picker},
-  {label:'Why an Export?',action:()=>push(msgView('Qobuz API Access','Qobuz requires an approved partner application and credentials to retrieve playlist tracks. Export the playlist as CSV, JSON or TXT, then import its metadata here.'))}
+  {label:'Paste Playlist JSON',action:()=>push(inputView('Qobuz Playlist JSON','Paste the playlist response JSON',value=>{
+   try{
+    if(value.length>3000000)throw Error('The maximum JSON size is 3 MB.');
+    const data=JSON.parse(value);
+    if(data.id!=null&&String(data.id)!==info.id)throw Error('The response is for a different Qobuz playlist.');
+    replaceTop(preview(qobuzMetadata(data,info)));
+   }catch(e){push(msgView('Import Failed',e.message))}
+  }))}
  ]));
  const loading=loadingView('Reading Playlist…');replaceTop(loading);
  youtubeTracks(info.id).then(data=>{if(top()===loading)replaceTop(preview(data))})
@@ -167,16 +210,24 @@ async function matchPlaylist(pl){
  const loading=loadingView('Matching Tracks…');push(loading);
  try{
   const tracks=pl.tracks.map(x=>({...x}));let matched=0,review=0,unmatched=0,attempted=0;
+  const cache=new Map();
+  for(const playlist of read()){
+   for(const track of playlist.tracks){
+    if(track.checked&&track.youtubeId)cache.set(matchKey(track),track.youtubeId);
+   }
+  }
   for(let i=0;i<tracks.length;i++){
    const t=tracks[i];
    if(t.youtubeId||t.status==='local'){matched++;continue}
    if(t.status==='review'){review++;continue}
-   if(t.status==='unmatched'&&t.checked){unmatched++;continue}
    if(available(t)){t.status='local';matched++;continue}
+   const key=matchKey(t),cached=cache.get(key);
+   if(cached){t.youtubeId=cached;t.status='matched';t.checked=true;matched++;continue}
+   if(t.status==='unmatched'&&t.checked){unmatched++;continue}
    if(attempted>=25)continue;
    attempted++;
    const found=await youtubeMatch(t);
-   t.status=found.status;t.checked=true;if(found.youtubeId)t.youtubeId=found.youtubeId;
+   t.status=found.status;t.checked=true;if(found.youtubeId){t.youtubeId=found.youtubeId;cache.set(key,found.youtubeId)}
    if(found.choices?.length)t.choices=found.choices;
    if(found.status==='matched')matched++;else if(found.status==='review')review++;else unmatched++;
    // Allow the UI to repaint; avoid requesting every playlist track simultaneously.
