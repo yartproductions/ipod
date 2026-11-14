@@ -138,20 +138,35 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .modern.lightui .screen.nowmod .hdr{background:linear-gradient(rgba(255,255,255,.55),transparent)}
 .modern.lightui .lyr{background:var(--tint,#f5f7fa);color:#111827}
 /* Shared lyrics surface for Modern and Flow Now Playing. */
-.mnp .np-lyrics{position:absolute;left:47%;right:9px;top:13px;height:106px;z-index:2;overflow:hidden;-webkit-mask-image:linear-gradient(transparent,#000 12%,#000 87%,transparent);mask-image:linear-gradient(transparent,#000 12%,#000 87%,transparent)}
+.mnp .np-lyrics{position:absolute;left:46%;right:10px;top:76px;height:56px;z-index:2;overflow:hidden;opacity:0;transform:translateY(6px);pointer-events:none;
+  transition:opacity .35s ease,transform .45s cubic-bezier(.2,.8,.25,1);text-shadow:0 1px 3px rgba(0,0,0,.35);-webkit-mask-image:linear-gradient(transparent,#000 12%,#000 87%,transparent);mask-image:linear-gradient(transparent,#000 12%,#000 87%,transparent)}
 .mnp .np-lyrics .lyric-lines{max-height:100%;overflow-y:auto;scrollbar-width:none;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.5;font-weight:650;color:inherit}
 .mnp .np-lyrics .lyric-lines::-webkit-scrollbar{display:none}
 .mnp .np-lyrics .lyric-placeholder{font-size:10px;opacity:.75}
-.mnp .meta{left:12px!important;right:45%!important;top:102px!important}
-.mnp .meta .t{font-size:11px!important;white-space:normal!important;line-height:1.12}
-.mnp .meta .a,.mnp .meta .al{font-size:9px!important}
-.mnp .row2{top:137px!important}.mnp .times{top:160px!important}.mnp .bar{top:175px!important}
+.mnp.lyrics-on .np-lyrics{opacity:1;transform:none;pointer-events:auto}
+.modern.lightui .mnp .np-lyrics{text-shadow:none}
+/* With lyrics the song details tuck under the cover; without, the original roomy layout stays. */
+.mnp .meta,.mnp .row2,.mnp .times,.mnp .bar{transition:left .45s cubic-bezier(.2,.8,.25,1),right .45s cubic-bezier(.2,.8,.25,1),top .45s cubic-bezier(.2,.8,.25,1)}
+.mnp .meta .t,.mnp .meta .a,.mnp .meta .al{transition:font-size .3s ease}
+.mnp.lyrics-on .meta{top:38px}
+.mnp.lyrics-on .meta .t{font-size:14px}
+.mnp.lyrics-on .meta .a{font-size:11px;margin-top:1px}
+.mnp .meta .al{max-height:16px;transition:font-size .3s ease,opacity .3s ease,max-height .3s ease}
+.mnp.lyrics-on .meta .al{opacity:0;max-height:0}
+.mnp.lyrics-on .row2{top:137px}.mnp.lyrics-on .times{top:158px}.mnp.lyrics-on .bar{top:173px}
 .mnp .np-lyrics .lrc-line,.fnp .np-lyrics .lrc-line{opacity:.48;margin:5px 0;transition:opacity .2s}
 .mnp .np-lyrics .lrc-line.active,.fnp .np-lyrics .lrc-line.active{opacity:1;font-weight:800}
+.fnp .stage{transition:left .5s cubic-bezier(.2,.8,.25,1),top .5s cubic-bezier(.2,.8,.25,1)}
+.fnp .cap,.fnp .bar,.fnp .times,.fnp .vol{transition:top .45s cubic-bezier(.2,.8,.25,1)}
+.fnp .tag{transition:opacity .3s}
 .fnp.lyrics-flow .stage{left:27%;top:18px}
-.fnp.lyrics-flow .np-lyrics{position:absolute;top:18px;left:54%;right:8px;height:95px;overflow:hidden;-webkit-mask-image:linear-gradient(transparent,#000 10%,#000 88%,transparent);mask-image:linear-gradient(transparent,#000 10%,#000 88%,transparent)}
-.fnp.lyrics-flow .np-lyrics .lyric-lines{max-height:100%;overflow-y:auto;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;line-height:1.5;font-weight:700;text-align:left}
-.fnp.lyrics-flow .np-lyrics .lyric-placeholder{opacity:.6;font-size:10px}
+.fnp.lyrics-flow .tag.r{opacity:0}
+.fnp.lyrics-flow .cv[data-side="r"]{opacity:0!important;pointer-events:none}
+.fnp .np-lyrics{position:absolute;top:18px;left:54%;right:8px;height:95px;overflow:hidden;opacity:0;transform:translateX(10px);pointer-events:none;
+  transition:opacity .35s ease .1s,transform .45s cubic-bezier(.2,.8,.25,1) .1s;-webkit-mask-image:linear-gradient(transparent,#000 10%,#000 88%,transparent);mask-image:linear-gradient(transparent,#000 10%,#000 88%,transparent)}
+.fnp.lyrics-flow .np-lyrics{opacity:1;transform:none;pointer-events:auto}
+.fnp .np-lyrics .lyric-lines{max-height:100%;overflow-y:auto;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;line-height:1.5;font-weight:700;text-align:left}
+.fnp .np-lyrics .lyric-placeholder{opacity:.6;font-size:10px}
 .fnp.lyrics-flow .cap{top:116px}
 .fnp.lyrics-flow .bar{top:157px}
 .fnp.lyrics-flow .times{top:165px}
@@ -170,10 +185,10 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 /* Classic Now Playing: cover at left, lyrics at right, with a soft artwork wash. */
 .np.lyrics-np{background:radial-gradient(ellipse at 10% 12%,rgba(79,104,139,.32),transparent 72%),linear-gradient(135deg,#20252d,#0b0d12);color:#fff}
 .np.lyrics-np .cnt{color:rgba(255,255,255,.65)}
-.np.lyrics-np .top{position:absolute;left:12px;right:12px;top:22px;bottom:76px;display:flex;align-items:stretch;gap:12px;min-height:0}
-.np.lyrics-np .artcol{width:40%;flex:none;align-self:center;position:relative}
-.np.lyrics-np,.fnp.lyrics-flow{isolation:isolate;overflow:hidden}
-.np.lyrics-np::before,.fnp.lyrics-flow::before{
+.np.lyrics-np .top{position:absolute;left:12px;right:12px;top:22px;height:92px;display:flex;align-items:stretch;gap:12px;min-height:0}
+.np.lyrics-np .artcol{width:92px;height:92px;flex:none;position:relative}
+.np.lyrics-np,.fnp{isolation:isolate;overflow:hidden}
+.np.lyrics-np::before,.fnp::before{
   content:"";position:absolute;inset:-24px;z-index:-1;pointer-events:none;
   background:linear-gradient(180deg,rgba(9,11,16,.45),rgba(9,11,16,.8)),var(--np-art) center/cover no-repeat;
   filter:blur(16px)
@@ -182,14 +197,20 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .np-neighbors i{position:absolute;top:13%;width:31%;aspect-ratio:1;background-size:cover;background-position:center;border-radius:5px;opacity:.26}
 .np-neighbors .previous{left:-9%;transform:rotateY(56deg)}
 .np-neighbors .upcoming{right:-7%;transform:rotateY(-56deg)}
-#np .offline-cover,#flow .offline-cover{outline:1px solid rgba(255,211,113,.8);box-shadow:0 0 9px rgba(255,185,64,.65),0 4px 14px rgba(0,0,0,.45)}
-.np.lyrics-np .art{position:relative;width:100%;height:auto;aspect-ratio:1;max-height:130px;background-size:cover;background-position:center;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5)}
+#np .offline-cover,#flow .offline-cover{box-shadow:0 0 0 1px rgba(255,214,130,.7),0 0 10px rgba(255,186,72,.45),0 4px 12px rgba(0,0,0,.4)}
+.np.lyrics-np .art{position:relative;width:92px;height:92px;background-size:cover;background-position:center;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5)}
 .np.lyrics-np .refl{display:none}
-.np.lyrics-np .np-lyrics{min-width:0;flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;text-align:left;mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%);-webkit-mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%)}
+.np.lyrics-np .np-lyrics{min-width:0;flex:1;position:relative;overflow:hidden;display:flex;opacity:0;transform:translateX(8px);transition:opacity .35s ease .1s,transform .45s cubic-bezier(.2,.8,.25,1) .1s;flex-direction:column;justify-content:center;text-align:left;mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%);-webkit-mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%)}
 .np.lyrics-np .np-lyrics .lyric-lines{max-height:100%;overflow-y:auto;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.65;font-weight:650;color:rgba(255,255,255,.92)}
 .np.lyrics-np .np-lyrics .lyric-lines::-webkit-scrollbar{display:none}
 .np.lyrics-np .np-lyrics .lyric-placeholder{font-size:11px;line-height:1.5;color:rgba(255,255,255,.58);font-weight:500}
-.np.lyrics-np .meta{position:absolute;left:14px;right:14px;bottom:44px;text-align:left}
+.np.lyrics-np.lyrics-on .np-lyrics{opacity:1;transform:none}
+.np.lyrics-np .meta{position:absolute;left:14px;right:14px;top:119px;text-align:left;transition:left .45s cubic-bezier(.2,.8,.25,1),top .45s cubic-bezier(.2,.8,.25,1)}
+.np.lyrics-np .meta .al{display:none}.np.lyrics-np .meta .alx{opacity:.85}
+/* No lyrics: song details sit beside the cover, like the original iPod. */
+.np.lyrics-np:not(.lyrics-on) .meta{left:118px;top:36px}
+.np.lyrics-np:not(.lyrics-on) .meta .t{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25;margin-bottom:4px}
+.np.lyrics-np:not(.lyrics-on) .meta .al{display:block}.np.lyrics-np:not(.lyrics-on) .meta .alx{display:none}
 .np.lyrics-np .meta .t{font-size:12px;font-weight:700;color:#fff}
 .np.lyrics-np .meta .a,.np.lyrics-np .meta .al{font-size:10px;color:rgba(255,255,255,.68)}
 .np.lyrics-np .bar{bottom:28px;background:rgba(255,255,255,.24)}
@@ -303,7 +324,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .fnp{position:absolute;top:20px;left:0;right:0;bottom:0;overflow:hidden;background:radial-gradient(ellipse at 50% 25%,#2a2f38 0%,#0b0d11 72%);perspective:420px;color:#fff}
 .modern .fnp{top:22px}
 .modern.lightui .fnp{background:radial-gradient(ellipse at 50% 25%,#ffffff 0%,#d9dee6 78%);color:#111827}
-.fnp .stage{position:absolute;left:50%;top:10px;width:0;height:0;transform-style:preserve-3d}
+.fnp .stage{position:absolute;left:50%;top:16px;width:0;height:0;transform-style:preserve-3d}
 .fnp .cv{position:absolute;left:-42px;top:0;width:84px;height:84px;border-radius:3px;background-size:cover;background-position:center;cursor:pointer;
   transition:transform .38s cubic-bezier(.2,.8,.3,1),opacity .38s,filter .38s;box-shadow:0 2px 8px rgba(0,0,0,.45);
   -webkit-box-reflect:below 2px linear-gradient(transparent 62%,rgba(255,255,255,.22))}
@@ -375,6 +396,11 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .row.th{padding-left:36px}
 .row .thumb{position:absolute;left:6px;top:3px;width:21px;height:21px;border-radius:2px;background-size:cover;background-position:center;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
 .row.has-icon{padding-left:29px}
+.navghost{position:absolute;inset:0;pointer-events:none;z-index:1}
+@media (prefers-reduced-motion: reduce){
+  .np.lyrics-np .meta,.np.lyrics-np .np-lyrics,.mnp .meta,.mnp .row2,.mnp .times,.mnp .bar,.mnp .np-lyrics,.fnp .stage,.fnp .cap,.fnp .bar,.fnp .times,.fnp .np-lyrics,.fnp .cv{transition:none!important}
+}
+.navghost *{animation:none!important;transition:none!important}
 .row .menu-icon{position:absolute;left:8px;top:7px;width:14px;height:14px;pointer-events:none}
 .row .thumb.av{border-radius:50%}
 /* cover chooser grid */
@@ -1475,8 +1501,10 @@ const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,val
 const videoView=()=>({type:'now',title:'Now Playing'});
 const nowView=()=>({type:'now',title:'Now Playing'});
 
-function push(v){stack.push(v);scrub=false;ctl=null;render()}
-function pop(){if(stack.length>1){stack.pop();scrub=false;ctl=null;render()}}
+// Menus slide like a real iPod: forward slides in from the right, MENU slides back from the left.
+let navDir=0;
+function push(v,{slide=true}={}){navDir=slide?1:0;stack.push(v);scrub=false;ctl=null;render()}
+function pop(){if(stack.length>1){navDir=-1;stack.pop();scrub=false;ctl=null;render()}}
 function replaceTop(v){stack[stack.length-1]=v;scrub=false;render()}
 const top=()=>stack[stack.length-1];
 const itemsOf=v=>typeof v.items==='function'?v.items():v.items;
@@ -1522,14 +1550,34 @@ function renderHdr(){
     :'<svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z" fill="#2b7fde"/></svg>';
 }
 let shownNowTrack=null;
+const NAV_EASE='cubic-bezier(.25,.8,.25,1)',NAV_MS=280;
 function render(){
+  const dir=navDir;navDir=0;
+  const reduce=!dir||!body.animate||window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('.navghost').forEach(g=>g.remove());   // a fast second press finishes the last slide
+  let ghost=null;
+  if(!reduce&&body.childElementCount&&top().type!=='brick'){
+    ghost=document.createElement('div');ghost.className='navghost';ghost.setAttribute('aria-hidden','true');
+    ghost.innerHTML=body.innerHTML;ghost.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));
+  }
+  renderView();
+  if(!ghost)return;
+  const w=screenEl.clientWidth||270;
+  body.after(ghost);
+  const out=ghost.animate([{transform:'translateX(0)'},{transform:`translateX(${-dir*w}px)`}],{duration:NAV_MS,easing:NAV_EASE});
+  out.onfinish=out.oncancel=()=>ghost.remove();
+  for(const el of body.children)el.animate([{transform:`translateX(${dir*w}px)`},{transform:'translateX(0)'}],{duration:NAV_MS,easing:NAV_EASE});
+  $('#htitle')?.animate([{opacity:0,transform:`translateX(${dir*14}px)`},{opacity:1,transform:'translateX(0)'}],{duration:NAV_MS,easing:NAV_EASE});
+}
+function renderView(){
   const v=top();
   const track=v.type==='now'?cur():null;
   const index=importedPlayback?.queue===queue?importedPlayback.index:qi;
   const session=importedPlayback?.queue===queue?importedPlayback:queue;
   const prior=shownNowTrack;
-  shownNowTrack=track?{track,index,session}:null;
-  const changed=track&&(!prior||prior.track!==track||prior.index!==index||prior.session!==session);
+  if(track)shownNowTrack={track,index,session};
+  // Animate only a real track change, not opening Now Playing or redrawing it.
+  const changed=!!(track&&prior&&(prior.track!==track||prior.index!==index||prior.session!==session));
   const direction=prior?.session===session&&index<prior.index?-1:1;
 
   const isVid=false;
@@ -1549,10 +1597,12 @@ function render(){
     v.sel=Math.max(0,Math.min(v.sel,it.length-1));
     if(v.sel<v.scroll)v.scroll=v.sel;if(v.sel>=v.scroll+VIS)v.scroll=v.sel-VIS+1;
     const playing=cur(),sbw=it.length>VIS;let h='<div class="list">';
+    // Keep labels in one column: if any row in this list has an icon, every row gets the icon gutter.
+    const gutter=settings.style==='Classic'&&it.some(x=>!x.thumb&&MENU_ICONS[x.icon||(x.song||x.ytid?'music':'')]);
     for(let i=v.scroll;i<Math.min(it.length,v.scroll+VIS);i++){const x=it[i],rp=sbw?'right:14px':'';
       const isCur=playing&&((x.song&&x.song.id===playing.id)||(x.ytid&&playing.id===x.ytid));
       const icon=classicRowIcon(x);
-      h+=`<div class="row${i===v.sel?' sel':''}${x.thumb?' th':''}${icon?' has-icon':''}" style="${sbw?'padding-right:28px':''}">${x.thumb?`<span class="thumb${x.avatar?' av':''}" style="background-image:url(&quot;${esc(x.thumb)}&quot;)"></span>`:icon}<span class="lb"><span class="lt">${esc(x.label)}</span></span>${
+      h+=`<div class="row${i===v.sel?' sel':''}${x.thumb?' th':''}${icon||(gutter&&!x.thumb)?' has-icon':''}" style="${sbw?'padding-right:28px':''}">${x.thumb?`<span class="thumb${x.avatar?' av':''}" style="background-image:url(&quot;${esc(x.thumb)}&quot;)"></span>`:icon}<span class="lb"><span class="lt">${esc(x.label)}</span></span>${
         x.val!=null?`<span class="val" style="${rp}">${esc(x.val)}</span>`:x.chev?`<span class="chev" style="${rp}">›</span>`:isCur?`<span class="spk" style="${rp}">${spk}</span>`:''}</div>`}
     if(sbw){const hh=190,th=Math.max(14,hh*VIS/it.length),ty=(hh-th)*v.scroll/(it.length-VIS);h+=`<div class="sb"><i style="top:${ty}px;height:${th}px"></i></div>`}
     body.innerHTML=h+'</div>';
@@ -1582,7 +1632,7 @@ function render(){
     renderNowFlow(changed?direction:0);
   }else if(v.type==='now'&&settings.style==='Modern'&&cur()){
     const s=cur(),art=artFor(s);screenEl.classList.add('nowmod');if(scrub)ctl=null;
-    body.innerHTML=`<div class="mnp" id="np">
+    body.innerHTML=`<div class="mnp${hasNowLyrics(s)?' lyrics-on':''}" id="np">
       <div class="bg${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(art)}&quot;)"></div><div class="shade"></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
       <div class="cnt">${qi+1} of ${queue.length}</div>
@@ -1605,10 +1655,10 @@ function render(){
     lastArtId=s.id;tick();ensureNowLyrics(s);
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
-    body.innerHTML=`<div class="np lyrics-np" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)">${nowPlayingNeighbors()}<div class="cnt">${qi+1} of ${queue.length}</div>
-      <div class="top"><div class="artcol"><div class="art${s.blob?' offline-cover':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
+    body.innerHTML=`<div class="np lyrics-np${hasNowLyrics(s)?' lyrics-on':''}" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><div class="cnt">${qi+1} of ${queue.length}</div>
+      <div class="top"><div class="artcol"><div class="art${showOfflineMark(s)?' offline-cover':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div></div>
-      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
+      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}${s.album?`<span class="alx"> — ${esc(s.album)}</span>`:''}</div><div class="al">${esc(s.album)}</div></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
       <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
       <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/></svg><div class="vb"><i id="vbi"></i></div>
@@ -2068,7 +2118,7 @@ function unfoldFlow(v,view){
   ],{duration:220,easing:'ease-in',fill:'forwards'});
   animation.finished.then(()=>{
     if(top()!==v)return;
-    push(view);
+    push(view,{slide:false});   // the unfold animation below replaces the menu slide
     body.querySelector(view.type==='flow'?'#flow .stage':'.list')?.animate([
       {opacity:.25,transform:'perspective(500px) rotateY(24deg) scaleX(.88)',transformOrigin:'left center'},
       {opacity:1,transform:'perspective(500px) rotateY(0deg) scaleX(1)',transformOrigin:'left center'}
@@ -2091,8 +2141,8 @@ function renderFlow(v,from){
     const card=v.albums[i],song=card.songs?.find(x=>x.artUrl)||card.songs?.[0];
     const art=card.getArt?card.getArt():song?artFor(song):card.art;
     const video=v.recommendItems?.[i];
-    const offline=card.isOffline?.()||(card.songs?.length===1&&song?.blob&&!song.deleted)||
-      (video&&songs.some(s=>s.sourceId===video.id&&s.blob&&!s.deleted));
+    // Mark saved songs only on shelves that mix saved and streamed music; on Album Flow everything is saved.
+    const offline=card.isOffline?.()||(video&&songs.some(s=>s.sourceId===video.id&&s.blob&&!s.deleted));
     cards+=`<div class="cv${offline?' offline-cover':''}" data-i="${i}" style="background-image:url(&quot;${esc(art)}&quot;)"></div>`;
   }
   body.innerHTML=`<div class="flow instant" id="flow"><div class="cnt" id="fcnt"></div><div class="stage">${cards}</div>
@@ -2126,7 +2176,9 @@ function flowUpdate(v){
 let flowNpQi=null;
 function nowFlowPos(el,d){const ad=Math.abs(d);
   el.style.transform=d===0?'translateX(0) translateZ(40px) rotateY(0deg)':`translateX(${Math.sign(d)*(68+(ad-1)*18)}px) rotateY(${d<0?60:-60}deg)`;
+  el.dataset.side=d>0?'r':d<0?'l':'c';
   el.style.zIndex=String(100-ad);el.style.opacity=ad>4?'0':'1';el.style.filter=d===0?'none':`brightness(${Math.max(.4,.8-ad*.08)})`}
+const showOfflineMark=s=>!!(s&&s.blob&&!s.deleted&&importedPlayback?.queue===queue);
 function nowPlayingNeighbors(){
   const session=importedPlayback?.queue===queue?importedPlayback:null;
   const neighbor=(offset,direction)=>{
@@ -2155,8 +2207,8 @@ function renderNowFlow(direction=0){
   const reduced=direction&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const s=cur(),from=!reduced&&flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
   const lo=Math.max(0,qi-5),hi=Math.min(queue.length-1,qi+5);let cards='';
-  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${queue[i].blob?' offline-cover':''}" data-q="${i}"><div class="cv-motion" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div></div>`;
-  body.innerHTML=`<div class="fnp instant lyrics-flow" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)">${nowPlayingNeighbors()}<span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
+  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${showOfflineMark(queue[i])?' offline-cover':''}" data-q="${i}"><div class="cv-motion" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div></div>`;
+  body.innerHTML=`<div class="fnp instant${hasNowLyrics(s)?' lyrics-flow':''}" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
     <div class="stage">${cards}</div>
     <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
     <div class="cap"><b>${esc(s.title)}</b><span>${esc(s.artist)}${s.album?' — '+esc(s.album):''}</span></div>
@@ -2786,17 +2838,21 @@ async function populateLyrics(s){
   })().finally(()=>{s._lyricsLoading=null});
   return s._lyricsLoading;
 }
+const hasNowLyrics=s=>!!(s&&(s.lyrics||s.onlineLyrics));
 function nowLyricsHTML(s){
   return s.lyrics?esc(s.lyrics):s.onlineLyrics?lyricMarkup(s.onlineLyrics):'<span class="lyric-placeholder">Finding lyrics…</span>';
 }
 function ensureNowLyrics(s){
   if(!s)return;
-  if(!s.lyrics&&!s.onlineLyrics)populateLyrics(s).then(data=>fillNowLyrics(s,data)).catch(()=>fillNowLyrics(s,null));
+  // Look up once per session; a miss is remembered so Now Playing doesn't search again on every redraw.
+  if(!s.lyrics&&!s.onlineLyrics&&!s.lyricsMissing)populateLyrics(s).then(data=>fillNowLyrics(s,data)).catch(()=>fillNowLyrics(s,null));
   else if(s.onlineLyrics?.lines?.length)syncLyricLine();
 }
 function fillNowLyrics(s,data){
   const node=$('#np-lyric-lines');if(!node||cur()?.id!==s.id||top().type!=='now')return;
   node.innerHTML=data?lyricMarkup(data):'<span class="lyric-placeholder">Lyrics unavailable for this track.</span>';
+  if(!data)s.lyricsMissing=true;
+  const np=$('#np');if(np)np.classList.toggle(np.classList.contains('fnp')?'lyrics-flow':'lyrics-on',!!data);   // panel fades in, details glide aside
   if(data?.lines?.length){node.dataset.active='';syncLyricLine()}
 }
 async function openLyrics(s){
@@ -2949,9 +3005,11 @@ function setBatteryIndicator(level,charging){
   const fill=$('#batlvl'),icon=fill.parentElement;
   const known=Number.isFinite(level)&&level>=0&&level<=1;
   const percentage=known?Math.round(level*100):0;
-  fill.style.width=percentage+'%';
-  fill.style.background=known&&charging?'linear-gradient(#ffe066,#e7b400)':
-    known&&level<=.2?'linear-gradient(#ff8a80,#d32f2f)':'';
+  // Unknown level (e.g. iPhone Safari has no battery API): a full neutral icon, never an "empty battery".
+  fill.style.width=(known?Math.max(8,percentage):100)+'%';
+  fill.style.background=!known?'linear-gradient(#e4e7eb,#b9bec6)':charging?'linear-gradient(#ffe066,#e7b400)':
+    level<=.2?'linear-gradient(#ff8a80,#d32f2f)':'';
+  fill.style.transition='width .6s ease';
   const label=known?'Battery '+percentage+'%'+(charging?', plugged in':''):'Battery level unavailable';
   icon.title=label;
   icon.setAttribute('aria-label',label);

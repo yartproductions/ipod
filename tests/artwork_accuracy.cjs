@@ -44,14 +44,15 @@ test('Flow Now Playing still renders synchronized lyrics',()=>{
  const body={innerHTML:''},dom={querySelectorAll(){return []}};
  const node=()=>({classList:{remove(){}},style:{},dataset:{}});
  let lyrics=false;
- const render=new Function('importedPlayback','cur','qi','queue','artFor','esc','body','document','requestAnimationFrame','$','tick','ensureNowLyrics','nowLyricsHTML','scrub',
+ const render=new Function('importedPlayback','cur','qi','queue','artFor','esc','body','document','requestAnimationFrame','$','tick','ensureNowLyrics','nowLyricsHTML','scrub','hasNowLyrics',
  section('let flowNpQi=null;','/* ---------- Artwork lookup: MusicBrainz')+'return renderNowFlow;')(
  null,()=>({id:'one',title:'Yellow',artist:'Coldplay',album:'Parachutes'}),0,
  [{id:'one',title:'Yellow',artist:'Coldplay',album:'Parachutes'}],()=> 'cover',String,
- body,dom,fn=>fn(),node,()=>{},()=>{lyrics=true},()=> 'Lyrics',false);
+ body,dom,fn=>fn(),node,()=>{},()=>{lyrics=true},()=> 'Lyrics',false,()=>true);
  render();
  assert.match(body.innerHTML,/np-lyric-lines/);assert(lyrics);
  assert.match(body.innerHTML,/--np-art:url/);
+ assert.match(body.innerHTML,/lyrics-flow/);   // lyrics column only when the song has lyrics
 });
 test('Strict mode rejects thumbnails and allows matched art',()=>{
  const gen=()=> 'generated';

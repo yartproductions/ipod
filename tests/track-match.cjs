@@ -15,7 +15,8 @@ const w={ipodTrackMatchBridge:{
 const matcher=new Function('window',script+';return window.ipodTrackMatch')(w);
 assert.ok(matcher);
 const req={artist:'Frank Ocean',title:'Pink + White'};
-assert.equal(matcher.exactCandidate(req,{artist:'Frank Ocean',title:'Pink & White (Official Audio)'}),false);
+// "&" and "+" are treated as the same word by the matcher (common in uploaded titles).
+assert.equal(matcher.exactCandidate(req,{artist:'Frank Ocean',title:'Pink & White (Official Audio)'}),true);
 assert.equal(matcher.exactCandidate(req,{artist:'Frank Ocean',title:'Pink + White (Official Audio)'}),true);
 assert.equal(matcher.exactCandidate(req,{artist:'Someone Else',title:'Pink + White'}),false);
 assert.equal(matcher.exactCandidate(req,{artist:'Frank Ocean',title:'Pink + White (Live)'}),false);

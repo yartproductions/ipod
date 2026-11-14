@@ -469,7 +469,7 @@ def main():
         for _ in range(4):
             if pg.text_content('#htitle') == 'Now Playing': break
             key(pg, 'Escape', wait=250)
-        art = pg.evaluate('getComputedStyle(document.querySelector(".fnp .cv[style*=blob]")||document.body).backgroundImage')
+        art = pg.evaluate('getComputedStyle(document.querySelector(".fnp .cv-motion[style*=blob]")||document.body).backgroundImage')
         check('Now Playing shows the new cover', 'blob:' in art, art[:60])
         pg.reload(); pg.wait_for_timeout(1500)
         has_art = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();
