@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const html=fs.readFileSync(require.resolve('../index.html'),'utf8');
 const start=html.indexOf('let importedPlayback=null;');
-const end=html.indexOf("audio.addEventListener('timeupdate',prefetchImported)",start);
+const end=html.indexOf("onActiveAudio('timeupdate',prefetchImported)",start);
 const {play,prefetch,advance,current,audio,downloads}=new Function(html.slice(start,end)+`
  const downloads=[],songs=[{id:'local',url:'blob:local'}],settings={repeat:'Off'};
  const audio={currentTime:0,duration:200,paused:false,src:'',addEventListener(){}};
