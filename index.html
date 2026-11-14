@@ -360,6 +360,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 /* list thumbnails (Albums) */
 .row.th{padding-left:36px}
 .row .thumb{position:absolute;left:6px;top:3px;width:21px;height:21px;border-radius:2px;background-size:cover;background-position:center;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
+.row .thumb.av{border-radius:50%}
 /* album art: crossfade on track change + floor reflection */
 .np .art.fresh{animation:artIn .45s ease-out}
 @keyframes artIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
@@ -1302,7 +1303,7 @@ function render(){
     const playing=cur(),sbw=it.length>VIS;let h='<div class="list">';
     for(let i=v.scroll;i<Math.min(it.length,v.scroll+VIS);i++){const x=it[i],rp=sbw?'right:14px':'';
       const isCur=playing&&((x.song&&x.song.id===playing.id)||(x.ytid&&playing.id===x.ytid));
-      h+=`<div class="row${i===v.sel?' sel':''}${x.thumb?' th':''}" style="${sbw?'padding-right:28px':''}">${x.thumb?`<span class="thumb" style="background-image:url(&quot;${esc(x.thumb)}&quot;)"></span>`:''}<span class="lb"><span class="lt">${esc(x.label)}</span></span>${
+      h+=`<div class="row${i===v.sel?' sel':''}${x.thumb?' th':''}" style="${sbw?'padding-right:28px':''}">${x.thumb?`<span class="thumb${x.avatar?' av':''}" style="background-image:url(&quot;${esc(x.thumb)}&quot;)"></span>`:''}<span class="lb"><span class="lt">${esc(x.label)}</span></span>${
         x.val!=null?`<span class="val" style="${rp}">${esc(x.val)}</span>`:x.chev?`<span class="chev" style="${rp}">›</span>`:isCur?`<span class="spk" style="${rp}">${spk}</span>`:''}</div>`}
     if(sbw){const hh=190,th=Math.max(14,hh*VIS/it.length),ty=(hh-th)*v.scroll/(it.length-VIS);h+=`<div class="sb"><i style="top:${ty}px;height:${th}px"></i></div>`}
     body.innerHTML=h+'</div>';

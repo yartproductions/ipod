@@ -8,11 +8,17 @@ service cloud.firestore {
     function requestDoc(from, to) { return /databases/$(database)/documents/friendRequests/$(from + "_" + to); }
     function isHandle(value) { return value is string && value.matches('^[a-z][a-z0-9_]{2,19}$'); }
     function validProfile(uid, d) {
-      return d.keys().hasOnly(['uid', 'username', 'displayName', 'sharing', 'createdAt', 'updatedAt'])
+      return d.keys().hasOnly(['uid', 'username', 'displayName', 'sharing', 'createdAt', 'updatedAt', 'photo'])
         && d.keys().hasAll(['uid', 'username', 'displayName', 'sharing', 'createdAt', 'updatedAt'])
         && d.uid == uid && isHandle(d.username)
         && d.displayName is string && d.displayName.size() >= 1 && d.displayName.size() <= 32
-        && d.sharing is bool;
+        && d.sharing is bool
+        && (!('photo' in d) || validPhoto(d.photo));
+    }
+    // Profile picture: a small JPEG data URL (the app shrinks it to 128px first).
+    function validPhoto(p) {
+      return p is string && p.size() <= 40000
+        && p.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$');
     }
     function handleAfter(uid, username) {
       return existsAfter(handle(username)) && getAfter(handle(username)).data.uid == uid;
@@ -66,7 +72,7 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['username', 'displayName', 'sharing', 'updatedAt'])
+          .hasOnly(['username', 'displayName', 'sharing', 'updatedAt', 'photo'])
         && handleAfter(uid, request.resource.data.username)
         && (request.resource.data.username == resource.data.username
           || !existsAfter(handle(resource.data.username)));
