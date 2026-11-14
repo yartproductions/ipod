@@ -1213,7 +1213,7 @@ function entriesView(title,arr,removable){
   return list(title,()=>{const vids=arr.filter(e=>e.type==='video').map(e=>({kind:'yt',id:e.id,title:e.title,artist:e.artist}));
     return arr.map(e=>e.type==='playlist'
       ?{label:'▤ '+(e.title||'Playlist'),chev:1,action:()=>{push(loadingView('Loading…'));openPlaylist(e.list,e.title)}}
-      :{label:e.title||e.id,ytid:e.id,action:()=>playYT(vids,vids.findIndex(v=>v.id===e.id))})},{emptyText:removable?'Save videos from YouTube → Save Now Playing.':'Nothing played yet.'});
+      :{label:e.title||e.id,ytid:e.id,video:vids.find(v=>v.id===e.id),action:()=>playYT(vids,vids.findIndex(v=>v.id===e.id))})},{emptyText:removable?'Save videos from YouTube → Save Now Playing.':'Nothing played yet.'});
 }
 
 
@@ -1344,7 +1344,7 @@ function ytListView(title,items,more,pl){
   return list(title,()=>[
     ...(pl?[{label:'Play First',action:()=>playYT(items,0)},{label:'Shuffle First',action:()=>playYT(shuffled(items),0)},
       {label:'Save Playlist',action:go(()=>{if(!saved.some(s=>s.list===pl.list)){saved.unshift({type:'playlist',list:pl.list,title:pl.title||title});ls.set('ipod.saved',saved)}return msgView('Saved','Playlist added to Saved.')})}]:[]),
-    ...items.map((it,i)=>({label:it.title,ytid:it.id,action:()=>playYT(items,i)})),
+    ...items.map((it,i)=>({label:it.title,ytid:it.id,video:it,action:()=>playYT(items,i)})),
     ...(more?[{label:'More Results…',action:more}]:[])])}
 function tornadoUsageView(){
   const view=list('Tornado Usage',[{label:'Loading account usage…'}]);
@@ -3014,9 +3014,70 @@ function endTrack(e){
   tr=null;
 }
 wheel.addEventListener('pointerup',endTrack);wheel.addEventListener('pointercancel',endTrack);
-center.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();center.classList.add('down')});
-center.addEventListener('pointerup',e=>{e.stopPropagation();if(center.classList.contains('down')){center.classList.remove('down');press('select')}});
-center.addEventListener('pointerleave',()=>center.classList.remove('down'));
+function highlightedTrack(view){
+  if(view.type==='list'){
+    const row=itemsOf(view)[view.sel];
+    return row?.getTrack?.()||(row&&(row.song||row.video)?{song:row.song,video:row.video}:null);
+  }
+  if(view.type==='flow'){
+    const card=view.albums[view.sel],song=view.songList?.[view.sel],video=view.recommendItems?.[view.sel];
+    return card?.getTrack?.()||(song||video?{song,video}:null);
+  }
+  return null;
+}
+function queuePlayNext(track){
+  if(!cur()||(!track?.song&&!track?.video)||track.song?.deleted)return false;
+  const session=importedPlayback?.queue===queue?importedPlayback:null;
+  if(session?.pending)return false;
+  const song=importedTrackSong(track);
+  if(!session&&song)queue.splice(qi+1,0,song);
+  else{
+    const active=session||{cover:null,tracks:queue.map(song=>({song})),index:qi,queue,pending:false,prefetched:false};
+    active.tracks.splice(active.index+1,0,track);
+    importedPlayback=active;
+    if(!song&&track.video){
+      active.prefetched=true;
+      enqueueYT(track.video).catch(()=>{});
+    }
+  }
+  setSession();
+  setHdrTask('Queued to Play Next',1,true);
+  triggerHaptic('success');
+  return true;
+}
+let centerPress=null;
+function clearCenterPress(){
+  if(centerPress)clearTimeout(centerPress.timer);
+  centerPress=null;
+  center.classList.remove('down');
+}
+center.addEventListener('pointerdown',e=>{
+  if(!e.isPrimary||e.button!==0)return;
+  e.preventDefault();e.stopPropagation();
+  const view=top(),track=highlightedTrack(view),selected=view.sel;
+  center.classList.add('down');
+  center.setPointerCapture(e.pointerId);
+  const pressState={id:e.pointerId,long:false,timer:null,x:e.clientX,y:e.clientY};
+  centerPress=pressState;
+  if(cur()&&(track?.song||track?.video)&&!holdOn){
+    pressState.timer=setTimeout(()=>{
+      pressState.long=true;
+      if(!holdOn&&top()===view&&view.sel===selected)queuePlayNext(track);
+    },550);
+  }
+});
+center.addEventListener('pointermove',e=>{
+  if(centerPress?.id===e.pointerId&&Math.hypot(e.clientX-centerPress.x,e.clientY-centerPress.y)>14)clearCenterPress();
+});
+center.addEventListener('pointerup',e=>{
+  e.stopPropagation();
+  if(centerPress?.id!==e.pointerId)return;
+  const short=!centerPress.long;
+  clearCenterPress();
+  if(short)press('select');
+});
+center.addEventListener('pointercancel',clearCenterPress);
+center.addEventListener('lostpointercapture',clearCenterPress);
 
 addEventListener('keydown',e=>{
   if(e.target&&e.target.id==='inpt')return;const k=e.key;
