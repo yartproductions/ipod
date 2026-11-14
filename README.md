@@ -128,3 +128,22 @@ response, use the extractor to obtain the complete tracklist.
 Once saved, choose **Match Unresolved** to check local music and then search
 YouTube in batches. Previously verified matches can be reused across saved
 playlists. Review ambiguous results in the playlist.
+
+### Import a Spotify playlist
+
+1. Create a Web API app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+   Spotify requires the owner of a Development Mode app to have Premium.
+   If someone else will sign in, add their Spotify account to the app's user list.
+2. In the iPod, open **YouTube → Import Playlist → Paste Playlist Link** and
+   paste an `https://open.spotify.com/playlist/…` URL. Open **Show Redirect URI**
+   and add the exact URL shown to the Spotify app's redirect URIs.
+3. Choose **Enter Spotify Client ID** and paste the app's Client ID. Choose
+   **Sign In to Spotify** and approve playlist access. The iPod returns to
+   the playlist preview. The sign-in session is kept in the current tab.
+4. Select **Save to iPod**, then **Match Unresolved** to match tracks using
+   the existing local library and YouTube search.
+
+Spotify's playlist API supports playlists you own or collaborate on. For
+other playlists, use a copy you own or import a CSV export. The app fetches
+song metadata in playlist order and skips podcast episodes, local files,
+and entries with no track information.

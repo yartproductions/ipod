@@ -80,6 +80,10 @@ function qobuzMetadata(data,link){
 function detect(url){
  try{const u=new URL(text(url));if(!/^https?:$/.test(u.protocol))return null;
  const host=u.hostname.toLowerCase();
+ if(u.protocol==='https:'&&host==='open.spotify.com'){
+  const match=u.pathname.match(/^\/(?:intl-[a-z-]+\/)?playlist\/([a-zA-Z0-9]{22})\/?$/i);
+  return match?{provider:'spotify',id:match[1]}:null;
+ }
  if(['youtube.com','www.youtube.com','music.youtube.com','m.youtube.com'].includes(host)){
   const id=u.searchParams.get('list');return id&&/^[\w-]{10,90}$/.test(id)?{provider:'youtube',id}:null}
  if(['qobuz.com','www.qobuz.com','open.qobuz.com','play.qobuz.com'].includes(host)){
@@ -171,9 +175,34 @@ function picker(){
   catch(e){if(top()===loading)replaceTop(msgView('Import Failed',e.message));}
  },{once:true});el.click();
 }
-function linkInput(){push(inputView('Playlist Link','YouTube Music or Qobuz URL',url=>{
+function spotifySetup(id){
+ const spotify=window.ipodSpotifyImport;
+ return list('Spotify Setup',[
+  {label:'Show Redirect URI',action:()=>push(msgView('Spotify Redirect URI',spotify.redirectUri()))},
+  {label:'Enter Spotify Client ID',action:()=>push(inputView('Spotify Client ID','Paste your Spotify app Client ID',value=>{
+   try{spotify.configure(value);loadSpotify(id,replaceTop)}
+   catch(e){push(msgView('Spotify Setup',e.message))}
+  }))},
+  {label:'Setup Instructions',action:()=>push(msgView('Spotify Setup','Create a Web API app in the Spotify Developer Dashboard. Register the exact Redirect URI shown here, then enter your app Client ID.'))}
+ ]);
+}
+function loadSpotify(id,show){
+ const spotify=window.ipodSpotifyImport;
+ if(!spotify.configured()){show(spotifySetup(id));return}
+ const loading=loadingView('Reading Spotify Playlist…');show(loading);
+ spotify.playlist(id).then(data=>{
+  if(top()!==loading)return;
+  if(data)replaceTop(preview({...data,tracks:data.tracks.map(toTrack).filter(Boolean)}));
+  else replaceTop(list('Connect Spotify',[
+   {label:'Sign In to Spotify',action:()=>spotify.connect(id).catch(e=>push(msgView('Spotify Sign-in Failed',e.message)))},
+   {label:'Change Client ID',action:()=>push(spotifySetup(id))}
+  ]));
+ }).catch(e=>{if(top()===loading)replaceTop(msgView('Spotify Import Failed',e.message))});
+}
+function linkInput(){push(inputView('Playlist Link','Spotify, YouTube, or Qobuz URL',url=>{
  const info=detect(url);
- if(!info)return replaceTop(msgView('Unsupported Link','Paste a YouTube playlist or Qobuz playlist URL.'));
+ if(!info)return replaceTop(msgView('Unsupported Link','Paste a Spotify, YouTube, or Qobuz playlist URL.'));
+ if(info.provider==='spotify')return loadSpotify(info.id,replaceTop);
  if(info.provider==='qobuz')return replaceTop(list('Qobuz Playlist',[
   {label:'Playlist ID',val:info.id},
   {label:'Import Export File',action:picker},
@@ -255,4 +284,10 @@ function open(){push(list('Import Playlist',[
  {label:'How It Works',action:()=>push(msgView('Import Music','A playlist stores song metadata and verified YouTube references. It never automatically downloads audio. Match unresolved tracks before playback.'))}
 ]));}
 window.ipodPlaylistImport={open,library,parseFile,detect,duration,youtubeTracks,youtubeMatch};
+const spotifyCallback=window.ipodSpotifyImport?.callback();
+if(spotifyCallback){
+ const loading=loadingView('Connecting Spotify…');push(loading);
+ spotifyCallback.then(id=>{if(top()===loading)loadSpotify(id,replaceTop)})
+ .catch(e=>{if(top()===loading)replaceTop(msgView('Spotify Sign-in Failed',e.message))});
+}
 })();
