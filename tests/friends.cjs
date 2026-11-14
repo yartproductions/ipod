@@ -22,10 +22,10 @@ assert.match(np,/np-lyric-lines/);
 let pushed=null,timeHandler=null;
 const mockAudio={addEventListener(name,fn){if(name==='timeupdate')timeHandler=fn},paused:true};
 const fakeWindow={};
-const module=new Function('window','audio','navigator','push','msgView',friends+';return window.ipodFriends;')(
+const friendsModule=new Function('window','audio','navigator','push','msgView',friends+';return window.ipodFriends;')(
  fakeWindow,mockAudio,{onLine:false},view=>{pushed=view},(title,msg)=>({title,msg}));
-assert.equal(typeof module.open,'function');
+assert.equal(typeof friendsModule.open,'function');
 assert.equal(typeof timeHandler,'function');
-module.open();
+friendsModule.open();
 assert.equal(pushed.title,'Friends Offline');
 console.log('PASS Friends integration syntax, no-recovery scope, local playback isolation, privacy defaults and Flow guardrails');
