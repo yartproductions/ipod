@@ -31,6 +31,12 @@ const {doc,collection,query,where,getDocs,getDoc,setDoc,updateDoc,writeBatch,ser
      createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
    await assertFails(updateDoc(doc(a,'profiles','bob'),{displayName:'Hacked',updatedAt:serverTimestamp()}));
    await assertFails(setDoc(doc(c,'handles','alice_1'),{uid:'charlie'}));
+   // Profile pictures: small JPEG data URLs only.
+   const jpeg='data:image/jpeg;base64,'+'A'.repeat(2000);
+   await assertSucceeds(updateDoc(doc(a,'profiles','alice'),{photo:jpeg,updatedAt:serverTimestamp()}));
+   await assertFails(updateDoc(doc(a,'profiles','alice'),{photo:'https://evil.example/x.png',updatedAt:serverTimestamp()}));
+   await assertFails(updateDoc(doc(a,'profiles','alice'),{photo:'data:image/jpeg;base64,'+'A'.repeat(41000),updatedAt:serverTimestamp()}));
+   await assertFails(updateDoc(doc(c,'profiles','alice'),{photo:jpeg,updatedAt:serverTimestamp()}));
    const req=doc(a,'friendRequests','alice_bob');
    await assertSucceeds(setDoc(req,{from:'alice',to:'bob',status:'pending',
      createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));

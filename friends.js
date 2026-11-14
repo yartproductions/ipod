@@ -127,13 +127,71 @@ if(typeof document!=='undefined'){
   window.addEventListener('online',()=>{wake();if(!api&&usedBefore())connect().catch(()=>{})});
   if(usedBefore()&&navigator.onLine)setTimeout(()=>connect().catch(e=>console.warn('Friends warm-up:',e.message)),2500);
 }
+/* ---------- profile pictures: a small square JPEG kept in the profile doc ---------- */
+const PHOTO_PX=128,PHOTO_MAX=40000;
+const AV_COLORS=['#2b7fde','#e0573e','#2fa36b','#8a5cd6','#d9922b','#d64a8b','#3a9bb0','#6b7686'];
+function initialsAvatar(p){
+  const name=String(p&&(p.displayName||p.username)||'?').trim();
+  const ch=(name.match(/[A-Za-z0-9]/)||['?'])[0].toUpperCase();
+  let h=0;for(const c of String(p&&p.username||name))h=(h*31+c.charCodeAt(0))>>>0;
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="${AV_COLORS[h%AV_COLORS.length]}"/><text x="20" y="27" font-family="-apple-system,Helvetica,Arial,sans-serif" font-size="19" font-weight="700" fill="#fff" text-anchor="middle">${ch}</text></svg>`;
+  return 'data:image/svg+xml,'+encodeURIComponent(svg);
+}
+const avatarOf=p=>p&&typeof p.photo==='string'&&p.photo.startsWith('data:image/jpeg;base64,')?p.photo:initialsAvatar(p);
+async function shrinkPhoto(file){
+  if(!file||!/^image\//.test(file.type||'image/'))throw Error('Choose a photo.');
+  let src;
+  try{src=await createImageBitmap(file,{imageOrientation:'from-image'})}
+  catch(e){
+    src=await new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();
+      im.onload=()=>{URL.revokeObjectURL(u);res(im)};im.onerror=()=>{URL.revokeObjectURL(u);rej(Error('That photo couldn’t be read. Try a JPEG or PNG.'))};im.src=u});
+  }
+  const w=src.width,h=src.height,side=Math.min(w,h);
+  if(!side)throw Error('That photo couldn’t be read.');
+  const c=document.createElement('canvas');c.width=c.height=PHOTO_PX;
+  const g=c.getContext('2d');g.imageSmoothingQuality='high';
+  g.fillStyle='#fff';g.fillRect(0,0,PHOTO_PX,PHOTO_PX);
+  g.drawImage(src,(w-side)/2,(h-side)/2,side,side,0,0,PHOTO_PX,PHOTO_PX);
+  if(src.close)src.close();
+  for(const q of [.85,.75,.62,.5]){const d=c.toDataURL('image/jpeg',q);if(d.length<=PHOTO_MAX)return d}
+  throw Error('That photo is too detailed. Try another one.');
+}
+function pickPhoto(){
+  // Must run synchronously inside the wheel press so iOS allows the picker.
+  const input=document.createElement('input');
+  input.type='file';input.accept='image/*';input.style.display='none';
+  document.body.appendChild(input);
+  input.addEventListener('change',()=>{
+    const file=input.files&&input.files[0];input.remove();
+    if(!file)return;
+    runView('Saving Picture…',async()=>{
+      const photo=await shrinkPhoto(file);
+      await api.db.collection('profiles').doc(account.uid).update({photo,updatedAt:serverTime()});
+      profile.photo=photo;cacheProfile(profile);
+      return msgView('Picture Saved','Friends will see it next to @'+profile.username+'.');
+    });
+  },{once:true});
+  input.click();
+  setTimeout(()=>{if(document.body.contains(input)&&!input.files.length)input.remove()},120000);
+}
+function photoMenu(){
+  return list('Profile Picture',()=>{const has=!!(profile.photo);return [
+    {label:has?'Your Picture':'No Picture Yet',val:has?'Set':'Initials',thumb:avatarOf(profile),avatar:1},
+    {label:has?'Choose New Picture':'Choose Picture',chev:1,action:pickPhoto},
+    ...(has?[{label:'Remove Picture',action:()=>runView('Removing Picture…',async()=>{
+      await api.db.collection('profiles').doc(account.uid).update({photo:firebase.firestore.FieldValue.delete(),updatedAt:serverTime()});
+      delete profile.photo;cacheProfile(profile);return msgView('Picture Removed','Your initials are shown instead.');
+    })}]:[]),
+    {label:'Who Sees It',chev:1,action:()=>push(msgView('Profile Picture','Your picture is shown with your username, so anyone who looks you up can see it. It’s shrunk to a small square on this device before uploading.'))}
+  ]});
+}
 function friendsMenu(){
   if(!profile)return list('Friends',[
     {label:'Create My Profile',chev:1,action:()=>push(inputView('Choose Username','3–20 letters, numbers, _',createProfile))},
     {label:'About Identity',chev:1,action:()=>push(msgView('No Recovery Yet','Your Friends identity belongs to this browser. If you clear its site data or change devices, you may permanently lose access to this profile.'))}
   ]);
   return list('Friends',[
-    {label:'My Profile',chev:1,action:()=>push(profileMenu())},
+    {label:'My Profile',chev:1,thumb:avatarOf(profile),avatar:1,action:()=>push(profileMenu())},
     {label:'Find Friends',chev:1,action:()=>push(inputView('Find Username','Exact @username',findFriend))},
     {label:'Friend Requests',chev:1,action:()=>runView('Loading requests…',requestMenu)},
     {label:'My Friends',chev:1,action:()=>runView('Loading friends…',friendsList)},
@@ -142,9 +200,9 @@ function friendsMenu(){
   ]);
 }
 function profileMenu(){
-  return list('My Profile',[
-    {label:'Name',val:profile.displayName},
-    {label:'Username',val:'@'+profile.username},
+  return list('My Profile',()=>[
+    {label:profile.displayName,val:'@'+profile.username,thumb:avatarOf(profile),avatar:1},
+    {label:'Profile Picture',chev:1,action:()=>push(photoMenu())},
     {label:'Change Display Name',chev:1,action:()=>push(inputView('Display Name','New display name',changeDisplayName,profile.displayName))},
     {label:'Change Username',chev:1,action:()=>push(inputView('New Username','3–20 letters, numbers, _',changeUsername,profile.username))},
     {label:'Listening Activity',val:profile.sharing?'Shared':'Private'},
@@ -228,7 +286,7 @@ async function friendCard(uid){
   const chosen=outbound.exists?outbound:inbound;
   const state=chosen.exists?chosen.data().status:'none';
   return list('@'+p.username,[
-    {label:p.displayName,val:'@'+p.username},
+    {label:p.displayName,val:'@'+p.username,thumb:avatarOf(p),avatar:1},
     {label:'Connection',val:state==='none'?'Not Friends':state},
     ...(state==='none'||(state==='declined'&&outbound.exists)?[{label:state==='declined'?'Send Request Again':'Send Friend Request',chev:1,action:()=>runView('Sending Request…',async()=>{
       if(state==='declined'){
@@ -266,7 +324,7 @@ async function requestMenu(){
   if(!pending.length)return msgView('Friend Requests','No pending friend requests.');
   const entries=await Promise.all(pending.map(async item=>{
     const p=await db.collection('profiles').doc(item.uid).get();
-    return {label:(p.exists?'@'+p.data().username:'Unknown user'),val:item.kind,chev:1,
+    return {label:(p.exists?'@'+p.data().username:'Unknown user'),val:item.kind,chev:1,thumb:avatarOf(p.exists?p.data():null),avatar:1,
       action:()=>runView('Loading…',()=>friendCard(item.uid))};
   }));
   return list('Requests',entries);
@@ -284,7 +342,7 @@ async function friendsList(){
   if(!uids.length)return msgView('No Friends Yet','Search for someone by username to send your first request.');
   const entries=await Promise.all(uids.map(async friendUid=>{
     const doc=await db.collection('profiles').doc(friendUid).get(),p=doc.data();
-    return {label:p?'@'+p.username:'Unknown user',val:p&&p.sharing?'Listening':'Private',chev:1,
+    return {label:p?'@'+p.username:'Unknown user',val:p&&p.sharing?'Listening':'Private',chev:1,thumb:avatarOf(p),avatar:1,
       action:()=>runView('Loading Friend…',()=>friendCard(friendUid))};
   }));
   return list('My Friends',entries);
