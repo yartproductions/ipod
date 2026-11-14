@@ -36,6 +36,9 @@ test('Album Flow renders without Now Playing lyrics reference',()=>{
  assert.match(body.innerHTML,/id="flow"/);
  assert.doesNotMatch(body.innerHTML,/np-lyric-lines/);
  assert.equal(node('#fal').textContent,'Test Album');
+ assert.doesNotMatch(body.innerHTML,/offline-cover/);
+ renderFlow({type:'flow',sel:0,albums:[{art:'cover',album:'Saved Track',artist:'Artist',isOffline:()=>true}]});
+ assert.match(body.innerHTML,/offline-cover/);
 });
 test('Flow Now Playing still renders synchronized lyrics',()=>{
  const body={innerHTML:''},dom={querySelectorAll(){return []}};
