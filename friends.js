@@ -145,10 +145,14 @@ async function friendCard(uid){
   return list('@'+p.username,[
     {label:p.displayName,val:'@'+p.username},
     {label:'Connection',val:state==='none'?'Not Friends':state},
-    ...(state==='none'?[{label:'Send Friend Request',chev:1,action:()=>runView('Sending Request…',async()=>{
-      await api.db.collection('friendRequests').doc(account.uid+'_'+uid).set({
-        from:account.uid,to:uid,status:'pending',createdAt:serverTime(),updatedAt:serverTime()
-      });
+    ...(state==='none'||(state==='declined'&&outbound.exists)?[{label:state==='declined'?'Send Request Again':'Send Friend Request',chev:1,action:()=>runView('Sending Request…',async()=>{
+      if(state==='declined'){
+        await outbound.ref.update({status:'pending',updatedAt:serverTime()});
+      }else{
+        await api.db.collection('friendRequests').doc(account.uid+'_'+uid).set({
+          from:account.uid,to:uid,status:'pending',createdAt:serverTime(),updatedAt:serverTime()
+        });
+      }
       return msgView('Request Sent','Waiting for @'+p.username+' to accept.');
     })}]:[]),
     ...(state==='accepted'?[{label:'Latest 3 Songs',chev:1,action:()=>runView('Loading Listening…',()=>friendListening(uid,p))}]:[]),
