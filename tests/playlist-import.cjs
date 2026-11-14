@@ -6,12 +6,13 @@ const code=fs.readFileSync(path.join(__dirname,'../playlist-import.js'),'utf8');
 const matcherCode=fs.readFileSync(path.join(__dirname,'../track-match.js'),'utf8');
 new Function(html.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]);
 new Function(code);
-let screens=[],calls=[],storage=new Map(),playlistPages=0,denyPlaylist=false;
+let screens=[],calls=[],storage=new Map(),playlistPages=0,denyPlaylist=false,flowCards;
 const bridge={
  list:(title,rows)=>({title,rows:typeof rows==='function'?rows():rows}),
  push:v=>screens.push(v),replaceTop:v=>screens[screens.length-1]=v,top:()=>screens.at(-1),
  msgView:(title,message)=>({title,message}),loadingView:title=>({title}),
  inputView:(title,hint,onSubmit)=>({title,hint,onSubmit}),
+ openPlaylistFlow:cards=>{flowCards=cards},genArt:name=>'generated '+name,isYoutubeThumbnail:()=>false,
  settings:{ytKey:'sample'},playYT:()=>{},playList:()=>{},getSongs:()=>[],
  ytApi:async(endpoint)=>{
   calls.push(endpoint);
@@ -71,6 +72,11 @@ assert.equal(qobuz[0].album,'Trilogy');
  assert.deepEqual(calls,['search','videos']);
  saved=JSON.parse([...storage.values()][0])[0];
  assert.deepEqual(saved.tracks.map(t=>t.youtubeId),['AAAAAAAAAAA','AAAAAAAAAAA']);
+ importer.library();
+ assert.equal(flowCards[0].album,'Qobuz Test');
+ assert.equal(flowCards[0].getArt(),'generated Qobuz Test');
+ assert(flowCards[0].action().rows.some(row=>row.label==='1. Wicked Games'));
+ assert.equal(flowCards.at(-1).action().title,'Import Playlist');
  importer.open();
  screens.at(-1).rows.find(row=>row.label==='Paste Playlist Link').action();
  screens.at(-1).onSubmit('https://open.spotify.com/playlist/3cEYpjA9oz9GiPac4AsH4n');

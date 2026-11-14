@@ -286,12 +286,30 @@ function library(){push(list('Imported Playlists',()=>[
  {label:'Import Another',action:open},
  ...read().map(p=>({label:p.name,val:p.tracks.length+' tracks',action:()=>push(playlistView(p))}))
 ]));}
-function open(){push(list('Import Playlist',[
+function flow(){
+ const playlists=read();
+ if(!b.openPlaylistFlow||!playlists.length){library();return}
+ const cards=playlists.map(pl=>{
+  const getArt=()=>{
+   for(const track of pl.tracks){
+    const cover=available(track)?.artUrl;
+    if(cover&&!b.isYoutubeThumbnail(cover))return cover;
+   }
+   return b.genArt(pl.name,pl.provider);
+  };
+  return {album:pl.name,artist:pl.tracks.length+' tracks',getArt,
+   action:()=>playlistView(read().find(p=>p.id===pl.id)||pl)};
+ });
+ cards.push({album:'Import Playlist',artist:'Add another playlist',art:b.genArt('Import Playlist',''),action:importView});
+ b.openPlaylistFlow(cards);
+}
+function importView(){return list('Import Playlist',[
  {label:'Paste Playlist Link',action:linkInput},
  {label:'Import CSV / JSON / TXT',action:picker},
  {label:'Import Private YouTube Playlist',action:()=>push(exportView('YouTube',''))},
- {label:'Saved Playlists',action:library},
+ {label:'Saved Playlists',action:flow},
  {label:'How It Works',action:()=>push(msgView('Import Music','A playlist stores song metadata and verified YouTube references. It never automatically downloads audio. Match unresolved tracks before playback.'))}
-]));}
-window.ipodPlaylistImport={open,library,parseFile,detect,duration,youtubeTracks,youtubeMatch};
+]);}
+function open(){push(importView());}
+window.ipodPlaylistImport={open,library:flow,parseFile,detect,duration,youtubeTracks,youtubeMatch};
 })();

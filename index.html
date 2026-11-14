@@ -217,6 +217,9 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
   transition:transform .32s cubic-bezier(.2,.8,.3,1),opacity .32s;backface-visibility:hidden;box-shadow:0 2px 8px rgba(0,0,0,.45);
   -webkit-box-reflect:below 2px linear-gradient(transparent 55%,rgba(255,255,255,.28))}
 .flow.instant .cv{transition:none}
+.flow.opening .cv{transition:none}
+.flow.opening .cv:not(.selected){opacity:0!important}
+.flow .cv{cursor:pointer}
 .flow .cap{position:absolute;left:8px;right:8px;bottom:12px;text-align:center;color:#fff;line-height:1.3}
 .modern.lightui .flow .cap{color:#111827}
 .flow .cap b{display:block;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -998,6 +1001,7 @@ function mainMenu(){
     {label:'Music Home',action:go(musicHome),chev:1},
     {label:'Offline Music',action:go(musicMenu),chev:1},
     {label:'Album Flow',action:()=>openFlow(),chev:1},
+    {label:'Playlist Flow',action:()=>window.ipodPlaylistImport?.library(),chev:1},
     {label:'Song Flow',action:()=>openSongFlow(),chev:1},
     {label:'Recommendation Flow',action:()=>openRecommendationFlow(),chev:1},
     {label:'Friends',action:()=>window.ipodFriends?window.ipodFriends.open():push(msgView('Friends Unavailable','Please reload the iPod to load Friends.')),chev:1},
@@ -1083,7 +1087,7 @@ function musicMenu(){return list('Local Music',[
   {label:'Recommendation Flow',action:()=>openRecommendationFlow(),chev:1},
   {label:'Albums',action:go(()=>albumsMenu(songs,'Albums')),chev:1},
   {label:'Songs',action:go(()=>songsMenu(songs,'Songs')),chev:1},
-  {label:'Imported Playlists',action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.library():push(msgView('Importer Unavailable','Reload and try again.')),chev:1},
+  {label:'Playlist Flow',action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.library():push(msgView('Importer Unavailable','Reload and try again.')),chev:1},
   {label:'Favorites',action:go(()=>{const f=songs.filter(s=>s.favorite);const v=songsMenu(f,'Favorites');v.emptyText='Tap ☆ on Now Playing to add favorites.';return v}),chev:1},
   {label:'Shuffle Songs',action:()=>shuffleAll()},
   {label:'Add Music',action:()=>$('#file').click(),chev:1}])}
@@ -1778,11 +1782,55 @@ async function openRecommendationFlow(){
 }
 // Big shelves only build the covers near the selection (±12) and rebuild as you spin past the edge.
 const FLOW_WIN=12;
+function openPlaylistFlow(cards){
+  push({type:'flow',title:'Playlist Flow',playlistCards:true,albums:cards,sel:0});
+}
+function unfoldFlow(v,view){
+  if(v.opening)return;
+  const flow=$('#flow'),card=flow?.querySelector('.cv[data-i="'+v.sel+'"]');
+  const reduce=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(!card?.animate||reduce){push(view);return}
+  v.opening=true;card.classList.add('selected');flow.classList.add('opening');
+  const animation=card.animate([
+    {transform:'translateZ(36px) rotateY(0deg)',opacity:1},
+    {transform:'translateX(-74px) translateZ(18px) rotateY(-92deg)',opacity:0}
+  ],{duration:220,easing:'ease-in',fill:'forwards'});
+  animation.finished.then(()=>{
+    if(top()!==v)return;
+    push(view);
+    body.querySelector('.list')?.animate([
+      {opacity:.25,transform:'perspective(500px) rotateY(24deg) scaleX(.88)',transformOrigin:'left center'},
+      {opacity:1,transform:'perspective(500px) rotateY(0deg) scaleX(1)',transformOrigin:'left center'}
+    ],{duration:200,easing:'ease-out'});
+  }).catch(()=>{}).finally(()=>{v.opening=false;flow.classList.remove('opening');card.classList.remove('selected');animation.cancel()});
+}
+function selectFlow(v){
+  const card=v.albums[v.sel];
+  if(!card||v.opening)return;
+  if(v.recommendItems)playYT(v.recommendItems,v.sel);
+  else if(v.songList)playList(v.songList,v.sel);
+  else if(card.action)unfoldFlow(v,card.action());
+  else unfoldFlow(v,songsMenu(card.songs,card.album));
+}
 function renderFlow(v,from){
   const n=v.albums.length,lo=n>40?Math.max(0,v.sel-FLOW_WIN):0,hi=n>40?Math.min(n-1,v.sel+FLOW_WIN):n-1;v._lo=lo;v._hi=hi;
-  let cards='';for(let i=lo;i<=hi;i++)cards+=`<div class="cv" data-i="${i}" style="background-image:url(&quot;${esc(v.albums[i].art)}&quot;)"></div>`;
+  if(!n){body.innerHTML='<div class="list"><div class="empty">No covers to show.</div></div>';return}
+  let cards='';for(let i=lo;i<=hi;i++){
+    const card=v.albums[i],song=card.songs?.find(x=>x.artUrl)||card.songs?.[0];
+    const art=card.getArt?card.getArt():song?artFor(song):card.art;
+    cards+=`<div class="cv" data-i="${i}" style="background-image:url(&quot;${esc(art)}&quot;)"></div>`;
+  }
   body.innerHTML=`<div class="flow instant" id="flow"><div class="cnt" id="fcnt"></div><div class="stage">${cards}</div>
     <div class="cap"><b id="fal"></b><span id="far"></span></div></div>`;
+  document.querySelectorAll('#flow .cv').forEach(card=>card.addEventListener('click',()=>{
+    if(top()!==v||v.opening)return;
+    const index=+card.dataset.i;
+    if(index===v.sel){click();selectFlow(v);return}
+    const prior=v.sel;v.sel=index;click();
+    if((index<v._lo+6&&v._lo>0)||(index>v._hi-6&&v._hi<n-1))renderFlow(v,prior);
+    else flowUpdate(v);
+    if(v.recommendItems){recommendationArtPreview(v,v.sel);recommendationMaybeLoadMore(v)}
+  }));
   if(from!=null&&from!==v.sel){const to=v.sel;v.sel=from;flowUpdate(v);v.sel=to;
     requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#flow');if(f){f.classList.remove('instant');flowUpdate(v)}}));return}
   flowUpdate(v);if(v.recommendItems)recommendationArtPreview(v,v.sel);
@@ -1864,23 +1912,40 @@ function artworkNeedsRepair(s){
 function artworkMetadata(s,match){
   s.artSource=match.source||'manual';
   s.artConfidence=match.score||1;
+  s.artworkAlbum=match.album||null;
   if(match.source==='manual')s.artworkLocked=true;
   // Only replace an obvious placeholder album; never overwrite a tagged album.
   if(match.album&&(!s.album||s.album==='Offline Music'||s.album==='Unknown Album'))s.album=match.album;
 }
-async function saveArtwork(s,blob,match={source:'manual',score:1},{manual=false}={}){
+// Keep release qualifiers and punctuation when deciding whether two tracks share an album.
+function albumArtworkKey(s){
+  const key=value=>String(value||'').normalize('NFC').trim().replace(/\s+/g,' ').toLowerCase();
+  const album=key(s.album),artist=key(s.albumArtist||s.artist);
+  if(!known(album)||!known(artist)||album==='offline music'||artist==='various artists')return '';
+  return JSON.stringify([artist,album]);
+}
+function albumArtworkTargets(s){
+  const key=albumArtworkKey(s);
+  return key?songs.filter(t=>t.id!==s.id&&albumArtworkKey(t)===key&&!artworkProtected(t)):[];
+}
+function reusableAlbumCover(s,t){
+  return s.id!==t.id&&s.artUrl&&!isYoutubeThumbnail(s.artUrl)&&
+    ((s.art&&(!s.artSource||['manual','embedded'].includes(s.artSource)))||
+     (['itunes','coverartarchive'].includes(s.artSource)&&albumArtworkKey({...s,album:s.artworkAlbum})===albumArtworkKey(s)));
+}
+async function saveArtwork(s,blob,match={source:'manual',score:1},{manual=false,applyAlbum=false,shareAlbum=true}={}){
   const lib=songs.find(x=>x.id===s.id)||s;
-  const share=!manual&&lib.album!=='Offline Music'&&known(lib.album);
-  const targets=[lib,...(share?songs.filter(x=>x.id!==lib.id&&x.album===lib.album&&x.artist===lib.artist&&!x.art):[])];
+  const share=shareAlbum&&(applyAlbum||(!manual&&albumArtworkKey(lib)===albumArtworkKey({...lib,album:match.album})));
+  const targets=[lib,...(share?albumArtworkTargets(lib).filter(t=>applyAlbum||artworkNeedsRepair(t)):[])];
   let saved=0;
   for(const t of targets){
-    if(t.deleted||!songs.some(x=>x.id===t.id))continue;
-    const oldUrl=t.artUrl,oldArt=t.art,oldSource=t.artSource,oldConfidence=t.artConfidence,oldAlbum=t.album;
+    if(t.deleted||!songs.some(x=>x.id===t.id)||(t!==lib&&artworkProtected(t)))continue;
+    const prior={...t},oldUrl=t.artUrl;
     const nextUrl=URL.createObjectURL(blob);
     t.art=blob;t.artUrl=nextUrl;
     artworkMetadata(t,manual?{...match,source:'manual'}:match);
     try{await dbPut(songRecord(t));saved++}
-    catch(e){URL.revokeObjectURL(nextUrl);t.art=oldArt;t.artSource=oldSource;t.artConfidence=oldConfidence;t.album=oldAlbum;t.artUrl=oldUrl;throw e}
+    catch(e){URL.revokeObjectURL(nextUrl);Object.assign(t,prior,{artworkAlbum:prior.artworkAlbum,artworkLocked:prior.artworkLocked});throw e}
     if(oldUrl&&oldUrl.startsWith('blob:'))URL.revokeObjectURL(oldUrl);
     queue.forEach(q=>{if(q.id===t.id){q.art=t.art;q.artUrl=t.artUrl;q.album=t.album;q.artSource=t.artSource;q.artConfidence=t.artConfidence}});
   }
@@ -1890,11 +1955,11 @@ async function saveArtwork(s,blob,match={source:'manual',score:1},{manual=false}
 async function saveMatchedArtworkURL(s,match){
   const lib=songs.find(x=>x.id===s.id)||s;
   if(!songs.some(x=>x.id===lib.id))return false;
-  const old=lib.artUrl,priorArt=lib.art;
+  const old=lib.artUrl,prior={...lib};
   lib.art=null;lib.artUrl=match.url;lib.artworkUrl=match.url;
   artworkMetadata(lib,match);
   try{await dbPut(songRecord(lib))}
-  catch(e){lib.art=priorArt;lib.artUrl=old;throw e}
+  catch(e){Object.assign(lib,prior,{artworkAlbum:prior.artworkAlbum,artworkUrl:prior.artworkUrl});throw e}
   if(old&&old.startsWith('blob:'))URL.revokeObjectURL(old);
   queue.forEach(q=>{if(q.id===lib.id){q.artUrl=lib.artUrl;q.album=lib.album;q.artSource=lib.artSource}});
   if(cur()?.id===lib.id){setSession();if(top()?.type==='now')render()}
@@ -1906,6 +1971,14 @@ async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected
   if(artworkProtected(lib)&&!overrideProtected)return null;
   if(!force&&!artworkNeedsRepair(lib))return null;
   if(!known(lib.artist)||!known(lib.title))return null;
+  const albumKey=albumArtworkKey(lib);
+  const donor=!force&&albumKey&&songs.find(s=>albumArtworkKey(s)===albumKey&&reusableAlbumCover(s,lib));
+  if(donor){
+    const shared={source:donor.artSource||'embedded',score:donor.artConfidence||1,album:lib.album,url:donor.artUrl};
+    if(donor.art)await saveArtwork(lib,donor.art,shared,{shareAlbum:false});
+    else await saveMatchedArtworkURL(lib,shared);
+    return shared;
+  }
   let match=null;
   const saved=artSaved[artworkCacheKey(lib)];
   if(preferred&&saved&&saved.url===preferred)match={...saved};
@@ -1915,14 +1988,10 @@ async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected
   if(!match&&busy)throw busy;
   if(!match||!match.url)return null;
   if(lib.deleted||!songs.some(x=>x.id===lib.id))return null;
-  try{
-    const blob=await fetchCover(match.url);
-    await saveArtwork(lib,blob,match);
-  }catch(e){
-    // An image can display in the page even when its CDN disallows fetch/Blob CORS.
-    // Keep the matched URL rather than reverting to a YouTube frame.
-    await saveMatchedArtworkURL(lib,match);
-  }
+  // A CDN may permit image rendering even when fetching a Blob is blocked.
+  const blob=await fetchCover(match.url).catch(()=>null);
+  if(blob)await saveArtwork(lib,blob,match);
+  else await saveMatchedArtworkURL(lib,match);
   artworkStore(artworkCacheKey(lib),match);
   return match;
 }
@@ -1965,6 +2034,16 @@ function artworkRepairMenu(s){
       }catch(e){if(top()===waiting)replaceTop(msgView(e&&e.retry?'Artwork Service Busy':'Artwork Error',e&&e.retry?'Too many lookups in a row. Wait a minute and try again.':e.message||'Lookup failed.'))}
     }},
     {label:'Choose Album Cover',chev:1,action:()=>getArtwork(s)},
+    ...(albumArtworkKey(s)&&s.artUrl&&!isYoutubeThumbnail(s.artUrl)&&albumArtworkTargets(s).length?[{
+      label:'Apply This Cover to Album',chev:1,action:async()=>{
+        const waiting=loadingView('Saving album cover…');push(waiting);
+        try{
+          const blob=s.art||await fetchCover(s.artUrl);
+          const count=await saveArtwork(s,blob,{source:'manual',score:1,album:s.album},{manual:true,applyAlbum:true});
+          if(top()===waiting)replaceTop(msgView('Album Cover Saved',count+' tracks saved. Existing embedded and manual covers on other tracks were preserved.'));
+        }catch(e){if(top()===waiting)replaceTop(msgView('Could Not Save',e.message))}
+      }
+    }]:[]),
     {label:'Correct Artist',chev:1,action:go(()=>inputView('Correct Artist','Artist name',v=>setSongArtworkMetadata(s,'artist',v),s.artist))},
     {label:'Correct Title',chev:1,action:go(()=>inputView('Correct Title','Song name',v=>setSongArtworkMetadata(s,'title',v),s.title))},
     {label:'Artwork Source',val:s.artSource|| (s.art?'Embedded':'Unmatched')},
@@ -2006,6 +2085,7 @@ async function artworkBatch(mode,quiet=false){
   try{
     for(let i=0;i<eligible.length;i++){
       const song=eligible[i];artTried.add(song.id);artFresh.delete(song.id);
+      if(artworkProtected(song)||(!artworkNeedsRepair(song)&&mode==='missing')){fixed++;continue}
       setHdrTask('Artwork '+(i+1)+' of '+eligible.length,i/eligible.length);
       try{const result=await repairSongArtwork(song,{force:mode==='all'});if(result)fixed++;else unmatched++}
       catch(e){if(e&&e.retry){busy++;artTried.delete(song.id)}else unmatched++}
@@ -2059,7 +2139,7 @@ async function deleteSong(s){
   else qi=Math.max(qi<0?-1:0,qi-before);
   for(const v of stack){
     if(v.songList){const i=v.songList.findIndex(x=>x.id===lib.id);if(i>=0){v.songList.splice(i,1);v.albums.splice(i,1);if(v.sel>i||v.sel>=v.albums.length)v.sel=Math.max(0,v.sel-1)}}
-    else if(v.type==='flow'&&v.albums){v.albums.forEach(a=>a.songs=a.songs.filter(x=>x.id!==lib.id));
+    else if(v.type==='flow'&&v.albums&&!v.playlistCards&&!v.recommendItems){v.albums.forEach(a=>a.songs=a.songs.filter(x=>x.id!==lib.id));
       const keep=v.albums.filter(a=>a.songs.length);if(keep.length!==v.albums.length){v.albums=keep;v.sel=Math.min(v.sel,Math.max(0,keep.length-1))}}
   }
   setTimeout(()=>{try{if(lib.url)URL.revokeObjectURL(lib.url);if(lib.artUrl&&lib.artUrl.startsWith('blob:'))URL.revokeObjectURL(lib.artUrl)}catch(e){}},1000);
@@ -2276,7 +2356,7 @@ function scroll(dir){
   if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v)}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
   if(v.type==='list'){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}}
-  else if(v.type==='flow'){const n=v.albums.length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){const was=v.sel;v.sel=ns;click();
+  else if(v.type==='flow'&&!v.opening){const n=v.albums.length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){const was=v.sel;v.sel=ns;click();
     if(v._lo!=null&&((v.sel<v._lo+6&&v._lo>0)||(v.sel>v._hi-6&&v._hi<n-1)))renderFlow(v,was);else flowUpdate(v);if(v.recommendItems){recommendationArtPreview(v,v.sel);recommendationMaybeLoadMore(v)}}}
   else if(v.type==='lyrics'){const el=$('#lyr .in');if(!el)return;const max=Math.max(0,el.scrollHeight-150);const no=Math.max(0,Math.min(max,v.off+dir*22));if(no!==v.off){v.off=no;click();el.style.transform=`translateY(${-no}px)`}}
   else if(v.type==='now'&&ctl!=null){click();ctl=(ctl+dir+ACTS.length)%ACTS.length;applyCtlFocus()}
@@ -2297,13 +2377,13 @@ function press(btn){
   if(btn==='menu'){if(v.type==='input')try{$('#inpt').blur()}catch(e){}if(v.type==='now'&&ctl!=null){ctl=null;applyCtlFocus()}else if(scrub){scrub=false;render()}else pop()}
   else if(btn==='next')next(true);
   else if(btn==='prev')prev();
-  else if(btn==='play'&&v.type==='flow'){if(v.recommendItems)playYT(v.recommendItems,v.sel);else if(v.songList)playList(v.songList,v.sel);else playList(v.albums[v.sel].songs,0)}
+  else if(btn==='play'&&v.type==='flow'){if(v.recommendItems)playYT(v.recommendItems,v.sel);else if(v.songList)playList(v.songList,v.sel);else if(v.playlistCards)selectFlow(v);else if(v.albums[v.sel])playList(v.albums[v.sel].songs,0)}
   else if(btn==='play'){playPause();if(v.type==='video')flashVo()}
   else if(btn==='select'){
     if(v.type==='music-home'){const x=v.choices[v.sel];if(x&&x.action)x.action()}
     if(v.type==='list'){const x=itemsOf(v)[v.sel];if(x&&x.action)x.action()}
     else if(v.type==='msg')pop();
-    else if(v.type==='flow'){if(v.recommendItems)playYT(v.recommendItems,v.sel);else if(v.songList)playList(v.songList,v.sel);else{const a=v.albums[v.sel];push(songsMenu(a.songs,a.album))}}
+    else if(v.type==='flow')selectFlow(v);
     else if(v.type==='input')submitInput();
     else if(v.type==='now'&&cur()){
       // Double-tap (two presses within 300 ms) opens the song menu; a single press keeps its normal job.
@@ -2454,7 +2534,7 @@ dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 window.ipodFriendsBridge=Object.freeze({audio,cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
-window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,getSongs:()=>songs});
+window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,openPlaylistFlow,genArt,isYoutubeThumbnail,getSongs:()=>songs});
 })();
 </script>
 <script src="./friends.js" defer></script>

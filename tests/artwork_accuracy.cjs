@@ -95,3 +95,16 @@ test('Studio album preferred over its single and deluxe re-issue',()=>{
  const b=best({artist:'SZA',title:'Snooze'},[R('SZA','Snooze','SOS',{releaseDate:'2022-12-09',trackCount:23}),R('SZA','Snooze','SOS Deluxe: LANA',{releaseDate:'2022-12-08',trackCount:23}),R('SZA','Snooze','Snooze - Single',{releaseDate:'2022-12-08',trackCount:4})]);
  assert.equal(b.item.collectionName,'SOS');
 });
+
+test('Album artwork reuse preserves release editions and other artists',()=>{
+ const {key,reusable}=new Function('known','isYoutubeThumbnail',
+  section('function albumArtworkKey','async function saveArtwork')+'return {key:albumArtworkKey,reusable:reusableAlbumCover};')(
+   t=>!!t&&!/^unknown (album|artist)$/i.test(t),()=>false);
+ const studio={id:'a',album:'Amber Days',artist:'Fixture Artist',artUrl:'https://example.com/cover',artSource:'itunes',artworkAlbum:'Amber Days'};
+ assert.equal(key(studio),key({...studio,album:' amber days ',artist:'fixture artist'}));
+ assert.notEqual(key(studio),key({...studio,album:'Amber Days (Deluxe)'}));
+ assert.notEqual(key(studio),key({...studio,artist:'Other Artist'}));
+ assert.equal(key({...studio,album:'Offline Music'}),'');
+ assert.equal(reusable(studio,{id:'b'}),true);
+ assert.equal(reusable({...studio,artworkAlbum:'Amber Days (Deluxe)'},{id:'b'}),false);
+});
