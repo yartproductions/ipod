@@ -172,7 +172,12 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .np.lyrics-np .cnt{color:rgba(255,255,255,.65)}
 .np.lyrics-np .top{position:absolute;left:12px;right:12px;top:22px;bottom:76px;display:flex;align-items:stretch;gap:12px;min-height:0}
 .np.lyrics-np .artcol{width:40%;flex:none;align-self:center;position:relative}
-.np.lyrics-np .artcol:before{content:"";position:absolute;inset:-12px;background:var(--np-art) center/cover;filter:blur(20px);opacity:.48;border-radius:30px}
+.np.lyrics-np,.fnp.lyrics-flow{isolation:isolate;overflow:hidden}
+.np.lyrics-np::before,.fnp.lyrics-flow::before{
+  content:"";position:absolute;inset:-24px;z-index:-1;pointer-events:none;
+  background:linear-gradient(180deg,rgba(9,11,16,.45),rgba(9,11,16,.8)),var(--np-art) center/cover no-repeat;
+  filter:blur(16px)
+}
 .np.lyrics-np .art{position:relative;width:100%;height:auto;aspect-ratio:1;max-height:130px;background-size:cover;background-position:center;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5)}
 .np.lyrics-np .refl{display:none}
 .np.lyrics-np .np-lyrics{min-width:0;flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;text-align:left;mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%);-webkit-mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%)}
@@ -2006,7 +2011,7 @@ function renderNowFlow(){
   const s=cur(),from=flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
   const lo=Math.max(0,qi-5),hi=Math.min(queue.length-1,qi+5);let cards='';
   for(let i=lo;i<=hi;i++)cards+=`<div class="cv" data-q="${i}" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div>`;
-  body.innerHTML=`<div class="fnp instant lyrics-flow" id="np"><span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
+  body.innerHTML=`<div class="fnp instant lyrics-flow" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
     <div class="stage">${cards}</div>
     <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
     <div class="cap"><b>${esc(s.title)}</b><span>${esc(s.artist)}${s.album?' — '+esc(s.album):''}</span></div>

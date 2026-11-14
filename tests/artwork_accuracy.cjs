@@ -48,6 +48,7 @@ test('Flow Now Playing still renders synchronized lyrics',()=>{
  body,dom,fn=>fn(),node,()=>{},()=>{lyrics=true},()=> 'Lyrics',false);
  render();
  assert.match(body.innerHTML,/np-lyric-lines/);assert(lyrics);
+ assert.match(body.innerHTML,/--np-art:url/);
 });
 test('Strict mode rejects thumbnails and allows matched art',()=>{
  const gen=()=> 'generated';
