@@ -19,10 +19,10 @@
 html,body{height:100%;overflow:hidden;background:#000;font-family:-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;touch-action:none}
 body{display:flex;align-items:center;justify-content:center;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 #ambient{position:fixed;inset:0;overflow:hidden;pointer-events:none;isolation:isolate;background:#000}
-#ambient .ambient-art{position:absolute;inset:-15%;background-position:center;background-size:cover;filter:blur(38px) saturate(1.2);opacity:0;transition:opacity 1.4s ease;animation:ambientDrift 26s ease-in-out infinite alternate}
-#ambient .ambient-art.visible{opacity:.7}
-#ambient::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent,#0009),linear-gradient(#0003,#0006)}
-#ambient .ambient-grain{position:absolute;inset:-25%;width:150%;height:150%;opacity:.075;animation:ambientGrain .7s steps(1) infinite;background-repeat:repeat;background-size:160px}
+#ambient .ambient-art{position:absolute;inset:-15%;background-position:center;background-size:cover;opacity:0;transition:opacity 1.4s ease;animation:ambientDrift 26s ease-in-out infinite alternate}
+#ambient .ambient-art.visible{opacity:.94}
+#ambient::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent,#0004)}
+#ambient .ambient-grain{position:absolute;inset:-25%;width:150%;height:150%;opacity:.12;mix-blend-mode:soft-light;animation:ambientGrain .7s steps(1) infinite;background-repeat:repeat;background-size:160px}
 @keyframes ambientDrift{from{transform:translate(-2%,-1%) scale(1.02) rotate(-3deg)}to{transform:translate(3%,2%) scale(1.12) rotate(3deg)}}
 @keyframes ambientGrain{0%,100%{transform:translate(0,0)}25%{transform:translate(-3%,2%)}50%{transform:translate(2%,-3%)}75%{transform:translate(-2%,-1%)}}
 #ambient.paused .ambient-art,#ambient.paused .ambient-grain{animation-play-state:paused}
