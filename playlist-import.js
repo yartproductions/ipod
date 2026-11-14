@@ -166,13 +166,17 @@ async function youtubeMatch(track){
 async function matchPlaylist(pl){
  const loading=loadingView('Matching Tracks…');push(loading);
  try{
-  const tracks=pl.tracks.map(x=>({...x}));let matched=0,review=0,unmatched=0;
+  const tracks=pl.tracks.map(x=>({...x}));let matched=0,review=0,unmatched=0,attempted=0;
   for(let i=0;i<tracks.length;i++){
    const t=tracks[i];
-   if(t.youtubeId){matched++;continue}
+   if(t.youtubeId||t.status==='local'){matched++;continue}
+   if(t.status==='review'){review++;continue}
+   if(t.status==='unmatched'&&t.checked){unmatched++;continue}
    if(available(t)){t.status='local';matched++;continue}
+   if(attempted>=25)continue;
+   attempted++;
    const found=await youtubeMatch(t);
-   t.status=found.status;if(found.youtubeId)t.youtubeId=found.youtubeId;
+   t.status=found.status;t.checked=true;if(found.youtubeId)t.youtubeId=found.youtubeId;
    if(found.choices?.length)t.choices=found.choices;
    if(found.status==='matched')matched++;else if(found.status==='review')review++;else unmatched++;
    // Allow the UI to repaint; avoid requesting every playlist track simultaneously.
@@ -183,6 +187,8 @@ async function matchPlaylist(pl){
   if(top()===loading)replaceTop(list('Matching Complete',[
    {label:'Matched',val:String(matched)},{label:'Needs Review',val:String(review)},
    {label:'Unmatched',val:String(unmatched)},
+   {label:'Processed This Batch',val:String(attempted)},
+   {label:'Remaining',val:String(tracks.filter(t=>!t.youtubeId&&t.status!=='local'&&t.status!=='review'&&!t.checked).length)},
    {label:'View Playlist',action:()=>push(playlistView(pl))}
   ]));
  }catch(e){if(top()===loading)replaceTop(msgView('Matching Failed',e.message))}
