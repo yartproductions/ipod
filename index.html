@@ -1021,6 +1021,7 @@ function youtubeMenu(){return list('YouTube',()=>[
   {label:'Search Flow',chev:1,action:go(()=>inputView('Search Flow','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'flow')}))},
   {label:'Search (List)',chev:1,action:go(()=>inputView('Search List','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'list')}))},
   {label:'Music Home',chev:1,action:go(musicHome)},
+  {label:'Import Playlist',chev:1,action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.open():push(msgView('Importer Unavailable','Reload and try again.'))},
   {label:'Match Imported Track',chev:1,action:()=>window.ipodTrackMatch?window.ipodTrackMatch.open():push(msgView('Matcher Unavailable','Reload the iPod and try again.'))},
   {label:'Paste Link',chev:1,action:go(()=>inputView('Paste Link','youtube.com/watch?v=… or playlist',s=>{
     const {id,list:l}=parseYT(s);
@@ -1082,6 +1083,7 @@ function musicMenu(){return list('Local Music',[
   {label:'Recommendation Flow',action:()=>openRecommendationFlow(),chev:1},
   {label:'Albums',action:go(()=>albumsMenu(songs,'Albums')),chev:1},
   {label:'Songs',action:go(()=>songsMenu(songs,'Songs')),chev:1},
+  {label:'Imported Playlists',action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.library():push(msgView('Importer Unavailable','Reload and try again.')),chev:1},
   {label:'Favorites',action:go(()=>{const f=songs.filter(s=>s.favorite);const v=songsMenu(f,'Favorites');v.emptyText='Tap ☆ on Now Playing to add favorites.';return v}),chev:1},
   {label:'Shuffle Songs',action:()=>shuffleAll()},
   {label:'Add Music',action:()=>$('#file').click(),chev:1}])}
@@ -2373,9 +2375,11 @@ dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 window.ipodFriendsBridge=Object.freeze({audio,cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
+window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,playYT,playList,getSongs:()=>songs});
 })();
 </script>
 <script src="./friends.js" defer></script>
 <script src="./track-match.js" defer></script>
+<script src="./playlist-import.js" defer></script>
 </body>
 </html>
