@@ -328,7 +328,7 @@ function recordTime(){
   if(delta>0&&delta<3)seconds+=delta;
   if(!published&&seconds>=30){
     published=true;
-    publishPlay(track).catch(e=>console.warn('Friends activity unavailable:',e.message));
+    withRetry('Sharing listen',()=>publishPlay(track)).catch(e=>console.warn('Friends activity unavailable:',e.message));
   }
 }
 async function publishPlay(song){
