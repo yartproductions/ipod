@@ -38,5 +38,27 @@ assert.equal(qobuz[0].album,'Trilogy');
  const found=await importer.youtubeMatch(qobuz[0]);assert.equal(found.youtubeId,'AAAAAAAAAAA');
  const youtube=await importer.youtubeTracks('PLabcdef12345');assert.equal(youtube.tracks.length,1);
  importer.open();assert.equal(screens.at(-1).title,'Import Playlist');
+ screens.at(-1).rows.find(row=>row.label==='Paste Playlist Link').action();
+ screens.at(-1).onSubmit('https://open.qobuz.com/playlist/65537360');
+ const paste=screens.at(-1).rows.find(row=>row.label==='Paste Playlist JSON');
+ paste.action();
+ const response={id:65537360,name:'Qobuz Test',tracks:{total:2,items:[
+  {title:'Wicked Games',performer:{name:'The Weeknd'},isrc:'ABC123',duration:327},
+  {title:'Wicked Games',performer:{name:'The Weeknd'},isrc:'ABC123',duration:327}
+ ]}};
+ screens.at(-1).onSubmit(JSON.stringify({...response,tracks:{...response.tracks,total:3}}));
+ assert.match(screens.pop().message,/only part/);
+ screens.at(-1).onSubmit(JSON.stringify(response,null,2));
+ assert.equal(screens.at(-1).title,'Import Preview');
+ screens.at(-1).rows.find(row=>row.label==='Save to iPod').action();
+ let saved=JSON.parse([...storage.values()][0])[0];
+ assert.equal(saved.source,'https://open.qobuz.com/playlist/65537360');
+ assert.deepEqual(saved.tracks.map(t=>t.isrc),['ABC123','ABC123']);
+ calls.length=0;
+ screens.at(-1).rows.find(row=>row.label==='Match Unresolved').action();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(calls,['search','videos']);
+ saved=JSON.parse([...storage.values()][0])[0];
+ assert.deepEqual(saved.tracks.map(t=>t.youtubeId),['AAAAAAAAAAA','AAAAAAAAAAA']);
  console.log('PASS Qobuz links, exported metadata, CSV, YouTube playlists, exact matching and menu isolation');
 })().catch(e=>{console.error(e);process.exitCode=1});
