@@ -999,6 +999,7 @@ function mainMenu(){
     {label:'Album Flow',action:()=>openFlow(),chev:1},
     {label:'Song Flow',action:()=>openSongFlow(),chev:1},
     {label:'Recommendation Flow',action:()=>openRecommendationFlow(),chev:1},
+    {label:'Friends',action:()=>window.ipodFriends?window.ipodFriends.open():push(msgView('Friends Unavailable','Please reload the iPod to load Friends.')),chev:1},
 
     {label:'YouTube → Save MP3',action:go(youtubeMenu),chev:1},
     {label:'Shuffle Songs',action:()=>shuffleAll()},
@@ -2368,5 +2369,6 @@ stack=[mainMenu()];render();wake();initUpdates();
 dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 })();
 </script>
+<script src="./friends.js" defer></script>
 </body>
 </html>
