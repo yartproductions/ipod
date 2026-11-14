@@ -178,6 +178,11 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
   background:linear-gradient(180deg,rgba(9,11,16,.45),rgba(9,11,16,.8)),var(--np-art) center/cover no-repeat;
   filter:blur(16px)
 }
+.np-neighbors{position:absolute;inset:0;z-index:-1;pointer-events:none;perspective:340px}
+.np-neighbors i{position:absolute;top:13%;width:31%;aspect-ratio:1;background-size:cover;background-position:center;border-radius:5px;opacity:.26}
+.np-neighbors .previous{left:-9%;transform:rotateY(56deg)}
+.np-neighbors .upcoming{right:-7%;transform:rotateY(-56deg)}
+#np .offline-cover{outline:1px solid rgba(255,211,113,.8);box-shadow:0 0 9px rgba(255,185,64,.65),0 4px 14px rgba(0,0,0,.45)}
 .np.lyrics-np .art{position:relative;width:100%;height:auto;aspect-ratio:1;max-height:130px;background-size:cover;background-position:center;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5)}
 .np.lyrics-np .refl{display:none}
 .np.lyrics-np .np-lyrics{min-width:0;flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;text-align:left;mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%);-webkit-mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%)}
@@ -937,7 +942,8 @@ async function runDownloadQueue(){
  try{
   while(downloadQueue.length){
    const task=downloadQueue.shift(),id=task.it.id;
-   try{const song=await acquireYT(task.it,(state,progress)=>setDownloadStatus(id,state,progress));setDownloadStatus(id,'Done',100);task.resolve(song)}
+   try{const song=await acquireYT(task.it,(state,progress)=>setDownloadStatus(id,state,progress));setDownloadStatus(id,'Done',100);task.resolve(song);if(top()?.type==='now'&&importedPlayback?.queue===queue&&
+     importedPlayback.tracks[importedNeighbor(importedPlayback,1)]?.video?.id===id)render()}
    catch(e){setDownloadStatus(id,'Failed',0,e.message);task.reject(e)}
   }
  }finally{activeDownload=false}
@@ -1489,8 +1495,8 @@ function render(){
     lastArtId=s.id;tick();ensureNowLyrics(s);
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
-    body.innerHTML=`<div class="np lyrics-np" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><div class="cnt">${qi+1} of ${queue.length}</div>
-      <div class="top"><div class="artcol"><div class="art${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
+    body.innerHTML=`<div class="np lyrics-np" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)">${nowPlayingNeighbors()}<div class="cnt">${qi+1} of ${queue.length}</div>
+      <div class="top"><div class="artcol"><div class="art${s.blob?' offline-cover':''}${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div></div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
@@ -2007,11 +2013,23 @@ let flowNpQi=null;
 function nowFlowPos(el,d){const ad=Math.abs(d);
   el.style.transform=d===0?'translateX(0) translateZ(40px) rotateY(0deg)':`translateX(${Math.sign(d)*(68+(ad-1)*18)}px) rotateY(${d<0?60:-60}deg)`;
   el.style.zIndex=String(100-ad);el.style.opacity=ad>4?'0':'1';el.style.filter=d===0?'none':`brightness(${Math.max(.4,.8-ad*.08)})`}
+function nowPlayingNeighbors(){
+  const session=importedPlayback?.queue===queue?importedPlayback:null;
+  const neighbor=(offset,direction)=>{
+    const track=session?.tracks[importedNeighbor(session,offset)];
+    const saved=session?(track&&importedTrackSong(track)):queue[qi+offset];
+    const media=saved||track?.video;
+    if(!media)return '';
+    const art=saved?artFor(saved):genArt(media.album||media.title,media.artist);
+    return `<i class="${direction}${saved?.blob?' offline-cover':''}" style="background-image:url(&quot;${esc(art)}&quot;)"></i>`;
+  };
+  return `<div class="np-neighbors" aria-hidden="true">${neighbor(-1,'previous')}${neighbor(1,'upcoming')}</div>`;
+}
 function renderNowFlow(){
   const s=cur(),from=flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
   const lo=Math.max(0,qi-5),hi=Math.min(queue.length-1,qi+5);let cards='';
-  for(let i=lo;i<=hi;i++)cards+=`<div class="cv" data-q="${i}" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div>`;
-  body.innerHTML=`<div class="fnp instant lyrics-flow" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
+  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${queue[i].blob?' offline-cover':''}" data-q="${i}" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div>`;
+  body.innerHTML=`<div class="fnp instant lyrics-flow" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)">${nowPlayingNeighbors()}<span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
     <div class="stage">${cards}</div>
     <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
     <div class="cap"><b>${esc(s.title)}</b><span>${esc(s.artist)}${s.album?' — '+esc(s.album):''}</span></div>

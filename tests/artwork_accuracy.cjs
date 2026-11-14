@@ -41,9 +41,9 @@ test('Flow Now Playing still renders synchronized lyrics',()=>{
  const body={innerHTML:''},dom={querySelectorAll(){return []}};
  const node=()=>({classList:{remove(){}},style:{},dataset:{}});
  let lyrics=false;
- const render=new Function('cur','qi','queue','artFor','esc','body','document','requestAnimationFrame','$','tick','ensureNowLyrics','nowLyricsHTML','scrub',
+ const render=new Function('importedPlayback','cur','qi','queue','artFor','esc','body','document','requestAnimationFrame','$','tick','ensureNowLyrics','nowLyricsHTML','scrub',
  section('let flowNpQi=null;','/* ---------- Artwork lookup: MusicBrainz')+'return renderNowFlow;')(
- ()=>({id:'one',title:'Yellow',artist:'Coldplay',album:'Parachutes'}),0,
+ null,()=>({id:'one',title:'Yellow',artist:'Coldplay',album:'Parachutes'}),0,
  [{id:'one',title:'Yellow',artist:'Coldplay',album:'Parachutes'}],()=> 'cover',String,
  body,dom,fn=>fn(),node,()=>{},()=>{lyrics=true},()=> 'Lyrics',false);
  render();
