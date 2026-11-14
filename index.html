@@ -2122,7 +2122,7 @@ async function saveMatchedArtworkURL(s,match){
   if(cur()?.id===lib.id){setSession();if(top()?.type==='now')render()}
   return true;
 }
-async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected=false}={}){
+async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected=false,refreshRun=null}={}){
   const lib=songs.find(x=>x.id===s.id)||s;
   if(!lib.blob||lib.deleted||!songs.some(x=>x.id===lib.id))return null;
   if(artworkProtected(lib)&&!overrideProtected)return null;
@@ -2149,13 +2149,14 @@ async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected
     const blob=await fetchCover(match.url).catch(()=>null);
     return {match,blob};
   };
-  const result=await resolveAlbumArtwork(lib,resolve,force);
+  const result=refreshRun?await refreshAlbumArtwork(lib,resolve,refreshRun):await resolveAlbumArtwork(lib,resolve,force);
   if(!result||lib.deleted||!songs.some(x=>x.id===lib.id))return null;
   if(!overrideProtected&&artworkProtected(lib))return null;
   if(!force&&!artworkNeedsRepair(lib))return result.match;
-  if(result.blob)await saveArtwork(lib,result.blob,result.match);
+  if(result.blob)await saveArtwork(lib,result.blob,result.match,{shareAlbum:!refreshRun});
   else await saveMatchedArtworkURL(lib,result.match);
   artworkStore(artworkCacheKey(lib),result.match);
+  if(refreshRun&&albumKey&&albumArtworkKey({...lib,album:result.match.album})===albumKey)artworkStore('album:'+albumKey,result.match);
   return result.match;
 }
 const albumArtworkPending=new Map();
@@ -2181,6 +2182,14 @@ async function resolveAlbumArtwork(song,resolve,force){
   try{return await task}finally{albumArtworkPending.delete(key)}
 }
 
+async function refreshAlbumArtwork(song,resolve,run){
+  const key=albumArtworkKey(song);
+  if(key&&run.has(key))return run.get(key);
+  const result=await resolve();
+  // A track-specific result from another edition must stay on that track.
+  if(key&&result&&albumArtworkKey({...song,album:result.match.album})===key)run.set(key,result);
+  return result;
+}
 /* ---------- Cover chooser: every source side by side, plus manual options ---------- */
 // Deezer's API has no CORS headers but supports JSONP, so it works from a web page.
 function jsonp(url,ms=9000,param='output=jsonp&callback='){
@@ -2408,15 +2417,16 @@ async function artworkBatch(mode,quiet=false){
   const view=quiet?null:msgView('Refreshing Covers','Checking '+eligible.length+' saved song'+(eligible.length===1?'':'s')+'. You can keep using the iPod.');
   if(view)push(view);
   let fixed=0,unmatched=0,busy=0;
+  const refreshRun=mode==='all'?new Map():null;
   try{
     for(let i=0;i<eligible.length;i++){
       const song=eligible[i];artTried.add(song.id);artFresh.delete(song.id);
       if(artworkProtected(song)||(!artworkNeedsRepair(song)&&mode==='missing')){fixed++;continue}
       setHdrTask('Artwork '+(i+1)+' of '+eligible.length,i/eligible.length);
-      try{const result=await repairSongArtwork(song,{force:mode==='all'});if(result)fixed++;else unmatched++}
+      try{const result=await repairSongArtwork(song,{force:mode==='all',refreshRun});if(result)fixed++;else unmatched++}
       catch(e){if(e&&e.retry){busy++;artTried.delete(song.id)}else unmatched++}
       setHdrTask('Artwork '+(i+1)+' of '+eligible.length,(i+1)/eligible.length);
-      if(i<eligible.length-1)await new Promise(resolve=>setTimeout(resolve,800));
+      if(!refreshRun&&i<eligible.length-1)await new Promise(resolve=>setTimeout(resolve,800));
     }
   }finally{artBusy=false}
   setHdrTask('Artwork '+fixed+' updated',1,true);
