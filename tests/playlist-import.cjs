@@ -13,7 +13,7 @@ const bridge={
  msgView:(title,message)=>({title,message}),loadingView:title=>({title}),
  inputView:(title,hint,onSubmit)=>({title,hint,onSubmit}),
  openPlaylistFlow:cards=>{flowCards=cards},genArt:name=>'generated '+name,isYoutubeThumbnail:()=>false,
- settings:{ytKey:'sample'},playYT:(tracks,index)=>{played=tracks[index]},playList:()=>{},getSongs:()=>[],
+ settings:{ytKey:'sample'},playYT:()=>{},playImported:(tracks,index)=>{played=tracks[index].video},playList:()=>{},getSongs:()=>[],
  ytApi:async(endpoint)=>{
   calls.push(endpoint);
   if(endpoint==='playlistItems'){

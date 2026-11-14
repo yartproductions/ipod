@@ -727,9 +727,10 @@ function load(play){
 }
 function next(manual){if(!cur())return;
  if(!manual&&settings.repeat==='One'){seekTo(0);resumeAudio();return}
+ if(importedPlayback?.queue===queue)return advanceImported(1,manual);
  if(qi<queue.length-1){qi++;load(true)}else if(settings.repeat==='All'||manual){qi=0;load(true)}
  else{audio.pause();audio.currentTime=0;render()}}
-function prev(){if(!cur())return;if(curTime()>3){seekTo(0);return}if(qi>0){qi--;load(true)}else seekTo(0)}
+function prev(){if(!cur())return;if(curTime()>3){seekTo(0);return}if(importedPlayback?.queue===queue)return advanceImported(-1,true);if(qi>0){qi--;load(true)}else seekTo(0)}
 function playPause(){if(!cur()){shuffleAll();return}audio.paused?resumeAudio():audio.pause()}
 function syncMediaPlaybackState(){
   if(!('mediaSession' in navigator))return;
@@ -779,9 +780,10 @@ function setSession(){
 
 function shuffled(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}return a}
 function shuffleAll(){if(!songs.length){push(msgView('No Music','Choose “Add Music” to load songs, or open YouTube.'));return}
-  queue=shuffled(songs);qi=0;load(true);push(nowView())}
+  latestPlayRequest++;importedPlayback=null;queue=shuffled(songs);qi=0;load(true);push(nowView())}
 function playList(ss,i){
   if(ss.some(s=>s.deleted)){const keep=ss[i];ss=ss.filter(s=>!s.deleted);i=Math.max(0,ss.indexOf(keep));if(!ss.length)return}
+  latestPlayRequest++;importedPlayback=null;
   if(settings.shuffle){const first=ss[i];queue=[first,...shuffled(ss.filter((_,k)=>k!==i))];qi=0}else{queue=ss.slice();qi=i}
   load(true);push(nowView())}
 
@@ -898,7 +900,8 @@ function setDownloadStatus(id,state,progress,error){
 }
 function enqueueYT(it){
  const cached=songs.find(s=>s.sourceId===it.id);if(cached)return Promise.resolve(cached);
- if(downloadJobs.has(it.id))return downloadJobs.get(it.id).promise;
+ const prior=downloadJobs.get(it.id);
+ if(prior&&prior.state!=='Failed'&&prior.state!=='Done')return prior.promise;
  const job={id:it.id,title:it.title||'YouTube audio',state:'Queued',progress:3,updated:Date.now(),promise:null};
  downloadJobs.set(it.id,job);
  job.promise=new Promise((resolve,reject)=>{downloadQueue.push({it,resolve,reject});runDownloadQueue()});
@@ -962,6 +965,7 @@ async function acquireYT(it,onProgress=()=>{}){
 async function playYT(items,i){
  if(!items.length||!items[i])return;
  const it=items[i],request=++latestPlayRequest;
+ importedPlayback=null;
  const cached=songs.find(s=>s.sourceId===it.id);
  if(cached){playList([cached],0);return}
  // Background download: remain free to browse with the wheel.
@@ -974,6 +978,63 @@ async function playYT(items,i){
  });
  downloadNotice();
 }
+
+// Imported playlists keep their original order and resolve audio one track ahead.
+let importedPlayback=null;
+function importedTrackSong(track){
+ return songs.find(s=>s.id===track.song?.id||(track.video?.id&&s.sourceId===track.video.id));
+}
+function importedNeighbor(session,step){
+ const index=session.index+step;
+ if(index>=0&&index<session.tracks.length)return index;
+ if(settings.repeat==='All'&&session.tracks.length>1)return step>0?0:session.tracks.length-1;
+ return -1;
+}
+async function startImported(session,index,{open=false}={}){
+ const request=++latestPlayRequest,track=session.tracks[index];
+ session.pending=true;
+ try{
+  const song=importedTrackSong(track)||(track.video?await enqueueYT(track.video):null);
+  if(request!==latestPlayRequest||importedPlayback!==session)return;
+  if(!song||song.deleted)throw Error('This track is no longer available.');
+  session.index=index;session.prefetched=false;
+  queue=[song];session.queue=queue;qi=0;
+  // Repeated copies of the same recording still start at the beginning.
+  if(audio.src===song.url)seekTo(0);
+  load(true);
+  if(open&&top()?.type!=='now')push(nowView());
+ }catch(e){
+  if(request===latestPlayRequest&&importedPlayback===session){
+   if(!session.queue)importedPlayback=null;
+   push(msgView('Audio Unavailable',e.message||'Could not save MP3.'));
+  }
+ }finally{if(request===latestPlayRequest&&importedPlayback===session)session.pending=false}
+}
+function playImported(tracks,index){
+ const selected=tracks[index],playable=tracks.filter(t=>t.song||t.video);
+ const session={tracks:playable,index:playable.indexOf(selected),queue:null,pending:false,prefetched:false};
+ if(session.index<0)return;
+ importedPlayback=session;
+ startImported(session,session.index,{open:true});
+}
+function advanceImported(step,manual){
+ const session=importedPlayback;
+ if(session.pending)return;
+ const index=importedNeighbor(session,step);
+ if(index>=0)startImported(session,index);
+ else if(step<0)seekTo(0);
+ else if(!manual){audio.pause();seekTo(0);render()}
+}
+function prefetchImported(){
+ const session=importedPlayback,duration=dur();
+ if(!session||session.queue!==queue||session.pending||session.prefetched||audio.paused||
+  settings.repeat==='One'||!Number.isFinite(duration)||duration<=0||curTime()<duration/2)return;
+ const next=session.tracks[importedNeighbor(session,1)];
+ if(!next)return;
+ session.prefetched=true;
+ if(next.video&&!importedTrackSong(next))enqueueYT(next.video).catch(()=>{});
+}
+audio.addEventListener('timeupdate',prefetchImported);
 
 function addHistory(it){
   const e=it.kind==='ytlist'?{type:'playlist',list:it.list,title:it.title}:{type:'video',id:it.id,title:it.title||'',artist:it.artist||''};
@@ -1181,7 +1242,7 @@ function settingsMenu(){
     {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
     {label:'Clear Library',chev:1,action:go(()=>list('Clear Library?',[
       {label:'Cancel',action:()=>pop()},
-      {label:'Erase All Songs',action:async()=>{audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
+      {label:'Erase All Songs',action:async()=>{latestPlayRequest++;importedPlayback=null;audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
     {label:'Clear YouTube History',action:go(()=>{history=[];ls.set('ipod.history',[]);return msgView('Cleared','Recently Played is empty.')})},
   ])}
 function aboutView(){return list('About',[
@@ -2539,7 +2600,7 @@ dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 window.ipodFriendsBridge=Object.freeze({audio,cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
-window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
+window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
 })();
 </script>
 <script src="./friends.js" defer></script>

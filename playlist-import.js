@@ -132,13 +132,13 @@ function available(t){return getSongs().find(s=>s.sourceId&&s.sourceId===t.youtu
  (!matcher()&&normalize(s.title)===normalize(t.title)&&normalize(s.artist)===normalize(t.artist)))&&
  (!t.duration||!s.duration||Math.abs(t.duration-s.duration)<=Math.max(5,t.duration*.03)));}
 function playTrack(pl,index){
- const track=pl.tracks[index],local=available(track);
- if(local){
-  const ready=pl.tracks.map((t,i)=>({song:available(t),index:i})).filter(row=>row.song);
-  playList(ready.map(row=>row.song),ready.findIndex(row=>row.index===index));
- }else if(track.youtubeId){
-  playYT([{kind:'yt',id:track.youtubeId,title:track.title,artist:track.artist,album:track.album}],0);
- }else{
+ const tracks=pl.tracks.map(track=>({
+  song:available(track),
+  video:track.youtubeId?{kind:'yt',id:track.youtubeId,title:track.title,artist:track.artist,album:track.album}:null
+ }));
+ if(tracks[index].song||tracks[index].video)b.playImported(tracks,index);
+ else{
+  const track=pl.tracks[index];
   push(msgView('Unmatched Track',track.artist+' — '+track.title+'. Use Playlist Options to match it.'));
  }
 }
