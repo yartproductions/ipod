@@ -20,12 +20,24 @@ const serverTime=()=>firebase.firestore.FieldValue.serverTimestamp();
 const maybeError=e=>e&&e.code==='permission-denied'
   ?'Firestore permission denied. Deploy the reviewed Friends rules first.'
   :e&&e.message||'Please try again.';
+// Fail visibly instead of leaving the iPod on "Connecting Friends..." indefinitely.
+// Errors name the stage so local browser restrictions and Firebase configuration
+// problems can be distinguished without exposing account data.
+function limited(task,label,ms=15000){
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(Error(label+' timed out. Check browser networking and Firebase Authentication settings.')),ms);
+    Promise.resolve(task).then(v=>{clearTimeout(timer);resolve(v)},e=>{clearTimeout(timer);reject(e)});
+  });
+}
 function loadSDK(file){
   return new Promise((resolve,reject)=>{
     const script=document.createElement('script');
+    const timer=setTimeout(()=>{
+      script.remove();reject(Error('Firebase SDK '+file+' timed out. Check access to www.gstatic.com and browser content blockers.'));
+    },12000);
     script.src='https://www.gstatic.com/firebasejs/'+SDK+'/'+file;
-    script.onload=resolve;
-    script.onerror=()=>reject(Error('Firebase could not load. Check your connection.'));
+    script.onload=()=>{clearTimeout(timer);resolve()};
+    script.onerror=()=>{clearTimeout(timer);reject(Error('Could not load '+file+' from www.gstatic.com. Check your connection or content blocker.'))};
     document.head.appendChild(script);
   });
 }
@@ -33,15 +45,27 @@ async function connect(){
   if(api)return api;
   if(initTask)return initTask;
   initTask=(async()=>{
-    await loadSDK('firebase-app-compat.js');
-    await loadSDK('firebase-auth-compat.js');
-    await loadSDK('firebase-firestore-compat.js');
+    await limited(loadSDK('firebase-app-compat.js'),'Firebase app SDK');
+    await limited(loadSDK('firebase-auth-compat.js'),'Firebase Auth SDK');
+    await limited(loadSDK('firebase-firestore-compat.js'),'Firebase Firestore SDK');
+    if(!window.firebase)throw Error('Firebase SDK did not initialize. Check Console for script errors.');
     const app=firebase.apps.find(x=>x.name==='ipod-friends')||firebase.initializeApp(CONFIG,'ipod-friends');
     const auth=app.auth(),db=app.firestore();
-    // Wait for persisted authentication to resolve before creating a new anonymous user.
-    const existing=await new Promise(resolve=>{const off=auth.onAuthStateChanged(u=>{off();resolve(u)},()=>{off();resolve(null)})});
-    account=existing||(await auth.signInAnonymously()).user;
-    const doc=await db.collection('profiles').doc(account.uid).get();
+    // Auth sessions can take time to restore in Safari private browsing.
+    // Use a safe unsubscribe and a bounded wait so errors can surface.
+    const existing=await limited(new Promise((resolve,reject)=>{
+      let unsub=()=>{},settled=false;
+      const done=(user,error)=>{
+        if(settled)return;
+        settled=true;
+        try{unsub()}catch(e){}
+        if(error)reject(error);else resolve(user);
+      };
+      unsub=auth.onAuthStateChanged(user=>done(user),err=>done(null,err));
+      if(settled)try{unsub()}catch(e){}
+    }),'Restoring anonymous Firebase session',18000);
+    account=existing||(await limited(auth.signInAnonymously(),'Creating anonymous Firebase account',18000)).user;
+    const doc=await limited(db.collection('profiles').doc(account.uid).get(),'Loading Friends profile from Firestore',18000);
     profile=doc.exists?doc.data():null;
     api={auth,db};
     return api;
