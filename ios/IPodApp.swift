@@ -20,7 +20,7 @@ struct IPodApp: App {
                 .ignoresSafeArea()
                 .background(Color.black)
                 .preferredColorScheme(.dark)
-                .statusBarHidden(false)
+                .statusBarHidden(true)
         }
     }
 }

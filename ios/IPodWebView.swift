@@ -18,6 +18,7 @@ struct IPodWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: Coordinator.handlerName)
+        controller.add(context.coordinator, name: Coordinator.batteryHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -35,6 +36,7 @@ struct IPodWebView: UIViewRepresentable {
         #if DEBUG
         if #available(iOS 16.4, *) { webView.isInspectable = true }   // Safari ▸ Develop for on-device debugging
         #endif
+        context.coordinator.monitorBattery(in: webView)
         webView.load(URLRequest(url: hostedURL, cachePolicy: .reloadRevalidatingCacheData))   // always pick up the latest site
         return webView
     }
@@ -43,10 +45,15 @@ struct IPodWebView: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.handlerName)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.batteryHandlerName)
+        coordinator.stopMonitoringBattery()
     }
 
     final class Coordinator: NSObject, WKScriptMessageHandler {
         static let handlerName = "ipodHaptics"
+        static let batteryHandlerName = "ipodBattery"
+        private weak var batteryWebView: WKWebView?
+        private var previousBatteryMonitoring = false
 
         private let trustedScheme: String
         private let trustedHost: String
@@ -57,6 +64,44 @@ struct IPodWebView: UIViewRepresentable {
             trustedScheme = (trustedURL.scheme ?? "https").lowercased()
             trustedHost = (trustedURL.host ?? "").lowercased()
             trustedPort = trustedURL.port ?? (trustedScheme == "https" ? 443 : 80)
+        }
+
+        func monitorBattery(in webView: WKWebView) {
+            batteryWebView = webView
+            previousBatteryMonitoring = UIDevice.current.isBatteryMonitoringEnabled
+            UIDevice.current.isBatteryMonitoringEnabled = true
+            for name in [UIDevice.batteryLevelDidChangeNotification,
+                         UIDevice.batteryStateDidChangeNotification,
+                         UIApplication.didBecomeActiveNotification] {
+                NotificationCenter.default.addObserver(self, selector: #selector(batteryChanged(_:)),
+                                                       name: name, object: nil)
+            }
+        }
+
+        func stopMonitoringBattery() {
+            NotificationCenter.default.removeObserver(self)
+            UIDevice.current.isBatteryMonitoringEnabled = previousBatteryMonitoring
+            batteryWebView = nil
+        }
+
+        @objc private func batteryChanged(_ notification: Notification) {
+            sendBattery()
+        }
+
+        private func sendBattery() {
+            let device = UIDevice.current
+            let level = device.batteryLevel
+            let charging = device.batteryState == .charging || device.batteryState == .full
+            let script = """
+                const port = location.port || (location.protocol === 'https:' ? '443' : '80');
+                if (location.protocol === scheme + ':' && location.hostname === host && port === expectedPort) {
+                    window.ipodSetBattery?.(level, charging);
+                }
+                """
+            batteryWebView?.callAsyncJavaScript(script, arguments: [
+                "level": Double(level), "charging": charging, "scheme": trustedScheme,
+                "host": trustedHost, "expectedPort": String(trustedPort)
+            ], in: nil, in: .page, completionHandler: nil)
         }
 
         /// True only for the main frame of the hosted page's own origin.
@@ -71,7 +116,12 @@ struct IPodWebView: UIViewRepresentable {
 
         func userContentController(_ userContentController: WKUserContentController,
                                    didReceive message: WKScriptMessage) {
-            guard message.name == Self.handlerName, isTrusted(message) else { return }
+            guard isTrusted(message) else { return }
+            if message.name == Self.batteryHandlerName {
+                sendBattery()
+                return
+            }
+            guard message.name == Self.handlerName else { return }
 
             var kind = "selection"
             var intensity: Float?

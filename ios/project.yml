@@ -33,7 +33,7 @@ targets:
           UIColorName: ""
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: false
         UIBackgroundModes: [audio]
         ITSAppUsesNonExemptEncryption: false
