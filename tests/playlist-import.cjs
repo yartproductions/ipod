@@ -6,7 +6,7 @@ const code=fs.readFileSync(path.join(__dirname,'../playlist-import.js'),'utf8');
 const matcherCode=fs.readFileSync(path.join(__dirname,'../track-match.js'),'utf8');
 new Function(html.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]);
 new Function(code);
-let screens=[],calls=[],storage=new Map();
+let screens=[],calls=[],storage=new Map(),playlistPages=0,denyPlaylist=false;
 const bridge={
  list:(title,rows)=>({title,rows:typeof rows==='function'?rows():rows}),
  push:v=>screens.push(v),replaceTop:v=>screens[screens.length-1]=v,top:()=>screens.at(-1),
@@ -15,7 +15,12 @@ const bridge={
  settings:{ytKey:'sample'},playYT:()=>{},playList:()=>{},getSongs:()=>[],
  ytApi:async(endpoint)=>{
   calls.push(endpoint);
-  if(endpoint==='playlistItems')return {items:[{snippet:{title:'The Weeknd - Wicked Games',videoOwnerChannelTitle:'The Weeknd',resourceId:{videoId:'AAAAAAAAAAA'}}}]};
+  if(endpoint==='playlistItems'){
+   if(denyPlaylist)throw Error('Playlist is private');
+   playlistPages++;
+   return {items:[{snippet:{title:'The Weeknd - Wicked Games',videoOwnerChannelTitle:'The Weeknd',resourceId:{videoId:'AAAAAAAAAAA'}}}],
+    nextPageToken:playlistPages<11?'page'+playlistPages:undefined};
+  }
   if(endpoint==='playlists')return {items:[{snippet:{title:'Sample Playlist'}}]};
   if(endpoint==='search')return {items:[{id:{videoId:'AAAAAAAAAAA'},snippet:{title:'The Weeknd - Wicked Games',channelTitle:'The Weeknd'}}]};
   if(endpoint==='videos')return {items:[{id:'AAAAAAAAAAA',contentDetails:{duration:'PT5M27S'}}]};
@@ -32,11 +37,17 @@ assert.equal(importer.detect('https://music.youtube.com/playlist?list=PLabcdef12
 assert.equal(importer.detect('https://fakeqobuz.com/playlist/123'),null);
 const csv=importer.parseFile('Track,Artist,Duration\n"Wicked Games","The Weeknd",5:27','music.csv');
 assert.equal(csv[0].duration,327);
+const spotify=importer.parseFile('Track Name,Artist Name(s),Duration (ms),ISRC\nWicked Games,The Weeknd,95000,USABC1234567','spotify.csv');
+assert.equal(spotify[0].duration,95);
+assert.equal(spotify[0].isrc,'USABC1234567');
+const takeout=importer.parseFile('Video ID,Playlist Video Creation Timestamp\nAAAAAAAAAAA,2026-01-01\nBBBBBBBBBBB,2026-01-02','private playlist.csv');
+assert.deepEqual(takeout.map(t=>t.youtubeId),['AAAAAAAAAAA','BBBBBBBBBBB']);
+assert.equal(importer.detect('https://open.spotify.com/playlist/3cEYpjA9oz9GiPac4AsH4n?si=share').provider,'spotify');
 const qobuz=importer.parseFile(JSON.stringify({tracks:{items:[{track:{title:'Wicked Games',performer:{name:'The Weeknd'},album:{title:'Trilogy'},duration:327}}]}}),'playlist.json');
 assert.equal(qobuz[0].album,'Trilogy');
 (async()=>{
  const found=await importer.youtubeMatch(qobuz[0]);assert.equal(found.youtubeId,'AAAAAAAAAAA');
- const youtube=await importer.youtubeTracks('PLabcdef12345');assert.equal(youtube.tracks.length,1);
+ const youtube=await importer.youtubeTracks('PLabcdef12345');assert.equal(youtube.tracks.length,11);
  importer.open();assert.equal(screens.at(-1).title,'Import Playlist');
  screens.at(-1).rows.find(row=>row.label==='Paste Playlist Link').action();
  screens.at(-1).onSubmit('https://open.qobuz.com/playlist/65537360');
@@ -60,5 +71,15 @@ assert.equal(qobuz[0].album,'Trilogy');
  assert.deepEqual(calls,['search','videos']);
  saved=JSON.parse([...storage.values()][0])[0];
  assert.deepEqual(saved.tracks.map(t=>t.youtubeId),['AAAAAAAAAAA','AAAAAAAAAAA']);
+ importer.open();
+ screens.at(-1).rows.find(row=>row.label==='Paste Playlist Link').action();
+ screens.at(-1).onSubmit('https://open.spotify.com/playlist/3cEYpjA9oz9GiPac4AsH4n');
+ assert.equal(screens.at(-1).title,'Import from Spotify');
+ importer.open();
+ screens.at(-1).rows.find(row=>row.label==='Paste Playlist Link').action();
+ denyPlaylist=true;
+ screens.at(-1).onSubmit('https://youtu.be/AAAAAAAAAAA?list=PLabcdef12345');
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(screens.at(-1).title,'Import Private YouTube Playlist');
  console.log('PASS Qobuz links, exported metadata, CSV, YouTube playlists, exact matching and menu isolation');
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -3,7 +3,7 @@
 'use strict';
 const b=window.ipodPlaylistImportBridge;if(!b)return;
 const {list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,playYT,playList,getSongs}=b;
-const KEY='ipod.importedPlaylists.v1',LIMIT=500;
+const KEY='ipod.importedPlaylists.v1';
 const text=x=>String(x??'').trim();
 const clean=x=>text(x).slice(0,200);
 const matcher=()=>window.ipodTrackMatch;
@@ -38,18 +38,25 @@ function parseFile(data,name){
  if(type.endsWith('.json')){
   const j=JSON.parse(data);raw=Array.isArray(j)?j:Array.isArray(j.tracks)?j.tracks:Array.isArray(j.tracks?.items)?j.tracks.items:j.items||j.songs||[];
   if(!Array.isArray(raw))throw Error('JSON must contain a tracks array.');
-  raw=raw.map(x=>x.track&&typeof x.track==='object'?x.track:x);
+  raw=raw.map(x=>x?.track&&typeof x.track==='object'?x.track:x);
  }else if(type.endsWith('.csv')){
   const rows=csvRows(data.replace(/^\uFEFF/,''));const header=(rows.shift()||[]).map(x=>normalize(x).replace(/\s/g,''));
   const col=(names)=>names.map(x=>header.indexOf(x)).find(i=>i>=0);
-  const t=col(['title','track','tracktitle','song','name']),a=col(['artist','artistname','artists','performer']);
+  const t=col(['title','track','tracktitle','trackname','song','name']),a=col(['artist','artistname','artistnames','artists','performer']);
   const l=col(['album','albumname','collection']),d=col(['duration','durationms','length']),i=col(['isrc']);
-  if(t==null||a==null)throw Error('CSV must contain title and artist columns.');
-  raw=rows.map(r=>({title:r[t],artist:r[a],album:l==null?'':r[l],duration:d==null?'':r[d],isrc:i==null?'':r[i]}));
+  const video=col(['videoid']);
+  if(video!=null){
+   raw=rows.filter(r=>/^[\w-]{11}$/.test(text(r[video]))).map(r=>({
+    title:r[t]||'YouTube video '+text(r[video]),artist:r[a]||'YouTube',youtubeId:text(r[video])
+   }));
+  }else{
+   if(t==null||a==null)throw Error('CSV must contain title and artist columns or a YouTube Video ID column.');
+   raw=rows.map(r=>({title:r[t],artist:r[a],album:r[l],duration:header[d]==='durationms'?Math.round(Number(r[d])/1000):r[d],isrc:r[i]}));
+  }
  }else if(type.endsWith('.txt')){
   raw=data.split(/\r?\n/).map(x=>{const s=x.split(/\s+[-–—]\s+/);return s.length>1?{artist:s.shift(),title:s.join(' - ')}:null}).filter(Boolean);
  }else throw Error('Choose a CSV, JSON, or TXT file.');
- const tracks=raw.map(toTrack).filter(Boolean).slice(0,LIMIT);
+ const tracks=raw.map(toTrack).filter(Boolean);
  if(!tracks.length)throw Error('No tracks containing both artist and title were found.');
  return tracks;
 }
@@ -80,7 +87,11 @@ function qobuzMetadata(data,link){
 function detect(url){
  try{const u=new URL(text(url));if(!/^https?:$/.test(u.protocol))return null;
  const host=u.hostname.toLowerCase();
- if(['youtube.com','www.youtube.com','music.youtube.com','m.youtube.com'].includes(host)){
+ if(host==='open.spotify.com'&&u.protocol==='https:'){
+  const m=u.pathname.match(/^\/(?:intl-[a-z-]+\/)?playlist\/([a-zA-Z0-9]{22})\/?$/i);
+  return m?{provider:'spotify',id:m[1]}:null;
+ }
+ if(['youtube.com','www.youtube.com','music.youtube.com','m.youtube.com','youtu.be'].includes(host)){
   const id=u.searchParams.get('list');return id&&/^[\w-]{10,90}$/.test(id)?{provider:'youtube',id}:null}
  if(['qobuz.com','www.qobuz.com','open.qobuz.com','play.qobuz.com'].includes(host)){
   const m=u.pathname.match(/\/playlist\/(\d+)\/?$/);return m?{provider:'qobuz',id:m[1]}:null}
@@ -89,7 +100,10 @@ function detect(url){
 async function youtubeTracks(id){
  if(!settings.ytKey)throw Error('Set your YouTube API key first.');
  let tracks=[],token='',name='YouTube Playlist';
- for(let page=0;page<10&&tracks.length<LIMIT;page++){
+ const seen=new Set();
+ do{
+  if(seen.has(token))throw Error('YouTube repeated a playlist page. Try again.');
+  seen.add(token);
   const response=await ytApi('playlistItems',{part:'snippet',playlistId:id,maxResults:50,pageToken:token});
   for(const row of response.items||[]){
    const s=row.snippet||{},id=s.resourceId?.videoId;
@@ -97,11 +111,11 @@ async function youtubeTracks(id){
    const parsed=matcher()?.parseTitle?.(s.title,s.videoOwnerChannelTitle||s.channelTitle)||{title:s.title,artist:s.videoOwnerChannelTitle||s.channelTitle};
    const t=toTrack({...parsed,youtubeId:id});if(t)tracks.push(t);
   }
-  token=response.nextPageToken||'';if(!token)break;
- }
+  token=response.nextPageToken||'';
+ }while(token);
  if(!tracks.length)throw Error('Playlist is empty, private, or contains no usable track metadata.');
  try{const p=await ytApi('playlists',{part:'snippet',id});name=clean(p.items?.[0]?.snippet?.title)||name}catch(e){}
- return {name,tracks:tracks.slice(0,LIMIT),provider:'YouTube',source:'https://www.youtube.com/playlist?list='+id};
+ return {name,tracks,provider:'YouTube',source:'https://www.youtube.com/playlist?list='+id};
 }
 function save(data){
  const library=read(),pl={id:'playlist-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9),
@@ -124,7 +138,7 @@ function playlistView(pl){
    {label:'Tracks',val:pl.tracks.length+' total'},
    {label:'Available Offline',val:existing+' tracks'},
    {label:'YouTube Links',val:matched+' matched'},
-   {label:'Match Unresolved',action:()=>matchPlaylist(pl)},
+   ...(pl.tracks.some(t=>!t.youtubeId)?[{label:'Match Unresolved',action:()=>matchPlaylist(pl)}]:[]),
    ...pl.tracks.map((t,i)=>t.status==='review'&&t.choices?.length?{label:'Review '+(i+1)+'. '+t.title,
      val:t.choices.length+' candidates',action:()=>push(list('Review YouTube Result',[
       {label:'Original',val:t.artist+' — '+t.title},
@@ -153,7 +167,7 @@ function preview(data){return list('Import Preview',[
  {label:'Save to iPod',action:()=>replaceTop(playlistView(save(data)))},
  ...data.tracks.slice(0,25).map((t,i)=>({label:(i+1)+'. '+t.title,val:t.artist}))
 ]);}
-function picker(){
+function picker(context={}){
  const el=document.createElement('input');el.type='file';el.accept='.json,.csv,.txt';el.style.display='none';
  document.body.appendChild(el);
  el.addEventListener('change',async()=>{
@@ -164,16 +178,29 @@ function picker(){
    const content=await file.text();
    const data=/\.json$/i.test(file.name)?JSON.parse(content):null;
    const playlist=data?.provider==='Qobuz'&&data.tracks?.items?qobuzMetadata(data):{
-    name:file.name.replace(/\.[^.]+$/,''),provider:'File',tracks:parseFile(content,file.name),source:''
+    name:file.name.replace(/\.[^.]+$/,''),provider:context.provider||'File',tracks:parseFile(content,file.name),source:context.source||''
    };
    if(top()===loading)replaceTop(preview(playlist));
   }
   catch(e){if(top()===loading)replaceTop(msgView('Import Failed',e.message));}
  },{once:true});el.click();
 }
-function linkInput(){push(inputView('Playlist Link','YouTube Music or Qobuz URL',url=>{
+function exportView(provider,source,error){
+ const spotify=provider==='Spotify';
+ return list(spotify?'Import from Spotify':'Import Private YouTube Playlist',[
+  ...(error?[{label:'Why use a file?',action:()=>push(msgView('YouTube Link Import',error))}]:[]),
+  {label:spotify?'Open Spotify CSV Export':'Open Google Takeout',action:()=>window.open(
+   spotify?'https://www.tunemymusic.com/transfer/spotify-to-file':'https://takeout.google.com/','_blank','noopener,noreferrer')},
+  {label:'Import Playlist File',action:()=>picker({provider,source})},
+  {label:'Export Instructions',action:()=>push(msgView('Export Playlist',spotify?
+   'Sign in to Spotify in the export tool, select your playlist, and export to CSV. Return here and choose Import Playlist File.':
+   'Sign in to the Google account that owns the playlist. Export YouTube and YouTube Music playlists, unzip the archive, and select the individual playlist video CSV.'))}
+ ]);
+}
+function linkInput(){push(inputView('Playlist Link','YouTube, Spotify, or Qobuz URL',url=>{
  const info=detect(url);
- if(!info)return replaceTop(msgView('Unsupported Link','Paste a YouTube playlist or Qobuz playlist URL.'));
+ if(!info)return replaceTop(msgView('Unsupported Link','Paste a YouTube, Spotify, or Qobuz playlist URL.'));
+ if(info.provider==='spotify')return replaceTop(exportView('Spotify','https://open.spotify.com/playlist/'+info.id));
  if(info.provider==='qobuz')return replaceTop(list('Qobuz Playlist',[
   {label:'Playlist ID',val:info.id},
   {label:'Import Export File',action:picker},
@@ -186,9 +213,20 @@ function linkInput(){push(inputView('Playlist Link','YouTube Music or Qobuz URL'
    }catch(e){push(msgView('Import Failed',e.message))}
   }))}
  ]));
- const loading=loadingView('Reading Playlist…');replaceTop(loading);
- youtubeTracks(info.id).then(data=>{if(top()===loading)replaceTop(preview(data))})
- .catch(e=>{if(top()===loading)replaceTop(msgView('Import Failed',e.message))});
+ const source='https://www.youtube.com/playlist?list='+info.id;
+ const load=()=>{
+  const loading=loadingView('Reading Playlist…');replaceTop(loading);
+  youtubeTracks(info.id).then(data=>{if(top()===loading)replaceTop(preview(data))})
+   .catch(e=>{if(top()===loading)replaceTop(exportView('YouTube',source,e.message))});
+ };
+ if(settings.ytKey)return load();
+ replaceTop(list('YouTube Playlist',[
+  {label:'Enter YouTube API Key',action:()=>push(inputView('YouTube API Key','Paste API key',value=>{
+   settings.ytKey=value.trim();b.saveSettings?.();load();
+  }))},
+  {label:'Import Private Playlist',action:()=>push(exportView('YouTube',source))},
+  {label:'Import Playlist File',action:()=>picker({provider:'YouTube',source})}
+ ]));
  }));}
 async function youtubeMatch(track){
  const m=matcher();if(!m)throw Error('YouTube matcher not loaded.');
@@ -251,6 +289,7 @@ function library(){push(list('Imported Playlists',()=>[
 function open(){push(list('Import Playlist',[
  {label:'Paste Playlist Link',action:linkInput},
  {label:'Import CSV / JSON / TXT',action:picker},
+ {label:'Import Private YouTube Playlist',action:()=>push(exportView('YouTube',''))},
  {label:'Saved Playlists',action:library},
  {label:'How It Works',action:()=>push(msgView('Import Music','A playlist stores song metadata and verified YouTube references. It never automatically downloads audio. Match unresolved tracks before playback.'))}
 ]));}
