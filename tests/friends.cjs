@@ -5,7 +5,7 @@ const html=fs.readFileSync(path.resolve(__dirname,'../index.html'),'utf8');
 const friends=fs.readFileSync(path.resolve(__dirname,'../friends.js'),'utf8');
 new Function(html.match(/<script[^>]*>([\s\S]*?)<\/script>/)[1]);
 new Function(friends);
-assert.match(html,/\{label:'Friends',action:/);
+assert.match(html,/\{label:'Friends',(icon:'[a-z]+',)?action:/);
 assert.match(html,/<script src="\.\/friends\.js" defer><\/script>/);
 assert.match(friends,/signInAnonymously/);
 assert.doesNotMatch(friends,/signInWithEmailAndPassword|recoveryPhrase|recoveryKey/);
