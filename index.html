@@ -363,6 +363,8 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 /* list thumbnails (Albums) */
 .row.th{padding-left:36px}
 .row .thumb{position:absolute;left:6px;top:3px;width:21px;height:21px;border-radius:2px;background-size:cover;background-position:center;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
+.row.has-icon{padding-left:29px}
+.row .menu-icon{position:absolute;left:8px;top:7px;width:14px;height:14px;pointer-events:none}
 .row .thumb.av{border-radius:50%}
 /* album art: crossfade on track change + floor reflection */
 .np .art.fresh{animation:artIn .45s ease-out}
@@ -998,22 +1000,22 @@ function list(title,items,extra={}){return {type:'list',title,items,sel:0,scroll
 const go=v=>()=>push(typeof v==='function'?v():v);
 function mainMenu(){
   return list('iPod',()=>[
-    {label:'Music Home',action:go(musicHome),chev:1},
-    {label:'Offline Music',action:go(musicMenu),chev:1},
-    {label:'Album Flow',action:()=>openFlow(),chev:1},
-    {label:'Playlist Flow',action:()=>window.ipodPlaylistImport?.library(),chev:1},
-    {label:'Song Flow',action:()=>openSongFlow(),chev:1},
-    {label:'Recommendation Flow',action:()=>openRecommendationFlow(),chev:1},
-    {label:'Friends',action:()=>window.ipodFriends?window.ipodFriends.open():push(msgView('Friends Unavailable','Please reload the iPod to load Friends.')),chev:1},
+    {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
+    {label:'Offline Music',icon:'library',action:go(musicMenu),chev:1},
+    {label:'Album Flow',icon:'album',action:()=>openFlow(),chev:1},
+    {label:'Playlist Flow',icon:'playlist',action:()=>window.ipodPlaylistImport?.library(),chev:1},
+    {label:'Song Flow',icon:'music',action:()=>openSongFlow(),chev:1},
+    {label:'Recommendation Flow',icon:'sparkle',action:()=>openRecommendationFlow(),chev:1},
+    {label:'Friends',icon:'people',action:()=>window.ipodFriends?window.ipodFriends.open():push(msgView('Friends Unavailable','Please reload the iPod to load Friends.')),chev:1},
 
-    {label:'YouTube → Save MP3',action:go(youtubeMenu),chev:1},
-    {label:'Shuffle Songs',action:()=>shuffleAll()},
-    {label:'Downloads',action:go(downloadsMenu),chev:1},
-    ...(qi>=0?[{label:'Now Playing',action:()=>push(nowView()),chev:1}]:[]),
-    {label:'Add Music',action:()=>$('#file').click(),chev:1},
-    {label:'Settings',action:go(settingsMenu),chev:1},
-    {label:'Extras',action:go(extrasMenu),chev:1},
-    {label:'About',action:go(aboutView),chev:1},
+    {label:'YouTube → Save MP3',icon:'play',action:go(youtubeMenu),chev:1},
+    {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
+    {label:'Downloads',icon:'download',action:go(downloadsMenu),chev:1},
+    ...(qi>=0?[{label:'Now Playing',icon:'play',action:()=>push(nowView()),chev:1}]:[]),
+    {label:'Add Music',icon:'plus',action:()=>$('#file').click(),chev:1},
+    {label:'Settings',icon:'settings',action:go(settingsMenu),chev:1},
+    {label:'Extras',icon:'apps',action:go(extrasMenu),chev:1},
+    {label:'About',icon:'info',action:go(aboutView),chev:1},
   ],{split:true});
 }
 function downloadsMenu(){return list('Downloads',()=>{
@@ -1022,20 +1024,20 @@ function downloadsMenu(){return list('Downloads',()=>{
  action:()=>{const song=songs.find(s=>s.sourceId===j.id);if(song)playList([song],0);else if(j.state==='Failed')push(msgView('Download Failed',j.error||'Please try again.'));else push(msgView(j.state,j.title))}})):[{label:'No active downloads'}];
 })}
 function youtubeMenu(){return list('YouTube',()=>[
-  {label:'Search Flow',chev:1,action:go(()=>inputView('Search Flow','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'flow')}))},
-  {label:'Search (List)',chev:1,action:go(()=>inputView('Search List','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'list')}))},
-  {label:'Music Home',chev:1,action:go(musicHome)},
-  {label:'Import Playlist',chev:1,action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.open():push(msgView('Importer Unavailable','Reload and try again.'))},
-  {label:'Match Imported Track',chev:1,action:()=>window.ipodTrackMatch?window.ipodTrackMatch.open():push(msgView('Matcher Unavailable','Reload the iPod and try again.'))},
-  {label:'Paste Link',chev:1,action:go(()=>inputView('Paste Link','youtube.com/watch?v=… or playlist',s=>{
+  {label:'Search Flow',icon:'search',chev:1,action:go(()=>inputView('Search Flow','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'flow')}))},
+  {label:'Search (List)',icon:'search',chev:1,action:go(()=>inputView('Search List','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'list')}))},
+  {label:'Music Home',icon:'music',chev:1,action:go(musicHome)},
+  {label:'Import Playlist',icon:'download',chev:1,action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.open():push(msgView('Importer Unavailable','Reload and try again.'))},
+  {label:'Match Imported Track',icon:'search',chev:1,action:()=>window.ipodTrackMatch?window.ipodTrackMatch.open():push(msgView('Matcher Unavailable','Reload the iPod and try again.'))},
+  {label:'Paste Link',icon:'link',chev:1,action:go(()=>inputView('Paste Link','youtube.com/watch?v=… or playlist',s=>{
     const {id,list:l}=parseYT(s);
     if(l&&!id){replaceTop(loadingView('Loading…'));openPlaylist(l)}
     else if(id){playYT([{kind:'yt',id,title:'',artist:''}],0)}
     else replaceTop(msgView('Not a YouTube Link','Paste a video or playlist link from YouTube or YouTube Music.'))}))},
-  {label:'Saved',chev:1,action:go(()=>entriesView('Saved',saved,true))},
-  {label:'Recently Played',chev:1,action:go(()=>entriesView('Recently Played',history))},
+  {label:'Saved',icon:'heart',chev:1,action:go(()=>entriesView('Saved',saved,true))},
+  {label:'Recently Played',icon:'clock',chev:1,action:go(()=>entriesView('Recently Played',history))},
   ...(isYT(cur())?[{label:'Save Now Playing',action:go(saveCurrent)}]:[]),
-  {label:'YouTube Key',val:settings.ytKey?'Set':'None',chev:0,action:go(keyView)},
+  {label:'YouTube Key',icon:'key',val:settings.ytKey?'Set':'None',chev:0,action:go(keyView)},
 ])}
 function keyView(){return inputView('YouTube Key','Paste API key',k=>{settings.ytKey=k.trim();saveSettings();replaceTop(msgView('Key Saved',settings.ytKey?'Search is ready.':'Key cleared.'))},settings.ytKey)}
 /* ---------- Music Home: curated search entry points, no external recommendation account ---------- */
@@ -1080,17 +1082,17 @@ function renderMusicHome(v){
   }));
 }
 function musicMenu(){return list('Local Music',[
-  {label:'Music Home',action:go(musicHome),chev:1},
-  {label:'Artists',action:go(artistsMenu),chev:1},
-  {label:'Album Flow',action:()=>openFlow(),chev:1},
-  {label:'Song Flow',action:()=>openSongFlow(),chev:1},
-  {label:'Recommendation Flow',action:()=>openRecommendationFlow(),chev:1},
-  {label:'Albums',action:go(()=>albumsMenu(songs,'Albums')),chev:1},
-  {label:'Songs',action:go(()=>songsMenu(songs,'Songs')),chev:1},
-  {label:'Playlist Flow',action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.library():push(msgView('Importer Unavailable','Reload and try again.')),chev:1},
-  {label:'Favorites',action:go(()=>{const f=songs.filter(s=>s.favorite);const v=songsMenu(f,'Favorites');v.emptyText='Tap ☆ on Now Playing to add favorites.';return v}),chev:1},
-  {label:'Shuffle Songs',action:()=>shuffleAll()},
-  {label:'Add Music',action:()=>$('#file').click(),chev:1}])}
+  {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
+  {label:'Artists',icon:'people',action:go(artistsMenu),chev:1},
+  {label:'Album Flow',icon:'album',action:()=>openFlow(),chev:1},
+  {label:'Song Flow',icon:'music',action:()=>openSongFlow(),chev:1},
+  {label:'Recommendation Flow',icon:'sparkle',action:()=>openRecommendationFlow(),chev:1},
+  {label:'Albums',icon:'album',action:go(()=>albumsMenu(songs,'Albums')),chev:1},
+  {label:'Songs',icon:'music',action:go(()=>songsMenu(songs,'Songs')),chev:1},
+  {label:'Playlist Flow',icon:'playlist',action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.library():push(msgView('Importer Unavailable','Reload and try again.')),chev:1},
+  {label:'Favorites',icon:'heart',action:go(()=>{const f=songs.filter(s=>s.favorite);const v=songsMenu(f,'Favorites');v.emptyText='Tap ☆ on Now Playing to add favorites.';return v}),chev:1},
+  {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
+  {label:'Add Music',icon:'plus',action:()=>$('#file').click(),chev:1}])}
 function artistsMenu(){
   const as=[...new Set(songs.map(s=>s.artist))].sort((a,b)=>a.localeCompare(b));
   return list('Artists',as.map(a=>({label:a,chev:1,action:go(()=>{
@@ -1151,8 +1153,8 @@ function tornadoUsageView(){
 function settingsMenu(){
   const tog=(k,opts)=>()=>{const i=opts.indexOf(settings[k]);settings[k]=opts[(i+1)%opts.length];saveSettings();if(k==='theme'||k==='style'||k==='appearance')applyTheme();if(k==='backlight')wake();render()};
   return list('Settings',()=>[
-    {label:'Shuffle',val:settings.shuffle?'Songs':'Off',action:tog('shuffle',[false,true])},
-    {label:'Repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
+    {label:'Shuffle',icon:'shuffle',val:settings.shuffle?'Songs':'Off',action:tog('shuffle',[false,true])},
+    {label:'Repeat',icon:'repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
     {label:'Clicker',val:settings.clicker?'On':'Off',action:tog('clicker',[true,false])},
     {label:'Haptics',val:settings.haptics?'On':'Off',action:tog('haptics',[true,false])},
     ...(settings.haptics?[
@@ -1167,7 +1169,7 @@ function settingsMenu(){
     {label:'Menu Style',val:settings.menuStyle,action:tog('menuStyle',['List','Flow'])},
     {label:'Now Playing Style',val:settings.npStyle,action:tog('npStyle',['Standard','Flow'])},
     {label:'Auto Artwork',val:settings.autoArt?'On':'Off',action:tog('autoArt',[true,false])},
-    {label:'Artwork Tools',chev:1,action:go(artworkToolsMenu)},
+    {label:'Artwork Tools',icon:'picture',chev:1,action:go(artworkToolsMenu)},
     ...(settings.menuStyle==='List'?[{label:'Split Screen',val:settings.split,action:tog('split',['Album Art','Now Playing','Off'])}]:[]),
     {label:'YouTube Downloads',val:'Offline MP3'},
     {label:'Search Music Only',val:settings.musicOnly?'On':'Off',action:tog('musicOnly',[true,false])},
@@ -1178,7 +1180,7 @@ function settingsMenu(){
     },settings.lyricaUrl))},
     {label:'Test Lyrics API',chev:1,action:()=>checkLyricsAPI()},
     {label:'Tornado Usage',chev:1,action:go(tornadoUsageView)},
-    {label:'YouTube Key',val:settings.ytKey?'Set':'None',action:go(keyView)},
+    {label:'YouTube Key',icon:'key',val:settings.ytKey?'Set':'None',action:go(keyView)},
     {label:'Clear Library',chev:1,action:go(()=>list('Clear Library?',[
       {label:'Cancel',action:()=>pop()},
       {label:'Erase All Songs',action:async()=>{audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
@@ -1187,8 +1189,8 @@ function settingsMenu(){
 function aboutView(){return list('About',[
   {label:'What’s New',chev:1,action:()=>showWhatsNew(null)},
   {label:'Check for Updates',chev:1,action:()=>checkForUpdate(true)},
-  {label:'Songs',val:String(songs.length)},
-  {label:'Artists',val:String(new Set(songs.map(s=>s.artist)).size)},
+  {label:'Songs',icon:'music',val:String(songs.length)},
+  {label:'Artists',icon:'people',val:String(new Set(songs.map(s=>s.artist)).size)},
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
   {label:'Version',val:'3.13'}])}
@@ -1281,6 +1283,33 @@ const ROW=27, VIS=7;
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const spk='<svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/></svg>';
 const fmt=t=>{if(!isFinite(t))t=0;t=Math.max(0,Math.floor(t));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=String(t%60).padStart(2,'0');return h?`${h}:${String(m).padStart(2,'0')}:${s}`:`${m}:${s}`};
+const MENU_ICONS={
+  music:'M9 18V5l11-2v13M9 8l11-2 M9 18a3 2 0 1 1-6 0 3 2 0 1 1 6 0 M20 16a3 2 0 1 1-6 0 3 2 0 1 1 6 0',
+  library:'M4 5h3v14H4z M10 5h3v14h-3z M16 5l3-1 4 14-3 1z',
+  album:'M4 4h16v16H4z M16 12a4 4 0 1 0-8 0 4 4 0 1 0 8 0 M12 12h.01',
+  playlist:'M4 5h15 M4 10h15 M4 15h8 M17 13v6 M20 14l-3-1 M17 19a2 1.5 0 1 1-4 0 2 1.5 0 1 1 4 0',
+  people:'M15 8a3 3 0 1 1-6 0 3 3 0 1 1 6 0 M6 19v-1a6 6 0 0 1 12 0v1z M4 9a2 2 0 0 0 1 4 M20 9a2 2 0 0 1-1 4',
+  play:'M8 5l12 7-12 7z',
+  download:'M12 3v12m-4-4 4 4 4-4 M4 15v5h16v-5',
+  shuffle:'M3 6h3c5 0 6 12 11 12h4m-3-3 3 3-3 3 M3 18h3c1.5 0 2.5-1 3.4-2.5m3.2-7C14 7 15 6 17 6h4m-3-3 3 3-3 3',
+  repeat:'M20 8H6a3 3 0 0 0-3 3v1m14-7 3 3-3 3 M4 16h14a3 3 0 0 0 3-3v-1m-14 1-3 3 3 3',
+  plus:'M12 4v16 M4 12h16',
+  settings:'M4 6h16 M4 12h16 M4 18h16 M8 3v6 M15 9v6 M10 15v6',
+  apps:'M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h6v6h-6z',
+  info:'M21 12a9 9 0 1 1-18 0 9 9 0 1 1 18 0 M12 11v6 M12 7h.01',
+  search:'M16 10a6 6 0 1 1-12 0 6 6 0 1 1 12 0 M14.5 14.5 20 20',
+  link:'M10 14l4-4 M8 16l-1 1a3 3 0 0 1-4-4l4-4a3 3 0 0 1 4 0 M13 15a3 3 0 0 0 4 0l4-4a3 3 0 0 0-4-4l-1 1',
+  heart:'M12 20 4.5 12A4.5 4.5 0 0 1 12 7a4.5 4.5 0 0 1 7.5 5z',
+  clock:'M21 12a9 9 0 1 1-18 0 9 9 0 1 1 18 0 M12 7v5l3 2',
+  sparkle:'M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z',
+  picture:'M4 5h16v14H4z M4 16l5-5 3 3 3-4 5 6 M16 8h.01',
+  key:'M14 8a4 4 0 1 1-8 0 4 4 0 1 1 8 0 M13 11l7 7m-3-3-2 2m5 1-2 2'
+};
+function classicRowIcon(row){
+  if(settings.style!=='Classic'||row.thumb)return '';
+  const path=MENU_ICONS[row.icon||(row.song||row.ytid?'music':'')];
+  return path?`<svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="${path}"/></svg>`:'';
+}
 let lastArtId=null;
 function hdrClock(){const d=new Date();$('#hclock').textContent=d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}
 setInterval(hdrClock,10000);
@@ -1310,7 +1339,8 @@ function render(){
     const playing=cur(),sbw=it.length>VIS;let h='<div class="list">';
     for(let i=v.scroll;i<Math.min(it.length,v.scroll+VIS);i++){const x=it[i],rp=sbw?'right:14px':'';
       const isCur=playing&&((x.song&&x.song.id===playing.id)||(x.ytid&&playing.id===x.ytid));
-      h+=`<div class="row${i===v.sel?' sel':''}${x.thumb?' th':''}" style="${sbw?'padding-right:28px':''}">${x.thumb?`<span class="thumb${x.avatar?' av':''}" style="background-image:url(&quot;${esc(x.thumb)}&quot;)"></span>`:''}<span class="lb"><span class="lt">${esc(x.label)}</span></span>${
+      const icon=classicRowIcon(x);
+      h+=`<div class="row${i===v.sel?' sel':''}${x.thumb?' th':''}${icon?' has-icon':''}" style="${sbw?'padding-right:28px':''}">${x.thumb?`<span class="thumb${x.avatar?' av':''}" style="background-image:url(&quot;${esc(x.thumb)}&quot;)"></span>`:icon}<span class="lb"><span class="lt">${esc(x.label)}</span></span>${
         x.val!=null?`<span class="val" style="${rp}">${esc(x.val)}</span>`:x.chev?`<span class="chev" style="${rp}">›</span>`:isCur?`<span class="spk" style="${rp}">${spk}</span>`:''}</div>`}
     if(sbw){const hh=190,th=Math.max(14,hh*VIS/it.length),ty=(hh-th)*v.scroll/(it.length-VIS);h+=`<div class="sb"><i style="top:${ty}px;height:${th}px"></i></div>`}
     body.innerHTML=h+'</div>';
@@ -2070,7 +2100,7 @@ function artworkToolsMenu(){
     })),{emptyText:'No saved songs yet.'}))},
     {label:'Saved Covers',val:String(matched)},
     {label:'Protected Covers',val:String(locked)},
-    {label:'Songs',val:String(songs.length)}
+    {label:'Songs',icon:'music',val:String(songs.length)}
   ]);
 }
 const artFresh=new Set();       // just-imported songs: looked up first
