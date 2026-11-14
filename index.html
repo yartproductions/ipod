@@ -2088,7 +2088,7 @@ function albumArtworkTargets(s){
 function reusableAlbumCover(s,t){
   return s.id!==t.id&&s.artUrl&&!isYoutubeThumbnail(s.artUrl)&&
     ((s.art&&(!s.artSource||['manual','embedded'].includes(s.artSource)))||
-     (['itunes','coverartarchive'].includes(s.artSource)&&albumArtworkKey({...s,album:s.artworkAlbum})===albumArtworkKey(s)));
+     (['itunes','deezer','lastfm','coverartarchive'].includes(s.artSource)&&albumArtworkKey({...s,album:s.artworkAlbum})===albumArtworkKey(s)));
 }
 async function saveArtwork(s,blob,match={source:'manual',score:1},{manual=false,applyAlbum=false,shareAlbum=true}={}){
   const lib=songs.find(x=>x.id===s.id)||s;
@@ -2136,24 +2136,51 @@ async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected
     else await saveMatchedArtworkURL(lib,shared);
     return shared;
   }
-  let match=null;
-  const saved=artSaved[artworkCacheKey(lib)];
-  if(preferred&&saved&&saved.url===preferred)match={...saved};
-  let busy=null;
-  if(!match)try{match=await artworkFromITunes(lib)}catch(e){if(e.retry)busy=e}
-  if(!match)try{match=await artworkFromDeezer(lib)}catch(e){}
-  if(!match)try{match=await artworkFromLastfm(lib)}catch(e){}
-  if(!match)try{match=await artworkFromMusicBrainz(lib)}catch(e){}
-  if(!match&&busy)throw busy;
-  if(!match||!match.url)return null;
-  if(lib.deleted||!songs.some(x=>x.id===lib.id))return null;
-  // A CDN may permit image rendering even when fetching a Blob is blocked.
-  const blob=await fetchCover(match.url).catch(()=>null);
-  if(blob)await saveArtwork(lib,blob,match);
-  else await saveMatchedArtworkURL(lib,match);
-  artworkStore(artworkCacheKey(lib),match);
-  return match;
+  const resolve=async()=>{
+    let match=null,busy=null;
+    const saved=artSaved[artworkCacheKey(lib)];
+    if(saved&&(preferred===saved.url||!force)&&(!albumKey||albumArtworkKey({...lib,album:saved.album})===albumKey))match={...saved};
+    if(!match)try{match=await artworkFromITunes(lib)}catch(e){if(e.retry)busy=e}
+    if(!match)try{match=await artworkFromDeezer(lib)}catch(e){}
+    if(!match)try{match=await artworkFromLastfm(lib)}catch(e){}
+    if(!match)try{match=await artworkFromMusicBrainz(lib)}catch(e){}
+    if(!match&&busy)throw busy;
+    if(!match?.url)return null;
+    const blob=await fetchCover(match.url).catch(()=>null);
+    return {match,blob};
+  };
+  const result=await resolveAlbumArtwork(lib,resolve,force);
+  if(!result||lib.deleted||!songs.some(x=>x.id===lib.id))return null;
+  if(!overrideProtected&&artworkProtected(lib))return null;
+  if(!force&&!artworkNeedsRepair(lib))return result.match;
+  if(result.blob)await saveArtwork(lib,result.blob,result.match);
+  else await saveMatchedArtworkURL(lib,result.match);
+  artworkStore(artworkCacheKey(lib),result.match);
+  return result.match;
 }
+const albumArtworkPending=new Map();
+async function resolveAlbumArtwork(song,resolve,force){
+  const key=albumArtworkKey(song);
+  if(!key||force)return resolve();
+  const cacheKey='album:'+key;
+  const existing=albumArtworkPending.get(key);
+  if(existing){
+    const result=await existing;
+    // A track-specific result can belong to another release.
+    if(result&&albumArtworkKey({...song,album:result.match.album})===key)return result;
+    return resolve();
+  }
+  const task=(async()=>{
+    const saved=artSaved[cacheKey];
+    if(saved?.url)return {match:saved,blob:await fetchCover(saved.url).catch(()=>null)};
+    const result=await resolve();
+    if(result&&albumArtworkKey({...song,album:result.match.album})===key)artworkStore(cacheKey,result.match);
+    return result;
+  })();
+  albumArtworkPending.set(key,task);
+  try{return await task}finally{albumArtworkPending.delete(key)}
+}
+
 /* ---------- Cover chooser: every source side by side, plus manual options ---------- */
 // Deezer's API has no CORS headers but supports JSONP, so it works from a web page.
 function jsonp(url,ms=9000,param='output=jsonp&callback='){
