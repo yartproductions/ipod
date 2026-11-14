@@ -182,7 +182,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .np-neighbors i{position:absolute;top:13%;width:31%;aspect-ratio:1;background-size:cover;background-position:center;border-radius:5px;opacity:.26}
 .np-neighbors .previous{left:-9%;transform:rotateY(56deg)}
 .np-neighbors .upcoming{right:-7%;transform:rotateY(-56deg)}
-#np .offline-cover{outline:1px solid rgba(255,211,113,.8);box-shadow:0 0 9px rgba(255,185,64,.65),0 4px 14px rgba(0,0,0,.45)}
+#np .offline-cover,#flow .offline-cover{outline:1px solid rgba(255,211,113,.8);box-shadow:0 0 9px rgba(255,185,64,.65),0 4px 14px rgba(0,0,0,.45)}
 .np.lyrics-np .art{position:relative;width:100%;height:auto;aspect-ratio:1;max-height:130px;background-size:cover;background-position:center;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5)}
 .np.lyrics-np .refl{display:none}
 .np.lyrics-np .np-lyrics{min-width:0;flex:1;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;text-align:left;mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%);-webkit-mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%)}
@@ -942,7 +942,7 @@ async function runDownloadQueue(){
  try{
   while(downloadQueue.length){
    const task=downloadQueue.shift(),id=task.it.id;
-   try{const song=await acquireYT(task.it,(state,progress)=>setDownloadStatus(id,state,progress));setDownloadStatus(id,'Done',100);task.resolve(song);if(top()?.type==='now'&&importedPlayback?.queue===queue&&
+   try{const song=await acquireYT(task.it,(state,progress)=>setDownloadStatus(id,state,progress));setDownloadStatus(id,'Done',100);task.resolve(song);if(top()?.type==='flow'&&!top().opening)renderFlow(top());else if(top()?.type==='now'&&importedPlayback?.queue===queue&&
      importedPlayback.tracks[importedNeighbor(importedPlayback,1)]?.video?.id===id)render()}
    catch(e){setDownloadStatus(id,'Failed',0,e.message);task.reject(e)}
   }
@@ -1979,7 +1979,10 @@ function renderFlow(v,from){
   let cards='';for(let i=lo;i<=hi;i++){
     const card=v.albums[i],song=card.songs?.find(x=>x.artUrl)||card.songs?.[0];
     const art=card.getArt?card.getArt():song?artFor(song):card.art;
-    cards+=`<div class="cv" data-i="${i}" style="background-image:url(&quot;${esc(art)}&quot;)"></div>`;
+    const video=v.recommendItems?.[i];
+    const offline=card.isOffline?.()||(card.songs?.length===1&&song?.blob&&!song.deleted)||
+      (video&&songs.some(s=>s.sourceId===video.id&&s.blob&&!s.deleted));
+    cards+=`<div class="cv${offline?' offline-cover':''}" data-i="${i}" style="background-image:url(&quot;${esc(art)}&quot;)"></div>`;
   }
   body.innerHTML=`<div class="flow instant" id="flow"><div class="cnt" id="fcnt"></div><div class="stage">${cards}</div>
     <div class="cap"><b id="fal"></b><span id="far"></span></div></div>`;

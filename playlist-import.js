@@ -146,6 +146,7 @@ function playTrack(pl,index){
 function playlistTracks(pl){
  const albums=pl.tracks.map((track,index)=>({
   album:track.title,artist:track.artist,
+  isOffline:()=>!!available(track)?.blob,
   getArt:()=>{
    const local=available(track);
    return local?b.artFor(local):b.genArt(track.album||track.title,track.artist);
