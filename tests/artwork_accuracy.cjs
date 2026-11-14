@@ -64,3 +64,34 @@ test('Artwork is retained with the downloaded song',()=>{
  assert.match(source,/repairSongArtwork\(song/);
  assert.match(source,/await dbPut\(songRecord\(t\)\)/);
 });
+// --- Real iTunes result shapes (captured Nov 2026) ---
+const best=new Function('known',section('function artworkNormalize','function artworkCacheKey')+section('function itunesBest','async function artworkFromITunes')+'return itunesBest;')(x=>!!x&&!/^unknown/i.test(x));
+const R=(artistName,trackName,collectionName,extra={})=>({kind:'song',artworkUrl100:'https://x/'+collectionName+'/100x100bb.jpg',artistName,trackName,collectionName,...extra});
+test('Collaboration credit still matches the primary artist',()=>{
+ const b=best({artist:'Daft Punk',title:'Get Lucky'},[R('Daft Punk','Get Lucky (feat. Pharrell Williams & Nile Rodgers) [Daft Punk Remix]','Remix'),R('Daft Punk, Pharrell Williams & Nile Rodgers','Get Lucky','Random Access Memories',{releaseDate:'2013-05-17'})]);
+ assert.equal(b&&b.item.collectionName,'Random Access Memories');
+});
+test('"A x B" YouTube artist matches the primary credit',()=>assert.equal(score({artist:'SZA x Travis Scott',title:'Open Arms'},{artistName:'SZA',trackName:'Open Arms (feat. Travis Scott)'}),1));
+test('Covers and tributes by other artists are rejected',()=>assert.equal(best({artist:'Frank Ocean',title:'Pink + White'},[R('Vitamin String Quartet','Pink + White','VSQ Performs Frank Ocean')]),null));
+test('Featured-artist suffix on the store title is ignored',()=>assert.equal(score({artist:'Drake',title:'One Dance'},{artistName:'Drake',trackName:'One Dance (feat. Wizkid & Kyla)'}),1));
+test('Original album beats singles/live/remix versions',()=>{
+ const b=best({artist:'The Weeknd',title:'Blinding Lights'},[R('The Weeknd & ROSALÍA','Blinding Lights (Remix)','Blinding Lights (Remix) - Single'),R('The Weeknd','Blinding Lights (Live)','Live At SoFi Stadium'),R('The Weeknd','Blinding Lights','After Hours (Deluxe)',{releaseDate:'2020-03-23'}),R('The Weeknd','Blinding Lights','After Hours',{releaseDate:'2020-03-20'})]);
+ assert.equal(b.item.collectionName,'After Hours');
+});
+test('Song tagged with its album prefers that album',()=>{
+ const b=best({artist:'SZA',title:'Snooze',album:'SOS Deluxe: LANA'},[R('SZA','Snooze','SOS',{releaseDate:'2022-12-09'}),R('SZA','Snooze','SOS Deluxe: LANA',{releaseDate:'2024-12-20'})]);
+ assert.equal(b.item.collectionName,'SOS Deluxe: LANA');
+});
+test('Album tag that the store doesn’t list still gets the original cover',()=>{
+ const b=best({artist:'Kendrick Lamar',title:'Not Like Us',album:'Hits 2024'},[R('Kendrick Lamar','Not Like Us','Not Like Us - Single')]);
+ assert.equal(b&&b.item.collectionName,'Not Like Us - Single');
+});
+test('YouTube "(Lyrics)" / "(Explicit)" tags are cleaned from titles',()=>{
+ const p=parse({snippet:{title:'Sabrina Carpenter - Espresso (Lyrics)',channelTitle:'7clouds'}});
+ assert.equal(p.title,'Espresso');
+ assert.equal(parse({snippet:{title:'Kendrick Lamar - Not Like Us (Explicit)',channelTitle:'x'}}).title,'Not Like Us');
+});
+test('Studio album preferred over its single and deluxe re-issue',()=>{
+ const b=best({artist:'SZA',title:'Snooze'},[R('SZA','Snooze','SOS',{releaseDate:'2022-12-09',trackCount:23}),R('SZA','Snooze','SOS Deluxe: LANA',{releaseDate:'2022-12-08',trackCount:23}),R('SZA','Snooze','Snooze - Single',{releaseDate:'2022-12-08',trackCount:4})]);
+ assert.equal(b.item.collectionName,'SOS');
+});
