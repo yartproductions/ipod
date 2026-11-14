@@ -551,10 +551,14 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 (()=>{
 const $=s=>document.querySelector(s);
 const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#screen');
-const audio=new Audio(); audio.preload='auto';
+let audio=new Audio(); audio.preload='auto';
+const mainDeck=audio, spareDeck=new Audio(); spareDeck.preload='auto';
+function onActiveAudio(event,handler){
+  for(const deck of [mainDeck,spareDeck])deck.addEventListener(event,e=>{if(deck===audio)handler(e)});
+}
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -738,16 +742,17 @@ function cur(){return queue[qi]}
 function isPlaying(){return !audio.paused}
 function curTime(){return audio.currentTime||0}
 function dur(){return audio.duration||0}
-function seekTo(t){if(isFinite(t))audio.currentTime=t}
+function seekTo(t){if(isFinite(t)){cancelCrossfade();audio.currentTime=t}}
 function getVol(){return audio.volume}
-function setVol(v){audio.volume=Math.max(0,Math.min(1,v));return audio.volume}
+function setVol(v){mainDeck.volume=spareDeck.volume=Math.max(0,Math.min(1,v));return audio.volume}
 /* iOS/CarPlay-connected audio: one persistent media element and hardware media controls.
    This is web media playback, not a native CarPlay app entitlement. */
-function resumeAudio(){return audio.play().catch(e=>{
+function resumeAudio(){prepareCrossfade();return audio.play().catch(e=>{
   // iOS may block autoplay after a navigation/interrupt; user can tap Play again.
   if(e&&e.name!=='AbortError')console.warn('iPod playback needs user interaction:',e);
 })}
 function load(play){
+  cancelCrossfade();
   const t=cur();if(!t)return;
   if(audio.src!==t.url)audio.src=t.url;
   audio.preload='auto';
@@ -762,6 +767,77 @@ function next(manual){if(!cur())return;
  else{audio.pause();audio.currentTime=0;render()}}
 function prev(){if(!cur())return;if(curTime()>3){seekTo(0);return}if(importedPlayback?.queue===queue)return advanceImported(-1,true);if(qi>0){qi--;load(true)}else seekTo(0)}
 function playPause(){if(!cur()){shuffleAll();return}audio.paused?resumeAudio():audio.pause()}
+const CROSSFADE_OPTIONS=[0,2,4,6,8,12];
+let fadeContext=null,fade=null;
+const deckGain=new Map();
+function prepareCrossfade(){
+  if(!settings.crossfade)return;
+  try{
+    const Context=window.AudioContext||window.webkitAudioContext;
+    if(!Context)return;
+    fadeContext ||= new Context();
+    for(const deck of [mainDeck,spareDeck]){
+      if(deckGain.has(deck))continue;
+      const gain=fadeContext.createGain();
+      fadeContext.createMediaElementSource(deck).connect(gain);
+      gain.connect(fadeContext.destination);
+      deckGain.set(deck,gain.gain);
+    }
+    if(fadeContext.state!=='running')fadeContext.resume().catch(()=>{});
+  }catch{}
+}
+function setDeckGain(deck,value){
+  const gain=deckGain.get(deck),now=fadeContext.currentTime;
+  gain.cancelScheduledValues(now);
+  gain.setValueAtTime(value,now);
+}
+function cancelCrossfade(){
+  if(!fade)return;
+  const transition=fade;fade=null;
+  clearTimeout(transition.timer);
+  const idle=transition.incoming===audio?transition.outgoing:transition.incoming;
+  idle.pause();idle.removeAttribute('src');idle.load();
+  setDeckGain(audio,1);setDeckGain(idle,1);
+}
+function crossfadeTarget(){
+  if(settings.repeat==='One')return null;
+  const session=importedPlayback?.queue===queue?importedPlayback:null;
+  const index=session?importedNeighbor(session,1):
+    qi+1<queue.length?qi+1:settings.repeat==='All'&&queue.length>1?0:-1;
+  if(index<0||session?.pending)return null;
+  const song=session?importedTrackSong(session.tracks[index]):queue[index];
+  return song?.url&&!song.deleted?{song,index,session}:null;
+}
+async function maybeCrossfade(){
+  const seconds=settings.crossfade,remaining=audio.duration-audio.currentTime;
+  if(!seconds||fade||audio.paused||audio.seeking||fadeContext?.state!=='running'||deckGain.size!==2||
+    !Number.isFinite(remaining)||remaining<=.25||remaining>Math.min(seconds,audio.duration/2))return;
+  const target=crossfadeTarget();
+  if(!target)return;
+  const outgoing=audio,incoming=audio===mainDeck?spareDeck:mainDeck;
+  const transition={outgoing,incoming,timer:null};fade=transition;
+  setDeckGain(incoming,0);
+  incoming.src=target.song.url;
+  try{await incoming.play()}catch{if(fade===transition)cancelCrossfade();return}
+  if(fade!==transition)return;
+  const latest=crossfadeTarget();
+  const duration=Math.min(seconds,(outgoing.duration-outgoing.currentTime)/(outgoing.playbackRate||1));
+  if(outgoing.paused||duration<=.15||latest?.song!==target.song||latest?.index!==target.index||latest?.session!==target.session){cancelCrossfade();return}
+  audio=incoming;
+  if(target.session){
+    target.session.index=target.index;target.session.prefetched=false;
+    queue=[target.song];target.session.queue=queue;qi=0;
+  }else qi=target.index;
+  const end=fadeContext.currentTime+duration;
+  setDeckGain(outgoing,1);setDeckGain(incoming,0);
+  deckGain.get(outgoing).linearRampToValueAtTime(0,end);
+  deckGain.get(incoming).linearRampToValueAtTime(1,end);
+  transition.timer=setTimeout(()=>{if(fade===transition)cancelCrossfade()},duration*1000);
+  setSession();syncMediaPlaybackState();syncMediaPosition();render();
+}
+onActiveAudio('timeupdate',maybeCrossfade);
+onActiveAudio('pause',cancelCrossfade);
+onActiveAudio('seeking',cancelCrossfade);
 function syncMediaPlaybackState(){
   if(!('mediaSession' in navigator))return;
   try{navigator.mediaSession.playbackState=audio.paused?'paused':'playing'}catch(e){}
@@ -774,11 +850,11 @@ function syncMediaPosition(){
     duration,position:Math.max(0,Math.min(position,duration)),playbackRate:audio.playbackRate||1
   })}catch(e){}
 }
-audio.addEventListener('ended',()=>next(false));
-['play','pause','playing','waiting'].forEach(e=>audio.addEventListener(e,()=>{
+onActiveAudio('ended',()=>next(false));
+['play','pause','playing','waiting'].forEach(e=>onActiveAudio(e,()=>{
   renderHdr();syncMediaPlaybackState();
 }));
-['loadedmetadata','durationchange','seeked'].forEach(e=>audio.addEventListener(e,syncMediaPosition));
+['loadedmetadata','durationchange','seeked'].forEach(e=>onActiveAudio(e,syncMediaPosition));
 // MediaSession metadata and position may be cleared when iOS changes audio route or suspends Safari.
 document.addEventListener('visibilitychange',()=>{
   if(!document.hidden&&cur()){setSession();syncMediaPlaybackState();syncMediaPosition()}
@@ -1065,7 +1141,7 @@ function prefetchImported(){
  session.prefetched=true;
  if(next.video&&!importedTrackSong(next))enqueueYT(next.video).catch(()=>{});
 }
-audio.addEventListener('timeupdate',prefetchImported);
+onActiveAudio('timeupdate',prefetchImported);
 
 function addHistory(it){
   const e=it.kind==='ytlist'?{type:'playlist',list:it.list,title:it.title}:{type:'video',id:it.id,title:it.title||'',artist:it.artist||''};
@@ -1258,6 +1334,11 @@ function settingsMenu(){
   return list('Settings',()=>[
     {label:'Shuffle',icon:'shuffle',val:settings.shuffle?'Songs':'Off',action:tog('shuffle',[false,true])},
     {label:'Repeat',icon:'repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
+    {label:'Crossfade',val:settings.crossfade?settings.crossfade+' sec':'Off',action:()=>{
+      settings.crossfade=CROSSFADE_OPTIONS[(CROSSFADE_OPTIONS.indexOf(settings.crossfade)+1)%CROSSFADE_OPTIONS.length];
+      if(settings.crossfade)prepareCrossfade();else cancelCrossfade();
+      saveSettings();render();
+    }},
     {label:'Clicker',val:settings.clicker?'On':'Off',action:tog('clicker',[true,false])},
     {label:'Haptics',val:settings.haptics?'On':'Off',action:tog('haptics',[true,false])},
     ...(settings.haptics?[
@@ -1530,7 +1611,7 @@ function flashVo(msg){
   clearTimeout(voTimer);voTimer=setTimeout(()=>{if(isPlaying()&&!scrub)vo.classList.remove('on');if(msg)renderVideoMeta()},msg?2500:3000);
 }
 setInterval(()=>{if(screenEl.classList.contains('splitmode')&&$('#split').classList.contains('npmode'))splitTickNP()},500);
-['play','pause'].forEach(e=>audio.addEventListener(e,()=>{if(screenEl.classList.contains('splitmode')&&$('#split').classList.contains('npmode'))splitRenderNP()}));
+['play','pause'].forEach(e=>onActiveAudio(e,()=>{if(screenEl.classList.contains('splitmode')&&$('#split').classList.contains('npmode'))splitRenderNP()}));
 function tick(){
   const v=top();if(v.type!=='now'&&v.type!=='video')return;
   const d=dur(),c=curTime(),pct=d?c/d*100:0;
@@ -1539,7 +1620,7 @@ function tick(){
     if(!isPlaying())$('#vo').classList.add('on')}
 }
 setInterval(tick,300);
-audio.addEventListener('timeupdate',()=>{tick();syncMediaPosition()});
+onActiveAudio('timeupdate',()=>{tick();syncMediaPosition()});
 function showVol(){
   const v=top(),host=v.type==='video'?$('#vo'):$('#np');if(!host)return;
   if(v.type==='video')flashVo();
@@ -2965,7 +3046,7 @@ async function initUpdates(){
 stack=[mainMenu()];render();wake();initUpdates();
 dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 // Explicitly hand the optional Friends module only the player functions it needs.
-window.ipodFriendsBridge=Object.freeze({audio,cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
+window.ipodFriendsBridge=Object.freeze({audio:{get paused(){return audio.paused},get currentTime(){return audio.currentTime},addEventListener:onActiveAudio},cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
 window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
