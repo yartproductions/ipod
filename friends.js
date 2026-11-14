@@ -19,58 +19,113 @@ const normalize=s=>String(s||'').trim().replace(/^@/,'').toLowerCase();
 const serverTime=()=>firebase.firestore.FieldValue.serverTimestamp();
 const maybeError=e=>e&&e.code==='permission-denied'
   ?'Firestore permission denied. Deploy the reviewed Friends rules first.'
+  :e&&(e.code==='unreachable'||isTransient(e))?'Friends couldn’t reach the server. Check your connection and try again.'
   :e&&e.message||'Please try again.';
-// Fail visibly instead of leaving the iPod on "Connecting Friends..." indefinitely.
-// Errors name the stage so local browser restrictions and Firebase configuration
-// problems can be distinguished without exposing account data.
-function limited(task,label,ms=15000){
+// Reliability layer. Firebase is slow to (re)connect after a cold start, after iOS
+// suspends the page, or when WebKit stalls the streaming channel. Rather than
+// failing on the first slow request, every call gets a bounded wait, the Firestore
+// channel is reset, and the call is retried. Errors only surface after all retries.
+const TRANSIENT=new Set(['unavailable','deadline-exceeded','aborted','internal','resource-exhausted',
+  'auth/network-request-failed','auth/timeout','auth/internal-error','timeout']);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function limited(task,label,ms){
   return new Promise((resolve,reject)=>{
-    const timer=setTimeout(()=>reject(Error(label+' timed out. Check browser networking and Firebase Authentication settings.')),ms);
+    const timer=setTimeout(()=>{const e=Error(label+' timed out.');e.code='timeout';reject(e)},ms);
     Promise.resolve(task).then(v=>{clearTimeout(timer);resolve(v)},e=>{clearTimeout(timer);reject(e)});
   });
 }
-function loadSDK(file){
+const isTransient=e=>!e||TRANSIENT.has(e.code)||/network|timed out|offline|failed to fetch|load failed/i.test(e.message||'');
+async function resetNetwork(){
+  if(!dbRef)return;
+  try{await limited(dbRef.disableNetwork(),'disable',3000)}catch(e){}
+  try{await limited(dbRef.enableNetwork(),'enable',3000)}catch(e){}
+}
+// Run fn() with retries. fn must be safe to repeat (all Friends writes are).
+async function withRetry(label,fn,waits=[9000,12000,18000,25000]){
+  let last;
+  for(let i=0;i<waits.length;i++){
+    if(i&&!navigator.onLine)await waitOnline(8000);
+    try{return await limited(fn(),label,waits[i])}
+    catch(e){
+      last=e;
+      if(!isTransient(e))throw e;
+      console.warn('Friends:',label,'attempt',i+1,'failed:',e.code||e.message);
+      await resetNetwork();
+      await sleep(400*(i+1));
+    }
+  }
+  const e=Error('Friends couldn’t reach the server. Check your connection and try again.');e.code='unreachable';e.cause=last;throw e;
+}
+function waitOnline(ms){
+  if(navigator.onLine)return Promise.resolve();
+  return new Promise(r=>{const t=setTimeout(done,ms);function done(){clearTimeout(t);window.removeEventListener('online',done);r()}window.addEventListener('online',done)});
+}
+function loadSDKOnce(file){
   return new Promise((resolve,reject)=>{
+    const src='https://www.gstatic.com/firebasejs/'+SDK+'/'+file;
+    document.querySelectorAll('script[data-fb="'+file+'"]').forEach(x=>x.remove());
     const script=document.createElement('script');
-    const timer=setTimeout(()=>{
-      script.remove();reject(Error('Firebase SDK '+file+' timed out. Check access to www.gstatic.com and browser content blockers.'));
-    },12000);
-    script.src='https://www.gstatic.com/firebasejs/'+SDK+'/'+file;
-    script.onload=()=>{clearTimeout(timer);resolve()};
-    script.onerror=()=>{clearTimeout(timer);reject(Error('Could not load '+file+' from www.gstatic.com. Check your connection or content blocker.'))};
+    script.dataset.fb=file;script.src=src;
+    script.onload=()=>resolve();
+    script.onerror=()=>{script.remove();reject(Object.assign(Error('Could not load '+file),{code:'unavailable'}))};
     document.head.appendChild(script);
   });
+}
+const sdkReady={'firebase-app-compat.js':()=>window.firebase&&firebase.initializeApp,
+  'firebase-auth-compat.js':()=>window.firebase&&firebase.auth,
+  'firebase-firestore-compat.js':()=>window.firebase&&firebase.firestore};
+async function loadSDK(file){
+  if(sdkReady[file]())return;
+  await withRetry('Loading '+file,()=>loadSDKOnce(file),[12000,15000,20000]);
+}
+// Profile is cached so Friends opens instantly and refreshes in the background.
+const PKEY='ipod.friends.profile';
+function cachedProfile(uid){try{const c=JSON.parse(localStorage.getItem(PKEY)||'null');return c&&c.uid===uid?c:null}catch(e){return null}}
+function cacheProfile(p){try{p?localStorage.setItem(PKEY,JSON.stringify({...p,createdAt:null,updatedAt:null})):localStorage.removeItem(PKEY)}catch(e){}}
+let dbRef=null,profileLoaded=false;
+async function refreshProfile(){
+  const doc=await withRetry('Loading Friends profile',()=>dbRef.collection('profiles').doc(account.uid).get());
+  profile=doc.exists?doc.data():null;profileLoaded=true;cacheProfile(profile);
+  return profile;
 }
 async function connect(){
   if(api)return api;
   if(initTask)return initTask;
   initTask=(async()=>{
-    await limited(loadSDK('firebase-app-compat.js'),'Firebase app SDK');
-    await limited(loadSDK('firebase-auth-compat.js'),'Firebase Auth SDK');
-    await limited(loadSDK('firebase-firestore-compat.js'),'Firebase Firestore SDK');
-    if(!window.firebase)throw Error('Firebase SDK did not initialize. Check Console for script errors.');
-    const app=firebase.apps.find(x=>x.name==='ipod-friends')||firebase.initializeApp(CONFIG,'ipod-friends');
+    await loadSDK('firebase-app-compat.js');
+    await loadSDK('firebase-auth-compat.js');
+    await loadSDK('firebase-firestore-compat.js');
+    if(!window.firebase)throw Error('Firebase SDK did not initialize.');
+    let app=firebase.apps.find(x=>x.name==='ipod-friends'),fresh=!app;
+    if(!app)app=firebase.initializeApp(CONFIG,'ipod-friends');
     const auth=app.auth(),db=app.firestore();
-    // Auth sessions can take time to restore in Safari private browsing.
-    // Use a safe unsubscribe and a bounded wait so errors can surface.
-    const existing=await limited(new Promise((resolve,reject)=>{
-      let unsub=()=>{},settled=false;
-      const done=(user,error)=>{
-        if(settled)return;
-        settled=true;
-        try{unsub()}catch(e){}
-        if(error)reject(error);else resolve(user);
-      };
-      unsub=auth.onAuthStateChanged(user=>done(user),err=>done(null,err));
-      if(settled)try{unsub()}catch(e){}
-    }),'Restoring anonymous Firebase session',18000);
-    account=existing||(await limited(auth.signInAnonymously(),'Creating anonymous Firebase account',18000)).user;
-    const doc=await limited(db.collection('profiles').doc(account.uid).get(),'Loading Friends profile from Firestore',18000);
-    profile=doc.exists?doc.data():null;
+    if(fresh){
+      // WebKit (iOS app + Safari) often stalls Firestore's streaming channel; long polling is steady.
+      const webkit=/AppleWebKit/.test(navigator.userAgent)&&!/Chrome|Chromium|Android/.test(navigator.userAgent);
+      try{db.settings(webkit?{experimentalForceLongPolling:true,merge:true}:{experimentalAutoDetectLongPolling:true,merge:true})}catch(e){}
+    }
+    dbRef=db;
+    // Restoring a saved session is local (IndexedDB); just wait for it.
+    const existing=await limited(new Promise(resolve=>{
+      const unsub=auth.onAuthStateChanged(user=>{try{unsub()}catch(e){}resolve(user)},()=>resolve(null));
+    }),'Restoring session',10000).catch(()=>auth.currentUser);
+    account=existing||(await withRetry('Creating anonymous account',()=>auth.signInAnonymously())).user;
+    const cached=cachedProfile(account.uid);
+    if(cached&&!profileLoaded){profile=cached;refreshProfile().catch(e=>console.warn('Friends: profile refresh',e.message))}
+    else if(!profileLoaded)await refreshProfile();
     api={auth,db};
     return api;
   })();
   try{return await initTask}finally{initTask=null}
+}
+// Keep the connection warm: reconnect when the app comes back, and pre-connect
+// in the background for people who already use Friends.
+function wake(){if(dbRef&&navigator.onLine)dbRef.enableNetwork().catch(()=>{})}
+const usedBefore=()=>{try{return !!localStorage.getItem(PKEY)||localStorage.getItem('ipod.friends.used')==='1'}catch(e){return false}};
+if(typeof document!=='undefined'){
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')wake()});
+  window.addEventListener('online',()=>{wake();if(!api&&usedBefore())connect().catch(()=>{})});
+  if(usedBefore()&&navigator.onLine)setTimeout(()=>connect().catch(e=>console.warn('Friends warm-up:',e.message)),2500);
 }
 function friendsMenu(){
   if(!profile)return list('Friends',[
@@ -98,11 +153,13 @@ function profileMenu(){
 }
 async function runView(label,action){
   const loading=loadingView(label);push(loading);
-  try{const next=await action();if(top()===loading)replaceTop(next||friendsMenu())}
+  try{const next=await withRetry(label,action,[15000,20000,25000]);if(top()===loading)replaceTop(next||friendsMenu())}
   catch(e){if(top()===loading)replaceTop(msgView('Friends Error',maybeError(e)))}
 }
 async function open(){
   if(!navigator.onLine){push(msgView('Friends Offline','Connect to the internet to use Friends. Your downloaded music still works offline.'));return}
+  try{localStorage.setItem('ipod.friends.used','1')}catch(e){}
+  if(api){push(friendsMenu());return}
   await runView('Connecting Friends…',async()=>{await connect();return friendsMenu()});
 }
 async function createProfile(raw){
@@ -113,13 +170,13 @@ async function createProfile(raw){
     await db.runTransaction(async tx=>{
       const user=db.collection('profiles').doc(uid),handle=db.collection('handles').doc(username);
       const [userSnapshot,handleSnapshot]=await Promise.all([tx.get(user),tx.get(handle)]);
-      if(userSnapshot.exists)throw Error('This device already has a profile.');
+      if(userSnapshot.exists){if(userSnapshot.data().username===username)return;throw Error('This device already has a profile.')}
       if(handleSnapshot.exists)throw Error('That username is already taken.');
       const time=serverTime();
       tx.set(user,{uid,username,displayName:username,sharing:false,createdAt:time,updatedAt:time});
       tx.set(handle,{uid});
     });
-    profile=(await db.collection('profiles').doc(uid).get()).data();
+    profile=(await db.collection('profiles').doc(uid).get()).data();cacheProfile(profile);
     return msgView('Welcome, @'+username,'Your identity is ready. Sharing is OFF until you enable it under Friends.');
   });
 }
@@ -128,7 +185,7 @@ async function changeDisplayName(raw){
   if(!displayName||displayName.length>32){replaceTop(msgView('Invalid Name','Choose a display name with 1–32 characters.'));return}
   await runView('Saving Name…',async()=>{
     await api.db.collection('profiles').doc(account.uid).update({displayName,updatedAt:serverTime()});
-    profile.displayName=displayName;return profileMenu();
+    profile.displayName=displayName;cacheProfile(profile);return profileMenu();
   });
 }
 async function changeUsername(raw){
@@ -142,13 +199,14 @@ async function changeUsername(raw){
       const newRef=db.collection('handles').doc(username);
       const [oldProfile,newHandle]=await Promise.all([tx.get(p),tx.get(newRef)]);
       if(!oldProfile.exists)throw Error('Profile missing.');
-      if(newHandle.exists)throw Error('Username already taken.');
       const previous=oldProfile.data().username;
+      if(previous===username)return;
+      if(newHandle.exists)throw Error('Username already taken.');
       tx.delete(db.collection('handles').doc(previous));
       tx.set(newRef,{uid});
       tx.update(p,{username,updatedAt:serverTime()});
     });
-    profile.username=username;return profileMenu();
+    profile.username=username;cacheProfile(profile);return profileMenu();
   });
 }
 async function findFriend(raw){
@@ -232,9 +290,9 @@ async function friendsList(){
   return list('My Friends',entries);
 }
 async function toggleSharing(){
-  const sharing=!profile.sharing;
+  const sharing=!profile.sharing;await connect();
   await api.db.collection('profiles').doc(account.uid).update({sharing,updatedAt:serverTime()});
-  profile.sharing=sharing;
+  profile.sharing=sharing;cacheProfile(profile);
   return msgView('Listening '+(sharing?'Shared':'Private'),
     sharing?'Approved friends can see your three most recently recorded listens.':'Other users can no longer see your listening history.');
 }
@@ -270,7 +328,7 @@ function recordTime(){
   if(delta>0&&delta<3)seconds+=delta;
   if(!published&&seconds>=30){
     published=true;
-    publishPlay(track).catch(e=>console.warn('Friends activity unavailable:',e.message));
+    withRetry('Sharing listen',()=>publishPlay(track)).catch(e=>console.warn('Friends activity unavailable:',e.message));
   }
 }
 async function publishPlay(song){
