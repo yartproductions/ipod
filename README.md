@@ -128,3 +128,20 @@ response, use the extractor to obtain the complete tracklist.
 Once saved, choose **Match Unresolved** to check local music and then search
 YouTube in batches. Previously verified matches can be reused across saved
 playlists. Review ambiguous results in the playlist.
+
+### Import YouTube and Spotify playlists
+
+Open **YouTube → Import Playlist → Paste Playlist Link**.
+
+- **Public or unlisted YouTube / YouTube Music:** Paste the link, preview the
+  playlist and save it. The importer prompts for a YouTube Data API key if
+  needed. Existing video IDs carry over and require no matching.
+- **Private YouTube:** Choose **Import Private YouTube Playlist** and open
+  Google Takeout while signed in as the owner. Export YouTube and YouTube
+  Music playlists, unzip the archive and select the individual playlist's
+  video CSV. The importer preserves video IDs and order. Video access still
+  depends on YouTube permissions.
+- **Spotify:** Paste the link to open the CSV export options, or import an
+  existing export directly. Sign in to Spotify in the exporter for private
+  playlists. Save the preview and choose **Match Unresolved** to find tracks
+  in your local library or on YouTube.
