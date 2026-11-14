@@ -2424,14 +2424,41 @@ function submitInput(){const v=top();if(v.type!=='input')return;const val=($('#i
   if(!val.trim()&&v.title!=='YouTube Key')return;v.onSubmit(val)}
 // ----- Hold switch -----
 let holdOn=false,lockTimer=null;
-function setHold(on){holdOn=on;$('#hold').classList.toggle('on',on);$('#lk').classList.toggle('on',on);if(on){showLock()}else $('#lockpop').classList.remove('on')}
+let displayLock=null,requestingDisplayLock=false;
+async function syncHoldDisplayLock(){
+  if(!holdOn||document.visibilityState!=='visible'){
+    const lock=displayLock;displayLock=null;
+    if(lock&&!lock.released)await lock.release().catch(()=>{});
+    return;
+  }
+  if((displayLock&&!displayLock.released)||requestingDisplayLock||!navigator.wakeLock)return;
+  requestingDisplayLock=true;
+  try{
+    const lock=await navigator.wakeLock.request('screen');
+    if(holdOn&&document.visibilityState==='visible')displayLock=lock;
+    else await lock.release();
+  }catch{}finally{requestingDisplayLock=false}
+}
+function setHold(on){
+  holdOn=on;
+  $('#hold').classList.toggle('on',on);
+  $('#lk').classList.toggle('on',on);
+  if(on)showLock();else $('#lockpop').classList.remove('on');
+  wake();
+  syncHoldDisplayLock();
+}
 function showLock(){$('#lockpop').classList.add('on');clearTimeout(lockTimer);lockTimer=setTimeout(()=>$('#lockpop').classList.remove('on'),1100)}
-$('#hold').addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();setHold(!holdOn);click();wake()});
+$('#hold').addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();setHold(!holdOn);click()});
+document.addEventListener('visibilitychange',syncHoldDisplayLock);
 // ----- Backlight -----
 let lightTimer=null;
-function wake(){screenEl.classList.remove('dim');clearTimeout(lightTimer);
+function wake(){
+  screenEl.classList.remove('dim');
+  clearTimeout(lightTimer);
+  if(holdOn)return;
   const ms={'10 sec':1e4,'20 sec':2e4,'1 min':6e4}[settings.backlight];
-  if(ms&&!(top()&&top().type==='brick'))lightTimer=setTimeout(()=>screenEl.classList.add('dim'),ms)}
+  if(ms&&!(top()&&top().type==='brick'))lightTimer=setTimeout(()=>screenEl.classList.add('dim'),ms);
+}
 // ----- Fast scroll (acceleration) + jump letter -----
 let lastTickAt=0,streak=0,letterTimer=null;
 function accelStep(){
