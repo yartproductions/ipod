@@ -131,6 +131,30 @@ function available(t){return getSongs().find(s=>s.sourceId&&s.sourceId===t.youtu
  getSongs().find(s=>(matcher()?.exactCandidate?.(t,s)||
  (!matcher()&&normalize(s.title)===normalize(t.title)&&normalize(s.artist)===normalize(t.artist)))&&
  (!t.duration||!s.duration||Math.abs(t.duration-s.duration)<=Math.max(5,t.duration*.03)));}
+function playTrack(pl,index){
+ const track=pl.tracks[index],local=available(track);
+ if(local){
+  const ready=pl.tracks.map((t,i)=>({song:available(t),index:i})).filter(row=>row.song);
+  playList(ready.map(row=>row.song),ready.findIndex(row=>row.index===index));
+ }else if(track.youtubeId){
+  playYT([{kind:'yt',id:track.youtubeId,title:track.title,artist:track.artist,album:track.album}],0);
+ }else{
+  push(msgView('Unmatched Track',track.artist+' — '+track.title+'. Use Playlist Options to match it.'));
+ }
+}
+function playlistTracks(pl){
+ const albums=pl.tracks.map((track,index)=>({
+  album:track.title,artist:track.artist,
+  getArt:()=>{
+   const local=available(track);
+   return local?b.artFor(local):b.genArt(track.album||track.title,track.artist);
+  },
+  play:()=>playTrack(pl,index)
+ }));
+ albums.push({album:'Playlist Options',artist:'Match or review tracks',art:b.genArt(pl.name,pl.provider),
+  action:()=>playlistView(pl)});
+ return {type:'flow',title:pl.name,playlistCards:true,albums,sel:0};
+}
 function playlistView(pl){
  return list(pl.name,()=>{
   const existing=pl.tracks.filter(available).length,matched=pl.tracks.filter(t=>t.youtubeId).length;
@@ -153,12 +177,7 @@ function playlistView(pl){
     if(!ready.length)push(msgView('No Offline Songs','Match or add songs before playing.'));
     else playList(ready,0);
    }},
-   ...pl.tracks.map((t,i)=>({label:(i+1)+'. '+t.title,val:t.artist,action:()=>{
-    const local=available(t);
-    if(local)playList([local],0);
-    else if(t.youtubeId)playYT([{kind:'yt',id:t.youtubeId,title:t.title,artist:t.artist,album:t.album}],0);
-    else push(msgView('Unmatched Track',t.artist+' — '+t.title+'. Use Match Unresolved first.'));
-   }}))
+   ...pl.tracks.map((t,i)=>({label:(i+1)+'. '+t.title,val:t.artist,action:()=>playTrack(pl,i)}))
   ];
  });
 }
@@ -298,7 +317,7 @@ function flow(){
    return b.genArt(pl.name,pl.provider);
   };
   return {album:pl.name,artist:pl.tracks.length+' tracks',getArt,
-   action:()=>playlistView(read().find(p=>p.id===pl.id)||pl)};
+   action:()=>playlistTracks(read().find(p=>p.id===pl.id)||pl)};
  });
  cards.push({album:'Import Playlist',artist:'Add another playlist',art:b.genArt('Import Playlist',''),action:importView});
  b.openPlaylistFlow(cards);

@@ -1483,8 +1483,11 @@ function openFlow(){
 function openSongFlow(){
   if(!songs.length)return push(msgView('No Songs','Add music to browse your songs.'));
   const list=songs.slice(),p=cur(),start=p?Math.max(0,list.findIndex(s=>s.id===p.id)):0;
-  push({type:'flow',title:'Song Flow',songList:list,sel:start,
-    albums:list.map(s=>({album:s.title,artist:s.artist+(known(s.album)?' — '+s.album:''),art:artFor(s),songs:[s]}))});
+  push(songFlowView('Song Flow',list,start));
+}
+function songFlowView(title,songList,sel=0){
+  return {type:'flow',title,songList,sel,
+    albums:songList.map(s=>({album:s.title,artist:s.artist+(known(s.album)?' — '+s.album:''),songs:[s]}))};
 }
 /* ---------- Recommendation Flow: discover music using the existing 3D shelf ---------- */
 function recommendationSeeds(){
@@ -1798,7 +1801,7 @@ function unfoldFlow(v,view){
   animation.finished.then(()=>{
     if(top()!==v)return;
     push(view);
-    body.querySelector('.list')?.animate([
+    body.querySelector(view.type==='flow'?'#flow .stage':'.list')?.animate([
       {opacity:.25,transform:'perspective(500px) rotateY(24deg) scaleX(.88)',transformOrigin:'left center'},
       {opacity:1,transform:'perspective(500px) rotateY(0deg) scaleX(1)',transformOrigin:'left center'}
     ],{duration:200,easing:'ease-out'});
@@ -1809,8 +1812,9 @@ function selectFlow(v){
   if(!card||v.opening)return;
   if(v.recommendItems)playYT(v.recommendItems,v.sel);
   else if(v.songList)playList(v.songList,v.sel);
+  else if(card.play)card.play();
   else if(card.action)unfoldFlow(v,card.action());
-  else unfoldFlow(v,songsMenu(card.songs,card.album));
+  else unfoldFlow(v,songFlowView(card.album,card.songs.slice()));
 }
 function renderFlow(v,from){
   const n=v.albums.length,lo=n>40?Math.max(0,v.sel-FLOW_WIN):0,hi=n>40?Math.min(n-1,v.sel+FLOW_WIN):n-1;v._lo=lo;v._hi=hi;
@@ -1831,8 +1835,9 @@ function renderFlow(v,from){
     else flowUpdate(v);
     if(v.recommendItems){recommendationArtPreview(v,v.sel);recommendationMaybeLoadMore(v)}
   }));
+  const renderedFlow=$('#flow');
   if(from!=null&&from!==v.sel){const to=v.sel;v.sel=from;flowUpdate(v);v.sel=to;
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#flow');if(f){f.classList.remove('instant');flowUpdate(v)}}));return}
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#flow');if(f&&f===renderedFlow){f.classList.remove('instant');flowUpdate(v)}}));return}
   flowUpdate(v);if(v.recommendItems)recommendationArtPreview(v,v.sel);
   requestAnimationFrame(()=>{const f=$('#flow');if(f)f.classList.remove('instant')});
 }
@@ -2534,7 +2539,7 @@ dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 window.ipodFriendsBridge=Object.freeze({audio,cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
-window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,openPlaylistFlow,genArt,isYoutubeThumbnail,getSongs:()=>songs});
+window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
 })();
 </script>
 <script src="./friends.js" defer></script>
