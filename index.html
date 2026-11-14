@@ -386,17 +386,59 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .sheet .btns{flex:none;border-top:1px solid #c9ccd0}
 .sheet .bt{height:25px;line-height:25px;padding:0 10px;font-size:13px;font-weight:700;color:#111;cursor:pointer}
 .sheet .bt.sel{color:#fff;background:linear-gradient(#5fb4f8,#2b7fde 55%,#1f6ccb)}
-.sheet.radial .card{width:244px;background:#202832f5;border:1px solid #758091;border-radius:50%;height:174px;color:#fff}
-.sheet.radial .st,.sheet.radial .sbody,.sheet.radial .hint{display:none}
-.sheet.radial .btns{position:relative;flex:1;border:0}
-.sheet.radial .bt{position:absolute;display:grid;place-items:center;text-align:center;width:76px;height:42px;padding:3px;line-height:1.1;white-space:normal;font-size:11px;color:#fff;background:#343f4f;border-radius:20px}
-.sheet.radial .bt.sel{background:linear-gradient(#5fb4f8,#226dcc)}
-.sheet.radial .bt[aria-disabled="true"]{opacity:.45}
-.sheet.radial .bt:nth-child(1){top:9px;left:calc(50% - 38px)}
-.sheet.radial .bt:nth-child(2){top:65px;right:9px}
-.sheet.radial .bt:nth-child(3){bottom:9px;left:calc(50% - 38px)}
-.sheet.radial .bt:nth-child(4){top:65px;left:9px}
-.sheet.radial .radial-caption{position:absolute;top:76px;left:86px;right:86px;text-align:center;font-size:10px;line-height:1.15;color:#cbd5e1;pointer-events:none}
+/* Playback dial (hold the center button): a round iPod-style dial with four wedges. */
+#sheet.radial{background:rgba(6,9,14,.42);-webkit-backdrop-filter:blur(3px) saturate(.9);backdrop-filter:blur(3px) saturate(.9);padding:0}
+#sheet.radial .card{width:auto;max-height:none;background:none;border:0;box-shadow:none;overflow:visible;animation:none}
+#sheet.radial .st,#sheet.radial .sbody,#sheet.radial .hint{display:none}
+#sheet.radial .btns{border:0;display:block;padding:0;background:none}
+.rdial{--d:184px;--hole:78px;position:relative;width:var(--d);height:var(--d);margin-top:20px;border-radius:50%;
+  animation:dialIn .34s cubic-bezier(.2,1.25,.35,1) both}
+@keyframes dialIn{from{opacity:0;transform:scale(.72) rotate(-24deg)}to{opacity:1;transform:none}}
+.rdial .rring{position:absolute;inset:0;border-radius:50%;
+  background:radial-gradient(circle at 50% 28%,#3d4654,#232a34 58%,#181d25);
+  box-shadow:0 10px 26px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.14),inset 0 -2px 6px rgba(0,0,0,.4),0 0 0 1px rgba(0,0,0,.55)}
+/* thin dividers between the four wedges */
+.rdial .rring::after{content:"";position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 45deg,rgba(255,255,255,.1) 0 .6deg,transparent 0 90deg,rgba(255,255,255,.1) 0 90.6deg,transparent 0 180deg,rgba(255,255,255,.1) 0 180.6deg,transparent 0 270deg,rgba(255,255,255,.1) 0 270.6deg,transparent 0);
+  -webkit-mask:radial-gradient(circle,transparent calc(var(--hole)/2 + 2px),#000 0);mask:radial-gradient(circle,transparent calc(var(--hole)/2 + 2px),#000 0)}
+/* the highlighted wedge glides round to the selection */
+.rdial .rsweep{position:absolute;inset:3px;border-radius:50%;transform:rotate(var(--a,0deg));transition:transform .28s cubic-bezier(.25,.9,.3,1.1);
+  background:conic-gradient(from -45deg,#6cc0ff,#2f86e8 45deg,#1d64c4 90deg,transparent 0);
+  -webkit-mask:radial-gradient(circle,transparent calc(var(--hole)/2 + 1px),#000 calc(var(--hole)/2 + 2px));mask:radial-gradient(circle,transparent calc(var(--hole)/2 + 1px),#000 calc(var(--hole)/2 + 2px));
+  filter:drop-shadow(0 0 6px rgba(70,160,255,.55))}
+#sheet.radial .bt{position:absolute;width:62px;height:auto;line-height:1.05;padding:0;background:none;border-radius:0;display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:9.5px;font-weight:700;letter-spacing:.1px;color:#c9d3e0;text-align:center;white-space:normal;transition:color .2s,transform .2s;
+  animation:wedgeIn .3s ease-out both}
+#sheet.radial .bt[data-b="1"]{animation-delay:.04s}#sheet.radial .bt[data-b="2"]{animation-delay:.08s}#sheet.radial .bt[data-b="3"]{animation-delay:.12s}
+@keyframes wedgeIn{from{opacity:0}to{opacity:1}}
+#sheet.radial .bt svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#sheet.radial .bt.sel{color:#fff;background:none;text-shadow:0 1px 2px rgba(0,0,0,.35);transform:scale(1.06)}
+#sheet.radial .bt[aria-disabled="true"]{opacity:.35}
+#sheet.radial .bt[data-b="0"],#sheet.radial .bt[data-b="2"]{width:84px;white-space:nowrap;left:calc(50% - 42px)}
+#sheet.radial .bt[data-b="0"]{top:14px}
+#sheet.radial .bt[data-b="2"]{bottom:14px;flex-direction:column-reverse}
+#sheet.radial .bt[data-b="1"],#sheet.radial .bt[data-b="3"]{width:44px;top:calc(50% - 22px)}
+#sheet.radial .bt[data-b="1"]{right:5px}
+#sheet.radial .bt[data-b="3"]{left:5px}
+/* center hub: silver like the iPod's own center button */
+.rdial .rhub{position:absolute;left:50%;top:50%;width:var(--hole);height:var(--hole);margin:calc(var(--hole)/-2) 0 0 calc(var(--hole)/-2);border-radius:50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0 9px;text-align:center;
+  background:radial-gradient(circle at 50% 30%,#fdfdfd,#e7e9ec 60%,#d3d6db);color:#1f2630;
+  box-shadow:inset 0 1px 1px #fff,inset 0 -2px 4px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.45)}
+.rdial .rhub b{font-size:10px;line-height:1.1;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rdial .rhub span{font-size:8px;line-height:1.15;color:#5d6878;max-height:3.5em;overflow:hidden;transition:opacity .15s}
+.rdial .rhub i{font-style:normal;font-size:7.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#8a94a3}
+.modern .rdial .rring{background:radial-gradient(circle at 50% 28%,#26303d,#161c25 60%,#10141a);box-shadow:0 10px 26px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.08),0 0 0 1px rgba(255,255,255,.06)}
+.modern .rdial .rsweep{background:conic-gradient(from -45deg,#60a5fa,#3b82f6 45deg,#2563eb 90deg,transparent 0)}
+.modern .rdial .rhub{background:radial-gradient(circle at 50% 30%,#2a3240,#1b222c);color:#f1f5f9;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 0 1px rgba(255,255,255,.06),0 2px 8px rgba(0,0,0,.5)}
+.modern .rdial .rhub span{color:#9fb0c4}.modern .rdial .rhub i{color:#7c8ba0}
+.modern.lightui #sheet.radial{background:rgba(220,226,234,.45)}
+.modern.lightui .rdial .rring{background:radial-gradient(circle at 50% 28%,#ffffff,#eef1f5 60%,#e1e6ec);box-shadow:0 8px 22px rgba(30,40,60,.25),inset 0 1px 0 #fff,0 0 0 1px #cfd6df}
+.modern.lightui .rdial .rring::after{background:conic-gradient(from 45deg,rgba(0,0,0,.08) 0 .6deg,transparent 0 90deg,rgba(0,0,0,.08) 0 90.6deg,transparent 0 180deg,rgba(0,0,0,.08) 0 180.6deg,transparent 0 270deg,rgba(0,0,0,.08) 0 270.6deg,transparent 0)}
+.modern.lightui #sheet.radial .bt{color:#4b5563}.modern.lightui #sheet.radial .bt.sel{color:#fff}
+.modern.lightui .rdial .rhub{background:radial-gradient(circle at 50% 30%,#f8fafc,#e8edf3);color:#111827;box-shadow:inset 0 1px 0 #fff,0 0 0 1px #d3dae3,0 2px 6px rgba(30,40,60,.18)}
+.modern.lightui .rdial .rhub span{color:#5d6878}
+@media (prefers-reduced-motion: reduce){.rdial,#sheet.radial .bt{animation:none}.rdial .rsweep{transition:none}}
 .sheet .hint{font-size:9.5px;color:#7a8494;text-align:center;padding:2px 0 4px}
 .modern .sheet{background:rgba(0,0,0,.45);backdrop-filter:blur(3px)}
 .modern .sheet .card{border:0;border-radius:14px;background:#1b2533;box-shadow:0 10px 30px rgba(0,0,0,.55)}
@@ -3121,11 +3163,17 @@ function openQueueRing(track){
   const add=playNext=>{
     if(!queueTrack(track,playNext))push(msgView('Queue Unavailable','Try again when the next track is ready.'));
   };
+  const name=track?.song?.title||track?.video?.title||'';
+  const ic=d=>`<svg viewBox="0 0 20 20">${d}</svg>`;
   openSheet('queue-ring','Playback','',[
-    {label:'Queue Song Next',disabled:!canQueue,run:()=>add(true)},
-    {label:'See the Queue',run:()=>push(upNextView())},
-    {label:'Add to the Queue',disabled:!canQueue,run:()=>add(false)},
-    {label:'Currently Playing',run:()=>{if(top().type!=='now')push(nowView())}}
+    {label:'Play Next',short:'Play Next',hint:name?`“${name}” plays after this song`:'Plays after this song',disabled:!canQueue,run:()=>add(true),
+      icon:ic('<path d="M3 5h9M3 10h6M3 15h6"/><path d="M12 9.5l5 3-5 3z" fill="currentColor"/>')},
+    {label:'Up Next',short:'Up Next',hint:'See and reorder the queue',run:()=>push(upNextView()),
+      icon:ic('<path d="M6 5h11M6 10h11M6 15h11"/><circle cx="3" cy="5" r=".6" fill="currentColor"/><circle cx="3" cy="10" r=".6" fill="currentColor"/><circle cx="3" cy="15" r=".6" fill="currentColor"/>')},
+    {label:'Add to Queue',short:'Add to Queue',hint:name?`“${name}” goes to the end`:'Goes to the end of the queue',disabled:!canQueue,run:()=>add(false),
+      icon:ic('<path d="M3 5h9M3 10h9M3 15h6"/><path d="M15 12v6M12 15h6"/>')},
+    {label:'Now Playing',short:'Now Playing',hint:cur()?.title||'',run:()=>{if(top().type!=='now')push(nowView())},
+      icon:ic('<path d="M7 5.5v9l7-4.5z" fill="currentColor"/><circle cx="10" cy="10" r="8"/>')}
   ]);
 }
 let centerPress=null;
@@ -3233,13 +3281,32 @@ function openSheet(kind,title,html,buttons){
   const radial=kind==='queue-ring';
   sheet.sel=buttons.findIndex(b=>!b.disabled);
   $('#sheet').classList.toggle('radial',radial);
+  if(radial){
+    sheet.angle=sheet.sel*90;sheet.subject=title;
+    $('#sheetBtns').innerHTML=`<div class="rdial" style="--a:${sheet.angle}deg"><div class="rring"></div><div class="rsweep"></div>`+
+      buttons.map((b,i)=>`<div class="bt${i===sheet.sel?' sel':''}" data-b="${i}"${b.disabled?' aria-disabled="true"':''}>${b.icon||''}<span>${esc(b.short||b.label)}</span></div>`).join('')+
+      `<div class="rhub"><i>Playback</i><b></b><span></span></div></div>`;
+    radialHub();
+  }else
   $('#sheetBtns').innerHTML=buttons.map((b,i)=>`<div class="bt${i===sheet.sel?' sel':''}" data-b="${i}"${b.disabled?' aria-disabled="true"':''}>${esc(b.label)}</div>`).join('')+
-    (radial?'<span class="radial-caption">Playback</span>':'')+
     (settings.style==='Modern'?'':'<div class="hint">Spin to choose · Center to select</div>');
   $('#sheet').classList.add('on');triggerHaptic('success');
 }
 function closeSheet(){sheet=null;$('#sheet').classList.remove('on','radial')}
-function sheetSel(i){if(!sheet)return;sheet.sel=i;document.querySelectorAll('#sheetBtns .bt').forEach((el,k)=>el.classList.toggle('sel',k===i))}
+function sheetSel(i){
+  if(!sheet)return;
+  if(sheet.kind==='queue-ring'){   // glide the highlight the short way round
+    const n=sheet.buttons.length,step=360/n;let d=((i-sheet.sel)%n+n)%n;if(d>n/2)d-=n;
+    sheet.angle+=d*step;$('#sheetBtns .rdial')?.style.setProperty('--a',sheet.angle+'deg');
+  }
+  sheet.sel=i;document.querySelectorAll('#sheetBtns .bt').forEach((el,k)=>el.classList.toggle('sel',k===i));
+  if(sheet.kind==='queue-ring')radialHub();
+}
+function radialHub(){
+  const b=sheet?.buttons[sheet.sel],hub=$('#sheetBtns .rhub');if(!b||!hub)return;
+  hub.querySelector('b').textContent=b.label;
+  hub.querySelector('span').textContent=b.disabled?'Not available for this song':(b.hint||'');
+}
 function sheetScroll(dir){
   if(!sheet)return;
   if(sheet.kind==='queue-ring'){
