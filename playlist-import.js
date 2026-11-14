@@ -85,7 +85,8 @@ function save(data){
  library.unshift(pl);write(library);return pl;
 }
 function available(t){return getSongs().find(s=>s.sourceId&&s.sourceId===t.youtubeId)||
- getSongs().find(s=>normalize(s.title)===normalize(t.title)&&normalize(s.artist)===normalize(t.artist)&&
+ getSongs().find(s=>(matcher()?.exactCandidate?.(t,s)||
+ (!matcher()&&normalize(s.title)===normalize(t.title)&&normalize(s.artist)===normalize(t.artist)))&&
  (!t.duration||!s.duration||Math.abs(t.duration-s.duration)<=Math.max(5,t.duration*.03)));}
 function playlistView(pl){
  return list(pl.name,()=>{
