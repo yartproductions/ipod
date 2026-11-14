@@ -2367,6 +2367,8 @@ async function initUpdates(){
 /* ---------- boot ---------- */
 stack=[mainMenu()];render();wake();initUpdates();
 dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
+// Explicitly hand the optional Friends module only the player functions it needs.
+window.ipodFriendsBridge=Object.freeze({audio,cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
 })();
 </script>
 <script src="./friends.js" defer></script>
