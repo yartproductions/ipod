@@ -31,6 +31,10 @@ const {doc,collection,query,where,getDocs,getDoc,setDoc,updateDoc,writeBatch,ser
      createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
    await assertFails(updateDoc(doc(a,'profiles','bob'),{displayName:'Hacked',updatedAt:serverTimestamp()}));
    await assertFails(setDoc(doc(c,'handles','alice_1'),{uid:'charlie'}));
+   // Looking at someone's card checks both request ids before any request exists.
+   await assertSucceeds(getDoc(doc(a,'friendRequests','alice_bob')));
+   await assertSucceeds(getDoc(doc(a,'friendRequests','bob_alice')));
+   await assertFails(getDoc(doc(c,'friendRequests','alice_bob')));
    const req=doc(a,'friendRequests','alice_bob');
    await assertSucceeds(setDoc(req,{from:'alice',to:'bob',status:'pending',
      createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));

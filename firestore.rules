@@ -73,7 +73,12 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /friendRequests/{id} {
-      allow get, list: if signedIn()
+      // get: by id, so the app can check "is there a request between us?" even when
+      // none exists yet (resource is null then). Only ids naming the caller are readable.
+      allow get: if signedIn()
+        && (id.split('_').size() == 2
+          && (id.split('_')[0] == request.auth.uid || id.split('_')[1] == request.auth.uid));
+      allow list: if signedIn()
         && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['from', 'to', 'status', 'createdAt', 'updatedAt'])
