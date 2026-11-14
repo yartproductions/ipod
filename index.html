@@ -1162,9 +1162,9 @@ async function startImported(session,index,{open=false}={}){
   }
  }finally{if(request===latestPlayRequest&&importedPlayback===session)session.pending=false}
 }
-function playImported(tracks,index){
+function playImported(tracks,index,cover=null){
  const selected=tracks[index],playable=tracks.filter(t=>t.song||t.video);
- const session={tracks:playable,index:playable.indexOf(selected),queue:null,pending:false,prefetched:false};
+ const session={cover,tracks:playable,index:playable.indexOf(selected),queue:null,pending:false,prefetched:false};
  if(session.index<0)return;
  importedPlayback=session;
  startImported(session,session.index,{open:true});
@@ -1631,7 +1631,7 @@ function renderView(){
   }else if(v.type==='now'&&settings.npStyle==='Flow'&&cur()){
     renderNowFlow(changed?direction:0);
   }else if(v.type==='now'&&settings.style==='Modern'&&cur()){
-    const s=cur(),art=artFor(s);screenEl.classList.add('nowmod');if(scrub)ctl=null;
+    const s=cur(),art=nowPlayingArt(s);screenEl.classList.add('nowmod');if(scrub)ctl=null;
     body.innerHTML=`<div class="mnp${hasNowLyrics(s)?' lyrics-on':''}" id="np">
       <div class="bg${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(art)}&quot;)"></div><div class="shade"></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
@@ -1655,8 +1655,8 @@ function renderView(){
     lastArtId=s.id;tick();ensureNowLyrics(s);
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
-    body.innerHTML=`<div class="np lyrics-np${hasNowLyrics(s)?' lyrics-on':''}" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><div class="cnt">${qi+1} of ${queue.length}</div>
-      <div class="top"><div class="artcol"><div class="art${showOfflineMark(s)?' offline-cover':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
+    body.innerHTML=`<div class="np lyrics-np${hasNowLyrics(s)?' lyrics-on':''}" id="np" style="--np-art:url(&quot;${esc(nowPlayingArt(s))}&quot;)"><div class="cnt">${qi+1} of ${queue.length}</div>
+      <div class="top"><div class="artcol"><div class="art${showOfflineMark(s)?' offline-cover':''}" style="background-image:url(&quot;${esc(nowPlayingArt(s))}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div></div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}${s.album?`<span class="alx"> — ${esc(s.album)}</span>`:''}</div><div class="al">${esc(s.album)}</div></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
@@ -1708,7 +1708,7 @@ function marquee(){
 function splitMode(){return settings.split==='Now Playing'&&cur()?'np':'art'}
 function splitRenderNP(){
   const el=$('#splitnp'),s=cur();if(!el||!s)return;
-  el.innerHTML=`<div class="st">${isPlaying()?'Now Playing':'Paused'}</div><div class="cv" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div>
+  el.innerHTML=`<div class="st">${isPlaying()?'Now Playing':'Paused'}</div><div class="cv" style="background-image:url(&quot;${esc(nowPlayingArt(s))}&quot;)"></div>
     <div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="pb"><i id="splitpb"></i></div>`;
   splitTickNP();
 }
@@ -2179,6 +2179,9 @@ function nowFlowPos(el,d){const ad=Math.abs(d);
   el.dataset.side=d>0?'r':d<0?'l':'c';
   el.style.zIndex=String(100-ad);el.style.opacity=ad>4?'0':'1';el.style.filter=d===0?'none':`brightness(${Math.max(.4,.8-ad*.08)})`}
 const showOfflineMark=s=>!!(s&&s.blob&&!s.deleted&&importedPlayback?.queue===queue);
+function nowPlayingArt(song){
+  return (importedPlayback?.queue===queue&&importedPlayback.cover?.())||artFor(song);
+}
 function nowPlayingNeighbors(){
   const session=importedPlayback?.queue===queue?importedPlayback:null;
   const neighbor=(offset,direction)=>{
@@ -2186,7 +2189,7 @@ function nowPlayingNeighbors(){
     const saved=session?(track&&importedTrackSong(track)):queue[qi+offset];
     const media=saved||track?.video;
     if(!media)return '';
-    const art=saved?artFor(saved):genArt(media.album||media.title,media.artist);
+    const art=session?.cover?.()||(saved?artFor(saved):genArt(media.album||media.title,media.artist));
     return `<i class="${direction}${saved?.blob?' offline-cover':''}" style="background-image:url(&quot;${esc(art)}&quot;)"></i>`;
   };
   return `<div class="np-neighbors" aria-hidden="true">${neighbor(-1,'previous')}${neighbor(1,'upcoming')}</div>`;
@@ -2207,8 +2210,8 @@ function renderNowFlow(direction=0){
   const reduced=direction&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const s=cur(),from=!reduced&&flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
   const lo=Math.max(0,qi-5),hi=Math.min(queue.length-1,qi+5);let cards='';
-  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${showOfflineMark(queue[i])?' offline-cover':''}" data-q="${i}"><div class="cv-motion" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div></div>`;
-  body.innerHTML=`<div class="fnp instant${hasNowLyrics(s)?' lyrics-flow':''}" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)"><span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
+  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${showOfflineMark(queue[i])?' offline-cover':''}" data-q="${i}"><div class="cv-motion" style="background-image:url(&quot;${esc(nowPlayingArt(queue[i]))}&quot;)"></div></div>`;
+  body.innerHTML=`<div class="fnp instant${hasNowLyrics(s)?' lyrics-flow':''}" id="np" style="--np-art:url(&quot;${esc(nowPlayingArt(s))}&quot;)"><span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
     <div class="stage">${cards}</div>
     <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
     <div class="cap"><b>${esc(s.title)}</b><span>${esc(s.artist)}${s.album?' — '+esc(s.album):''}</span></div>
@@ -3126,7 +3129,7 @@ dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 window.ipodFriendsBridge=Object.freeze({audio:{get paused(){return audio.paused},get currentTime(){return audio.currentTime},addEventListener:onActiveAudio},cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
-window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
+window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,enqueueYT,render,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
 })();
 </script>
 <script src="./friends.js" defer></script>
