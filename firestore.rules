@@ -56,7 +56,8 @@ service cloud.firestore {
         && getAfter(profile(request.auth.uid)).data.username != username;
     }
     match /profiles/{uid} {
-      allow get, list: if signedIn();
+      allow get: if signedIn();
+      allow list: if false;
       allow create: if me(uid) && validProfile(uid, request.resource.data)
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
@@ -96,6 +97,9 @@ service cloud.firestore {
           || (resource.data.status == 'accepted'
            && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid)
            && request.resource.data.status == 'declined')
+          || (resource.data.status == 'declined'
+           && resource.data.from == request.auth.uid
+           && request.resource.data.status == 'pending')
         );
       allow delete: if signedIn()
         && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
