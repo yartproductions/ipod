@@ -1501,6 +1501,7 @@ function recommendationSeeds(){
 function cleanMusicVideoText(x){
   return String(x||'').replace(/[\u200b-\u200d\uFEFF]/g,'')
     .replace(/\s*[\[(]\s*(?:(?:official|original)\s+)?(?:(?:music|lyric|lyrics)\s+video|video|(?:official\s+)?audio|visuali[sz]er|performance video|music visual|video clip|4k|hd|high definition)\b[^\])]*[\])]/gi,'')
+    .replace(/\s*[\[(]\s*(?:lyrics?|explicit|clean(?:\s+version)?|official|with lyrics|audio only|letra)\s*[\])]/gi,'')
     .replace(/\s*(?:\||·|•)\s*(?:(?:official|music|lyric|lyrics)\b.*|4k|hd)$/gi,'')
     .replace(/\s*[-–—]\s*(?:official\s+)?(?:music video|visuali[sz]er|lyric video|official audio)\s*$/gi,'')
     .replace(/\s+/g,' ').trim();
@@ -1590,11 +1591,26 @@ function artworkEdition(x){
   return ['live','remix','acoustic','instrumental','karaoke','demo','cover','extended','sped up','slowed','radio edit','re-recorded','remaster','remastered']
     .filter(tag=>new RegExp('\\b'+tag.replace(/ /g,'\\s+')+'\\b','i').test(text)).sort().join('|');
 }
+// "Daft Punk, Pharrell Williams & Nile Rodgers" credits Daft Punk; "SZA x Travis Scott" credits SZA.
+function artworkArtists(x){
+  const raw=String(x||'');
+  const parts=raw.split(/\s*(?:,|&|\+|\/|;|\bx\b|\band\b|\bwith\b|\bfeat(?:uring)?\.?|\bft\.?|\bvs\.?)\s*/i).map(artworkNormalize).filter(Boolean);
+  return new Set([artworkNormalize(raw),...parts].filter(Boolean));
+}
+function artworkArtistMatch(a,b){
+  const x=artworkArtists(a),y=artworkArtists(b);
+  if(!x.size||!y.size)return false;
+  const whole=artworkNormalize(a),other=artworkNormalize(b);
+  if(whole===other)return true;
+  // The first-credited (primary) artist on either side must be credited on the other.
+  const primary=s=>artworkNormalize(String(s||'').split(/\s*(?:,|&|\+|\/|;|\bx\b|\bwith\b|\bfeat(?:uring)?\.?|\bft\.?|\bvs\.?)\s*/i)[0]);
+  return (y.has(whole)&&primary(b)===whole)||(x.has(other)&&primary(a)===other);
+}
 function artworkScore(it,c){
   const artist=artworkNormalize(it.artist),candidateArtist=artworkNormalize(c.artistName);
   const title=artworkNormalize(it.title),candidateTitle=artworkNormalize(c.trackName);
   if(!artist||!candidateArtist||!title||!candidateTitle)return 0;
-  if(artist!==candidateArtist||title!==candidateTitle)return 0;
+  if(title!==candidateTitle||!artworkArtistMatch(it.artist,c.artistName))return 0;
   if(artworkEdition(it.title)!==artworkEdition(c.trackName))return 0;
   return 1;
 }
@@ -1606,19 +1622,66 @@ function artworkStore(key,record){
   if(keys.length>350)keys.sort((a,b)=>(artSaved[a].at||0)-(artSaved[b].at||0)).slice(0,keys.length-350).forEach(k=>delete artSaved[k]);
   clearTimeout(artSaveTimer);artSaveTimer=setTimeout(()=>ls.set(ART_CACHE_KEY,artSaved),250);
 }
+// iTunes Search allows roughly 20 requests a minute per person. Requests are queued
+// and spaced out; a rate-limit reply pauses the queue and is reported as "try later"
+// (never cached as "no artwork").
+const ITUNES_GAP=1600;
+let itunesNext=0,itunesPausedUntil=0,itunesChain=Promise.resolve();
+class ArtworkRateLimit extends Error{constructor(){super('Artwork service busy — will retry.');this.retry=true}}
+function itunesSearch(term){return itunesGet('search?term='+encodeURIComponent(term)+'&entity=song&media=music&country=US&limit=25')}
+function itunesGet(path){
+  const run=async()=>{
+    const wait=Math.max(itunesNext,itunesPausedUntil)-Date.now();
+    if(wait>0)await new Promise(r=>setTimeout(r,wait));
+    itunesNext=Date.now()+ITUNES_GAP;
+    let res;
+    try{res=await fetch('https://itunes.apple.com/'+path)}
+    catch(e){itunesPausedUntil=Date.now()+15000;throw new ArtworkRateLimit()}  // blocked responses carry no CORS headers
+    if(res.status===403||res.status===429||res.status>=500){itunesPausedUntil=Date.now()+60000;throw new ArtworkRateLimit()}
+    if(!res.ok)throw new Error('iTunes returned '+res.status);
+    return (await res.json()).results||[];
+  };
+  const task=itunesChain.then(run,run);
+  itunesChain=task.catch(()=>{});
+  return task;
+}
+function itunesBest(it,results){
+  const album=known(it.album)&&it.album!=='Offline Music'?artworkNormalize(it.album):'';
+  // Prefer the studio album over its single, deluxe re-issue or a compilation.
+  const single=x=>/\s-\s(single|ep)$/i.test(x.collectionName||'')||(x.trackCount>0&&x.trackCount<=3);
+  const reissue=x=>/deluxe|expanded|anniversary|edition|remaster|bonus|complete/i.test(x.collectionName||'');
+  const matches=results.filter(x=>x.kind==='song'&&x.artworkUrl100&&artworkScore(it,x)>=.92)
+    .sort((a,b)=>Number(!!a.isCompilation)-Number(!!b.isCompilation)
+      ||Number(single(a))-Number(single(b))||Number(reissue(a))-Number(reissue(b))
+      ||(Date.parse(a.releaseDate||'9999-12-31')-Date.parse(b.releaseDate||'9999-12-31')));
+  if(!matches.length)return null;
+  // Prefer the song's own album when the file names one; otherwise the original release.
+  const onAlbum=album&&matches.find(x=>artworkNormalize(x.collectionName)===album||artworkNormalize(String(x.collectionName).replace(/\s*-\s*(single|ep)$/i,''))===album);
+  return {item:onAlbum||matches[0],score:1};
+}
+const itunesArtistIds=new Map();
+async function itunesArtistId(artist,seen){
+  const name=artworkNormalize(artist);
+  if(itunesArtistIds.has(name))return itunesArtistIds.get(name);
+  let id=(seen.find(x=>x.artistId&&artworkNormalize(x.artistName)===name)||{}).artistId;
+  if(!id){
+    const found=await itunesGet('search?term='+encodeURIComponent(artist)+'&entity=musicArtist&media=music&country=US&limit=5');
+    id=(found.find(x=>artworkNormalize(x.artistName)===name)||{}).artistId;
+  }
+  itunesArtistIds.set(name,id||null);
+  return id||null;
+}
 async function artworkFromITunes(it){
-  const q=encodeURIComponent(it.artist+' '+it.title);
-  const res=await fetch('https://itunes.apple.com/search?term='+q+'&entity=song&media=music&country=US&limit=25');
-  if(!res.ok)throw new Error('iTunes returned '+res.status);
-  const data=await res.json();
-  const specificAlbum=known(it.album)&&it.album!=='Offline Music';
-  const candidates=(data.results||[]).filter(x=>x.kind==='song'&&x.artworkUrl100)
-    .filter(x=>!specificAlbum||artworkNormalize(x.collectionName)===artworkNormalize(it.album))
-    .map(x=>({item:x,score:artworkScore(it,x)}))
-    .sort((a,b)=>b.score-a.score||Number(!!a.item.isCompilation)-Number(!!b.item.isCompilation)
-      ||(Date.parse(a.item.releaseDate||'9999-12-31')-Date.parse(b.item.releaseDate||'9999-12-31')));
-  const best=candidates[0];
-  if(!best||best.score<.92)return null;
+  const first=await itunesSearch(it.artist+' '+it.title);
+  let best=itunesBest(it,first);
+  // Store search ranks covers and popular songs first, so a less-searched track can
+  // be missing from the top results. Then look through the artist's own catalogue.
+  if(!best){
+    const primary=String(it.artist||'').split(/\s*(?:\bx\b|&|\bfeat(?:uring)?\.?|\bft\.?|\bwith\b|\bvs\.?|\/|;)\s*/i)[0];
+    const id=await itunesArtistId(primary,first);
+    if(id)best=itunesBest(it,(await itunesGet('lookup?id='+id+'&entity=song&limit=200&sort=popular&country=US')).filter(x=>x.wrapperType==='track'));
+  }
+  if(!best)return null;
   const u=best.item.artworkUrl100;
   return {url:u.replace(/100x100(?:bb|-75)/,'600x600bb').replace(/^http:/,'https:'),source:'itunes',score:best.score,album:best.item.collectionName||''};
 }
@@ -1653,14 +1716,15 @@ async function recommendationArtwork(it,force=false){
   if(!force&&recommendationArtCache.has(key))return recommendationArtCache.get(key);
   if(!force&&artSaved[key]&&artSaved[key].url)return artSaved[key].url;
   const task=(async()=>{
-    let match=null;
-    try{match=await artworkFromITunes(it)}catch(e){}
+    let match=null,busy=null;
+    try{match=await artworkFromITunes(it)}catch(e){if(e.retry)busy=e}
     if(!match)try{match=await artworkFromMusicBrainz(it)}catch(e){}
     if(match){artworkStore(key,match);return match.url}
+    if(busy)throw busy;
     return null; // Only use YouTube's thumbnail when no confident cover was found.
   })();
   recommendationArtCache.set(key,task);
-  try{return await task}catch(e){recommendationArtCache.delete(key);return null}
+  try{return await task}catch(e){recommendationArtCache.delete(key);if(e.retry)throw e;return null}
 }
 function recommendationArtPreview(v,from=0){
   // Only load art for cards nearby, to avoid dozens of external lookups per page.
@@ -1670,7 +1734,11 @@ function recommendationArtPreview(v,from=0){
     const it=v.recommendItems[i];
     if(it.artLookedUp)continue;
     it.artLookedUp=true;
-    recommendationArtwork(it).then(url=>{
+    recommendationArtwork(it).catch(e=>{
+      // Service busy: allow another try when the shelf next comes near this card.
+      if(e&&e.retry)setTimeout(()=>{it.artLookedUp=false;if(top()===v)recommendationArtPreview(v,v.sel)},62000);
+      return null;
+    }).then(url=>{
       if(!url)return;
       it.art=url;it.artSource='matched-cover';v.albums[i].art=url;
       if(top()===v){
@@ -1841,8 +1909,10 @@ async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected
   let match=null;
   const saved=artSaved[artworkCacheKey(lib)];
   if(preferred&&saved&&saved.url===preferred)match={...saved};
-  if(!match)try{match=await artworkFromITunes(lib)}catch(e){}
+  let busy=null;
+  if(!match)try{match=await artworkFromITunes(lib)}catch(e){if(e.retry)busy=e}
   if(!match)try{match=await artworkFromMusicBrainz(lib)}catch(e){}
+  if(!match&&busy)throw busy;
   if(!match||!match.url)return null;
   if(lib.deleted||!songs.some(x=>x.id===lib.id))return null;
   try{
@@ -1892,7 +1962,7 @@ function artworkRepairMenu(s){
       try{
         const match=await repairSongArtwork(s,{force:true,overrideProtected:true});
         if(top()===waiting)replaceTop(msgView(match?'Cover Updated':'No Exact Match',match?'Saved '+match.source+' artwork to your device.':'No safe automatic match was found. Choose a cover manually or correct the song details.'));
-      }catch(e){if(top()===waiting)replaceTop(msgView('Artwork Error',e.message||'Lookup failed.'))}
+      }catch(e){if(top()===waiting)replaceTop(msgView(e&&e.retry?'Artwork Service Busy':'Artwork Error',e&&e.retry?'Too many lookups in a row. Wait a minute and try again.':e.message||'Lookup failed.'))}
     }},
     {label:'Choose Album Cover',chev:1,action:()=>getArtwork(s)},
     {label:'Correct Artist',chev:1,action:go(()=>inputView('Correct Artist','Artist name',v=>setSongArtworkMetadata(s,'artist',v),s.artist))},
@@ -1930,21 +2000,22 @@ async function artworkBatch(mode,quiet=false){
   artBusy=true;
   const view=quiet?null:msgView('Refreshing Covers','Checking '+eligible.length+' saved song'+(eligible.length===1?'':'s')+'. You can keep using the iPod.');
   if(view)push(view);
-  let fixed=0,unmatched=0;
+  let fixed=0,unmatched=0,busy=0;
   try{
     for(let i=0;i<eligible.length;i++){
       const song=eligible[i];if(quiet)artTried.add(song.id);
       setHdrTask('Artwork '+(i+1)+' of '+eligible.length,i/eligible.length);
       try{const result=await repairSongArtwork(song,{force:mode==='all'});if(result)fixed++;else unmatched++}
-      catch(e){unmatched++}
+      catch(e){if(e&&e.retry){busy++;artTried.delete(song.id)}else unmatched++}
       setHdrTask('Artwork '+(i+1)+' of '+eligible.length,(i+1)/eligible.length);
       if(i<eligible.length-1)await new Promise(resolve=>setTimeout(resolve,800));
     }
   }finally{artBusy=false}
   setHdrTask('Artwork '+fixed+' updated',1,true);
-  if(view&&top()===view)replaceTop(msgView('Artwork Complete',fixed+' covers updated. '+unmatched+' unchanged. Embedded and manually chosen art was preserved.'));
+  if(view&&top()===view)replaceTop(msgView('Artwork Complete',fixed+' covers updated. '+unmatched+' unchanged.'+(busy?' '+busy+' will be retried automatically in a minute.':'')+' Embedded and manually chosen art was preserved.'));
   else if(top()?.type==='now'||top()?.type==='flow')render();
   if(artAgain){artAgain=false;setTimeout(()=>findMissingArtwork(true),1500)}
+  else if(busy)setTimeout(()=>findMissingArtwork(true),75000);
 }
 function findMissingArtwork(quiet=false){return artworkBatch('missing',quiet)}
 function refreshAllArtwork(){return artworkBatch('all',false)}
