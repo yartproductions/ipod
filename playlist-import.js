@@ -21,7 +21,8 @@ function toTrack(item){
  const album=item.album&&typeof item.album==='object'?(item.album.title||item.album.name):item.album;
  if(!title||!text(artist))return null;
  return {title,artist:clean(artist),album:clean(album),duration:duration(item.duration||item.length),
- isrc:clean(item.isrc),youtubeId:clean(item.youtubeId),status:item.youtubeId?'matched':'unmatched'};
+ isrc:clean(item.isrc),youtubeId:clean(item.youtubeId),status:item.youtubeId?'matched':'unmatched',
+ ...(clean(item.playlist)?{playlist:clean(item.playlist)}:{})};
 }
 function csvRows(input){let rows=[],row=[],field='',quoted=false;
  for(let i=0;i<input.length;i++){let c=input[i];
@@ -43,7 +44,7 @@ function parseFile(data,name){
   const rows=csvRows(data.replace(/^\uFEFF/,''));const header=(rows.shift()||[]).map(x=>normalize(x).replace(/\s/g,''));
   const col=(names)=>names.map(x=>header.indexOf(x)).find(i=>i>=0);
   const t=col(['title','track','tracktitle','trackname','song','name']),a=col(['artist','artistname','artistnames','artists','performer']);
-  const l=col(['album','albumname','collection']),d=col(['duration','durationms','length']),i=col(['isrc']);
+  const l=col(['album','albumname','collection']),d=col(['duration','durationms','length']),i=col(['isrc']),pl=col(['playlistname','playlist']);
   const video=col(['videoid']);
   if(video!=null){
    raw=rows.filter(r=>/^[\w-]{11}$/.test(text(r[video]))).map(r=>({
@@ -51,7 +52,7 @@ function parseFile(data,name){
    }));
   }else{
    if(t==null||a==null)throw Error('CSV must contain title and artist columns or a YouTube Video ID column.');
-   raw=rows.map(r=>({title:r[t],artist:r[a],album:r[l],duration:header[d]==='durationms'?Math.round(Number(r[d])/1000):r[d],isrc:r[i]}));
+   raw=rows.map(r=>({title:r[t],artist:r[a],album:r[l],duration:header[d]==='durationms'?Math.round(Number(r[d])/1000):r[d],isrc:r[i],playlist:pl!=null?clean(r[pl]):''}));
   }
  }else if(type.endsWith('.txt')){
   raw=data.split(/\r?\n/).map(x=>{const s=x.split(/\s+[-–—]\s+/);return s.length>1?{artist:s.shift(),title:s.join(' - ')}:null}).filter(Boolean);
@@ -199,20 +200,32 @@ function picker(context={}){
    const playlist=data?.provider==='Qobuz'&&data.tracks?.items?qobuzMetadata(data):{
     name:file.name.replace(/\.[^.]+$/,''),provider:context.provider||'File',tracks:parseFile(content,file.name),source:context.source||''
    };
+   // A Tune My Music export can hold several playlists: pick one (or keep them all together).
+   const names=[...new Set(playlist.tracks.map(t=>t.playlist).filter(Boolean))];
+   if(names.length>1){
+    if(top()===loading)replaceTop(list('Choose Playlist',[
+     ...names.map(n=>{const tracks=playlist.tracks.filter(t=>t.playlist===n);
+      return {label:n,val:tracks.length+' songs',action:()=>push(preview({...playlist,name:n,tracks}))}}),
+     {label:'All Playlists Together',val:playlist.tracks.length+' songs',action:()=>push(preview(playlist))}
+    ]));
+    return;
+   }
+   if(names.length===1)playlist.name=names[0];
    if(top()===loading)replaceTop(preview(playlist));
   }
   catch(e){if(top()===loading)replaceTop(msgView('Import Failed',e.message));}
  },{once:true});el.click();
 }
+const TMM={Spotify:'https://www.tunemymusic.com/transfer/spotify-to-file',Qobuz:'https://www.tunemymusic.com/transfer/qobuz-to-file'};
 function exportView(provider,source,error){
- const spotify=provider==='Spotify';
- return list(spotify?'Import from Spotify':'Import Private YouTube Playlist',[
+ const tmm=TMM[provider];
+ return list(tmm?'Import from '+provider:'Import Private YouTube Playlist',[
   ...(error?[{label:'Why use a file?',action:()=>push(msgView('YouTube Link Import',error))}]:[]),
-  {label:spotify?'Open Spotify CSV Export':'Open Google Takeout',action:()=>window.open(
-   spotify?'https://www.tunemymusic.com/transfer/spotify-to-file':'https://takeout.google.com/','_blank','noopener,noreferrer')},
+  {label:tmm?'Open '+provider+' CSV Export':'Open Google Takeout',action:()=>window.open(
+   tmm||'https://takeout.google.com/','_blank','noopener,noreferrer')},
   {label:'Import Playlist File',action:()=>picker({provider,source})},
-  {label:'Export Instructions',action:()=>push(msgView('Export Playlist',spotify?
-   'Sign in to Spotify in the export tool, select your playlist, and export to CSV. Return here and choose Import Playlist File.':
+  {label:'Export Instructions',action:()=>push(msgView('Export Playlist',tmm?
+   'In Tune My Music, sign in to '+provider+', select your playlist, and export to a CSV file. Save it to Files, return here and choose Import Playlist File. If the file has several playlists, the iPod asks which one to import.':
    'Sign in to the Google account that owns the playlist. Export YouTube and YouTube Music playlists, unzip the archive, and select the individual playlist video CSV.'))}
  ]);
 }
@@ -221,8 +234,9 @@ function linkInput(){push(inputView('Playlist Link','YouTube, Spotify, or Qobuz 
  if(!info)return replaceTop(msgView('Unsupported Link','Paste a YouTube, Spotify, or Qobuz playlist URL.'));
  if(info.provider==='spotify')return replaceTop(exportView('Spotify','https://open.spotify.com/playlist/'+info.id));
  if(info.provider==='qobuz')return replaceTop(list('Qobuz Playlist',[
+  {label:'Export With Tune My Music',chev:1,action:()=>push(exportView('Qobuz','https://open.qobuz.com/playlist/'+info.id))},
+  {label:'Import Export File',action:()=>picker({provider:'Qobuz',source:'https://open.qobuz.com/playlist/'+info.id})},
   {label:'Playlist ID',val:info.id},
-  {label:'Import Export File',action:picker},
   {label:'Paste Playlist JSON',action:()=>push(inputView('Qobuz Playlist JSON','Paste the playlist response JSON',value=>{
    try{
     if(value.length>3000000)throw Error('The maximum JSON size is 3 MB.');
