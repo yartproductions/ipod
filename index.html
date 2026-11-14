@@ -1021,6 +1021,7 @@ function youtubeMenu(){return list('YouTube',()=>[
   {label:'Search Flow',chev:1,action:go(()=>inputView('Search Flow','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'flow')}))},
   {label:'Search (List)',chev:1,action:go(()=>inputView('Search List','Songs, artists…',q=>{replaceTop(loadingView('Searching…'));doSearch(q,null,null,'list')}))},
   {label:'Music Home',chev:1,action:go(musicHome)},
+  {label:'Match Imported Track',chev:1,action:()=>window.ipodTrackMatch?window.ipodTrackMatch.open():push(msgView('Matcher Unavailable','Reload the iPod and try again.'))},
   {label:'Paste Link',chev:1,action:go(()=>inputView('Paste Link','youtube.com/watch?v=… or playlist',s=>{
     const {id,list:l}=parseYT(s);
     if(l&&!id){replaceTop(loadingView('Loading…'));openPlaylist(l)}
@@ -2370,8 +2371,11 @@ stack=[mainMenu()];render();wake();initUpdates();
 dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 // Explicitly hand the optional Friends module only the player functions it needs.
 window.ipodFriendsBridge=Object.freeze({audio,cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
+// Restricted adapter for exact metadata matching against existing YouTube search and playback.
+window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
 })();
 </script>
 <script src="./friends.js" defer></script>
+<script src="./track-match.js" defer></script>
 </body>
 </html>
