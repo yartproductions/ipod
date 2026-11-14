@@ -409,7 +409,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .hdr .pi{position:absolute;left:6px;top:4px;width:12px;height:12px}
 .hdr .bat{position:absolute;right:6px;top:5px;width:22px;height:10px;border:1px solid #555;border-radius:2px;background:#fff;padding:1px}
 .hdr .bat::after{content:"";position:absolute;right:-3px;top:2px;width:2px;height:4px;background:#555;border-radius:0 1px 1px 0}
-.hdr .bat i{display:block;height:100%;width:85%;background:linear-gradient(#8fe07a,#3ca62b);border-radius:1px}
+.hdr .bat i{display:block;height:100%;width:0;background:linear-gradient(#8fe07a,#3ca62b);border-radius:1px}
 .screen.video .hdr{display:none}
 
 .list{position:absolute;top:20px;left:0;right:0;bottom:0;overflow:hidden}
@@ -506,7 +506,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
   <div class="ipod" id="ipod">
     <div class="hold" id="hold" title="Hold"></div>
     <div class="bezel"><div class="screen" id="screen">
-      <div class="hdr"><span id="hclock"></span><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="bat"><i id="batlvl"></i></span></div>
+      <div class="hdr"><span id="hclock"></span><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="bat" role="img"><i id="batlvl"></i></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
       <div id="body"></div><div class="sheet" id="sheet"><div class="card"><div class="st" id="sheetT"></div><div class="sbody" id="sheetB"><div class="in" id="sheetIn"></div></div><div class="btns" id="sheetBtns"></div></div></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div><div class="np" id="splitnp"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
@@ -2792,10 +2792,28 @@ addEventListener('keydown',e=>{
 let wacc=0;addEventListener('wheel',e=>{wacc+=e.deltaY;while(wacc>40){wacc-=40;scroll(1)}while(wacc<-40){wacc+=40;scroll(-1)}},{passive:true});
 document.addEventListener('gesturestart',e=>e.preventDefault());
 
-/* ---------- battery (real level where the browser exposes it, e.g. Chrome/Android) ---------- */
-if(navigator.getBattery)navigator.getBattery().then(b=>{const upd=()=>{const el=$('#batlvl');el.style.width=Math.max(8,Math.round(b.level*100))+'%';
-  el.style.background=b.charging?'linear-gradient(#ffe066,#e7b400)':b.level<=.2?'linear-gradient(#ff8a80,#d32f2f)':'';};
-  upd();b.addEventListener('levelchange',upd);b.addEventListener('chargingchange',upd)}).catch(()=>{});
+/* ---------- battery ---------- */
+function setBatteryIndicator(level,charging){
+  const fill=$('#batlvl'),icon=fill.parentElement;
+  const known=Number.isFinite(level)&&level>=0&&level<=1;
+  const percentage=known?Math.round(level*100):0;
+  fill.style.width=percentage+'%';
+  fill.style.background=known&&charging?'linear-gradient(#ffe066,#e7b400)':
+    known&&level<=.2?'linear-gradient(#ff8a80,#d32f2f)':'';
+  const label=known?'Battery '+percentage+'%'+(charging?', plugged in':''):'Battery level unavailable';
+  icon.title=label;
+  icon.setAttribute('aria-label',label);
+}
+window.ipodSetBattery=setBatteryIndicator;
+setBatteryIndicator(null,false);
+const nativeBattery=window.webkit?.messageHandlers?.ipodBattery;
+if(nativeBattery)nativeBattery.postMessage('ready');
+else if(navigator.getBattery)navigator.getBattery().then(b=>{
+  const update=()=>setBatteryIndicator(b.level,b.charging);
+  update();
+  b.addEventListener('levelchange',update);
+  b.addEventListener('chargingchange',update);
+}).catch(()=>{});
 
 
 /* ---------- updates: detect a newly published version, offer to reload, show What's New ----------
