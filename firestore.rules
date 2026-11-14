@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function me(uid) { return signedIn() && request.auth.uid == uid; }
+    function profile(uid) { return /databases/$(database)/documents/profiles/$(uid); }
+    function handle(username) { return /databases/$(database)/documents/handles/$(username); }
+    function requestDoc(from, to) { return /databases/$(database)/documents/friendRequests/$(from + "_" + to); }
+    function isHandle(value) { return value is string && value.matches('^[a-z][a-z0-9_]{2,19}$'); }
+    function validProfile(uid, d) {
+      return d.keys().hasOnly(['uid', 'username', 'displayName', 'sharing', 'createdAt', 'updatedAt'])
+        && d.keys().hasAll(['uid', 'username', 'displayName', 'sharing', 'createdAt', 'updatedAt'])
+        && d.uid == uid && isHandle(d.username)
+        && d.displayName is string && d.displayName.size() >= 1 && d.displayName.size() <= 32
+        && d.sharing is bool;
+    }
+    function handleAfter(uid, username) {
+      return existsAfter(handle(username)) && getAfter(handle(username)).data.uid == uid;
+    }
+    function accepted(from, to) {
+      return exists(requestDoc(from, to))
+        && get(requestDoc(from, to)).data.status == 'accepted';
+    }
+    function friend(owner) {
+      return signedIn() && (accepted(request.auth.uid, owner) || accepted(owner, request.auth.uid));
+    }
+    function validSong(song) {
+      return song is map
+        && song.keys().hasOnly(['title', 'artist', 'album', 'artworkUrl', 'listenedAt'])
+        && song.keys().hasAll(['title', 'artist', 'album', 'artworkUrl', 'listenedAt'])
+        && song.title is string && song.title.size() > 0 && song.title.size() <= 140
+        && song.artist is string && song.artist.size() <= 140
+        && song.album is string && song.album.size() <= 140
+        && song.artworkUrl is string && song.artworkUrl.size() <= 500
+        && song.listenedAt is timestamp;
+    }
+    function validActivity(d, owner) {
+      return d.keys().hasOnly(['uid', 'recent', 'updatedAt'])
+        && d.keys().hasAll(['uid', 'recent', 'updatedAt'])
+        && d.uid == owner && d.recent is list && d.recent.size() <= 3
+        && (d.recent.size() < 1 || validSong(d.recent[0]))
+        && (d.recent.size() < 2 || validSong(d.recent[1]))
+        && (d.recent.size() < 3 || validSong(d.recent[2]));
+    }
+    match /handles/{username} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && isHandle(username)
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(profile(request.auth.uid)).data.username == username;
+      allow update: if false;
+      allow delete: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && existsAfter(profile(request.auth.uid))
+        && getAfter(profile(request.auth.uid)).data.username != username;
+    }
+    match /profiles/{uid} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if me(uid) && validProfile(uid, request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && handleAfter(uid, request.resource.data.username);
+      allow update: if me(uid) && validProfile(uid, request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['username', 'displayName', 'sharing', 'updatedAt'])
+        && handleAfter(uid, request.resource.data.username)
+        && (request.resource.data.username == resource.data.username
+          || !existsAfter(handle(resource.data.username)));
+      allow delete: if false;
+    }
+    match /friendRequests/{id} {
+      allow get, list: if signedIn()
+        && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['from', 'to', 'status', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasAll(['from', 'to', 'status', 'createdAt', 'updatedAt'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string
+        && request.resource.data.to != request.auth.uid
+        && id == request.auth.uid + "_" + request.resource.data.to
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && exists(profile(request.resource.data.to))
+        && !exists(requestDoc(request.resource.data.to, request.auth.uid));
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'updatedAt'])
+        && request.resource.data.updatedAt == request.time
+        && (
+          (resource.data.status == 'pending' && resource.data.to == request.auth.uid
+           && request.resource.data.status in ['accepted', 'declined'])
+          || (resource.data.status == 'accepted'
+           && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid)
+           && request.resource.data.status == 'declined')
+          || (resource.data.status == 'declined'
+           && resource.data.from == request.auth.uid
+           && request.resource.data.status == 'pending')
+        );
+      allow delete: if signedIn()
+        && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+    }
+    match /activity/{uid} {
+      allow get: if me(uid) || (
+        friend(uid)
+        && get(profile(uid)).data.sharing == true
+      );
+      allow list: if false;
+      allow create, update: if me(uid)
+        && validActivity(request.resource.data, uid)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if me(uid);
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
