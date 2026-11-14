@@ -366,6 +366,23 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .row.has-icon{padding-left:29px}
 .row .menu-icon{position:absolute;left:8px;top:7px;width:14px;height:14px;pointer-events:none}
 .row .thumb.av{border-radius:50%}
+/* cover chooser grid */
+.covergrid{position:absolute;left:0;right:0;top:20px;height:148px;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:70px;gap:6px;padding:4px 10px 0;background:#fff}
+.covergrid .ct{position:relative;border-radius:4px;padding:2px;display:flex;align-items:center;justify-content:center}
+.covergrid .ct.sel{background:linear-gradient(#5ba8f5,#1c6fd6);box-shadow:0 0 0 1px #155fc0}
+.covergrid .ci{width:66px;height:66px;border-radius:3px;background:#e6e9ee center/cover no-repeat;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.covergrid .ci.tx{display:flex;align-items:center;justify-content:center;font-size:24px;color:#59647a;background:linear-gradient(#f6f7f9,#dfe3e9)}
+.covercap{position:absolute;left:0;right:0;bottom:0;height:40px;padding:3px 10px;background:linear-gradient(#eef0f3,#d9dde3);border-top:1px solid #b9c0ca;font-size:11px;line-height:16px;color:#222;overflow:hidden}
+.covercap b,.covercap span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.covercap span{color:#5d6878;font-size:10px}
+.covermore{position:absolute;right:4px;bottom:42px;font-size:9px;color:#8a94a3}
+.modern .covergrid{top:22px;background:transparent}
+.modern .covergrid .ci.tx{background:rgba(255,255,255,.08);color:#c9d2df}
+.modern .covercap{background:rgba(0,0,0,.35);border-top:1px solid rgba(255,255,255,.08);color:#f2f5f9}
+.modern .covercap span{color:#9fb0c4}
+.modern.lightui .covercap{background:#eef1f5;color:#1c2530;border-top-color:#d5dbe3}
+.modern.lightui .covercap span{color:#5d6878}
+.modern.lightui .covergrid .ci.tx{background:#e6eaf0;color:#59647a}
 /* album art: crossfade on track change + floor reflection */
 .np .art.fresh{animation:artIn .45s ease-out}
 @keyframes artIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
@@ -1057,6 +1074,19 @@ function entriesView(title,arr,removable){
 
 
 /* ---------- views ---------- */
+const COVER_COLS=3,COVER_ROWS=2;
+function renderCovers(v){
+  const it=itemsOf(v);v.sel=Math.max(0,Math.min(v.sel,it.length-1));
+  const row=Math.floor(v.sel/COVER_COLS);
+  if(row<v.scroll)v.scroll=row;if(row>=v.scroll+COVER_ROWS)v.scroll=row-COVER_ROWS+1;
+  let h='<div class="covergrid">';
+  for(let i=v.scroll*COVER_COLS;i<Math.min(it.length,(v.scroll+COVER_ROWS)*COVER_COLS);i++){const x=it[i];
+    h+=`<div class="ct${i===v.sel?' sel':''}" data-i="${i}">${x.thumb?`<span class="ci" style="background-image:url(&quot;${esc(x.thumb)}&quot;)"></span>`:`<span class="ci tx">${esc(x.tile||'')}</span>`}</div>`}
+  const x=it[v.sel]||{},more=Math.ceil(it.length/COVER_COLS)>v.scroll+COVER_ROWS;
+  h+=`</div><div class="covercap"><b>${esc(x.label||'')}</b><span>${esc(x.sub||'')}</span></div>${more?'<div class="covermore">▾</div>':''}`;
+  body.innerHTML=h;
+  body.querySelectorAll('.ct').forEach(el=>el.addEventListener('click',()=>{const i=+el.dataset.i;if(i===v.sel){const y=itemsOf(v)[i];if(y&&y.action){triggerHaptic('confirm');y.action()}}else{v.sel=i;click();render()}}));
+}
 function list(title,items,extra={}){return {type:'list',title,items,sel:0,scroll:0,...extra}}
 const go=v=>()=>push(typeof v==='function'?v():v);
 function mainMenu(){
@@ -1406,6 +1436,8 @@ function render(){
     if(sbw){const hh=190,th=Math.max(14,hh*VIS/it.length),ty=(hh-th)*v.scroll/(it.length-VIS);h+=`<div class="sb"><i style="top:${ty}px;height:${th}px"></i></div>`}
     body.innerHTML=h+'</div>';
     marquee();
+  }else if(v.type==='covers'){
+    renderCovers(v);
   }else if(v.type==='msg'){
     body.innerHTML=`<div class="list"><div class="empty"><b>${esc(v.title)}</b>${esc(v.msg)}</div></div>`;
   }else if(v.type==='loading'){
@@ -1783,6 +1815,27 @@ async function artworkFromITunes(it){
   const u=best.item.artworkUrl100;
   return {url:u.replace(/100x100(?:bb|-75)/,'600x600bb').replace(/^http:/,'https:'),source:'itunes',score:best.score,album:best.item.collectionName||''};
 }
+// Deezer: exact artist + title match only, same rules as Apple Music.
+async function artworkFromDeezer(it){
+  if(!known(it.artist)||!known(it.title))return null;
+  const j=await jsonp('https://api.deezer.com/search?limit=25&q='+encodeURIComponent('artist:"'+it.artist+'" track:"'+it.title+'"'));
+  const album=known(it.album)&&it.album!=='Offline Music'?artworkNormalize(it.album):'';
+  const hits=(j.data||[]).filter(t=>t.album&&t.album.cover_xl&&artworkScore(it,{trackName:t.title,artistName:t.artist&&t.artist.name})>=.92);
+  if(!hits.length)return null;
+  const best=(album&&hits.find(t=>artworkNormalize(t.album.title)===album))||hits.find(t=>!/\s-\s(single|ep)$/i.test(t.album.title)&&t.album.type!=='single')||hits[0];
+  return {url:best.album.cover_xl,source:'deezer',score:1,album:best.album.title};
+}
+// Last.fm: the track's own album, only when artist and title match exactly.
+async function artworkFromLastfm(it){
+  if(!String(settings.lastfmKey||'').trim()||!known(it.artist)||!known(it.title))return null;
+  const j=await lastfm({method:'track.getinfo',artist:it.artist,track:it.title});
+  const t=j.track;if(!t||!t.album)return null;
+  if(artworkScore(it,{trackName:t.name,artistName:t.artist&&t.artist.name||''})<.92)return null;
+  const album=known(it.album)&&it.album!=='Offline Music'?artworkNormalize(it.album):'';
+  if(album&&artworkNormalize(t.album.title)!==album)return null;
+  const im=lastfmImage(t.album.image);if(!im)return null;
+  return {url:im.full,source:'lastfm',score:1,album:t.album.title};
+}
 async function artworkFromMusicBrainz(it){
   if(!known(it.artist)||!known(it.title))return null;
   // mbGet already applies the app's MusicBrainz request throttling.
@@ -1816,6 +1869,8 @@ async function recommendationArtwork(it,force=false){
   const task=(async()=>{
     let match=null,busy=null;
     try{match=await artworkFromITunes(it)}catch(e){if(e.retry)busy=e}
+    if(!match)try{match=await artworkFromDeezer(it)}catch(e){}
+    if(!match)try{match=await artworkFromLastfm(it)}catch(e){}
     if(!match)try{match=await artworkFromMusicBrainz(it)}catch(e){}
     if(match){artworkStore(key,match);return match.url}
     if(busy)throw busy;
@@ -1973,7 +2028,13 @@ const MB='https://musicbrainz.org/ws/2',CAA='https://coverartarchive.org';
 let mbLast=0;
 async function mbGet(path){
   const wait=Math.max(0,mbLast+1100-Date.now());if(wait)await new Promise(r=>setTimeout(r,wait));mbLast=Date.now();
-  const r=await fetch(MB+path+(path.includes('?')?'&':'?')+'fmt=json',{headers:{Accept:'application/json'}});
+  let r;
+  for(let attempt=0;;attempt++){
+    r=await fetch(MB+path+(path.includes('?')?'&':'?')+'fmt=json',{headers:{Accept:'application/json'}});
+    if(r.status!==503||attempt>=2)break;
+    // MusicBrainz sheds load with 503s; wait and try again before giving up.
+    await new Promise(res=>setTimeout(res,1500*(attempt+1)+Math.random()*500));mbLast=Date.now();
+  }
   if(r.status===503)throw new Error('MusicBrainz is busy. Try again in a moment.');
   if(!r.ok)throw new Error('MusicBrainz error '+r.status);return r.json();
 }
@@ -2038,7 +2099,7 @@ async function saveArtwork(s,blob,match={source:'manual',score:1},{manual=false,
     if(t.deleted||!songs.some(x=>x.id===t.id)||(t!==lib&&artworkProtected(t)))continue;
     const prior={...t},oldUrl=t.artUrl;
     const nextUrl=URL.createObjectURL(blob);
-    t.art=blob;t.artUrl=nextUrl;
+    t.art=blob;t.artUrl=nextUrl;t.artworkUrl=null;   // a saved file replaces any linked cover
     artworkMetadata(t,manual?{...match,source:'manual'}:match);
     try{await dbPut(songRecord(t));saved++}
     catch(e){URL.revokeObjectURL(nextUrl);Object.assign(t,prior,{artworkAlbum:prior.artworkAlbum,artworkLocked:prior.artworkLocked});throw e}
@@ -2080,6 +2141,8 @@ async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected
   if(preferred&&saved&&saved.url===preferred)match={...saved};
   let busy=null;
   if(!match)try{match=await artworkFromITunes(lib)}catch(e){if(e.retry)busy=e}
+  if(!match)try{match=await artworkFromDeezer(lib)}catch(e){}
+  if(!match)try{match=await artworkFromLastfm(lib)}catch(e){}
   if(!match)try{match=await artworkFromMusicBrainz(lib)}catch(e){}
   if(!match&&busy)throw busy;
   if(!match||!match.url)return null;
@@ -2091,22 +2154,156 @@ async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected
   artworkStore(artworkCacheKey(lib),match);
   return match;
 }
-async function getArtwork(s){
-  push(loadingView('Finding covers…'));
-  try{
-    const cands=await artCandidates(s);
-    if(!cands.length)return replaceTop(msgView('No Covers Found','No MusicBrainz releases matched. You can correct the artist and title in Artwork Tools.'));
-    replaceTop(list('Choose a Cover',cands.map(c=>({label:c.title+(c.year?' ('+c.year+')':''),val:c.country||undefined,thumb:c.thumb,
-      action:async()=>{
-        push(loadingView('Saving cover…'));
-        try{
-          const b=await fetchCover(c.full);
-          const n=await saveArtwork(s,b,{source:'manual',score:1,album:c.title},{manual:true});
-          replaceTop(msgView(n?'Artwork Saved':'Song Missing',n?'Saved locally. Manual covers are protected from auto-replacement.':'This song is no longer in the library.'));
-        }catch(e){replaceTop(msgView('Could Not Save',e.message))}
-      }}))));
-  }catch(e){replaceTop(msgView('Artwork Search Failed',e.message||'Check your connection.'))}
+/* ---------- Cover chooser: every source side by side, plus manual options ---------- */
+// Deezer's API has no CORS headers but supports JSONP, so it works from a web page.
+function jsonp(url,ms=9000,param='output=jsonp&callback='){
+  return new Promise((resolve,reject)=>{
+    const cb='__cv'+Math.random().toString(36).slice(2),el=document.createElement('script');
+    const t=setTimeout(()=>{done();reject(new Error('timed out'))},ms);
+    function done(){clearTimeout(t);try{delete window[cb]}catch(e){window[cb]=undefined}el.remove()}
+    window[cb]=d=>{done();resolve(d)};
+    el.onerror=()=>{done();reject(new Error('blocked'))};
+    el.src=url+(url.includes('?')?'&':'?')+param+cb;
+    document.head.appendChild(el);
+  });
 }
+const coverQuery=s=>({artist:known(s.artist)?s.artist:'',album:known(s.album)&&s.album!=='Offline Music'?s.album:'',title:s.title||''});
+const coverRank=(q,c)=>(q.artist&&artworkArtistMatch(q.artist,c.artist)?2:0)
+  +(q.album&&artworkNormalize(c.title)===artworkNormalize(q.album)?3:0)
+  +(q.title&&c.track&&artworkNormalize(c.track)===artworkNormalize(q.title)?1:0);
+async function coversApple(q){
+  const out=[],add=x=>{if(x&&x.artworkUrl100&&x.collectionId)out.push({key:'apple:'+x.collectionId,title:x.collectionName||'',artist:x.artistName||'',
+    track:x.trackName,year:(x.releaseDate||'').slice(0,4),source:'Apple Music',
+    thumb:x.artworkUrl100.replace(/\d+x\d+bb/,'300x300bb'),full:x.artworkUrl100.replace(/\d+x\d+bb/,'1200x1200bb')})};
+  if(q.album)(await itunesGet('search?term='+encodeURIComponent((q.artist+' '+q.album).trim())+'&entity=album&media=music&country=US&limit=15')).forEach(add);
+  if(q.title)(await itunesSearch((q.artist+' '+q.title).trim())).forEach(add);
+  return out;
+}
+async function coversDeezer(q){
+  const out=[],add=(al,artist,track)=>{if(al&&al.id&&(al.cover_xl||al.cover_big))out.push({key:'deezer:'+al.id,title:al.title||'',artist:artist||'',track,
+    year:(al.release_date||'').slice(0,4),source:'Deezer',thumb:al.cover_medium||al.cover_big,full:al.cover_xl||al.cover_big})};
+  const api='https://api.deezer.com/';
+  if(q.album){const j=await jsonp(api+'search/album?limit=15&q='+encodeURIComponent((q.artist?'artist:"'+q.artist+'" ':'')+'album:"'+q.album+'"'));
+    (j.data||[]).forEach(al=>add(al,al.artist&&al.artist.name))}
+  if(q.title){const j=await jsonp(api+'search?limit=15&q='+encodeURIComponent((q.artist?'artist:"'+q.artist+'" ':'')+'track:"'+q.title+'"'));
+    (j.data||[]).forEach(t=>add(t.album,t.artist&&t.artist.name,t.title))}
+  if(j0(out)&&(q.artist||q.title)){const j=await jsonp(api+'search?limit=15&q='+encodeURIComponent((q.artist+' '+(q.album||q.title)).trim()));
+    (j.data||[]).forEach(t=>add(t.album,t.artist&&t.artist.name,t.title))}
+  return out;
+}
+const j0=a=>!a.length;
+async function coversMusicBrainz(q,s){
+  const list=await artCandidates({...s,artist:q.artist||'Unknown Artist',album:q.album||'Unknown Album',title:q.title});
+  return list.map(c=>({key:'mb:'+c.id,title:c.title,artist:c.artist,year:c.year,source:'MusicBrainz',
+    thumb:c.thumb,full:`${CAA}/release/${c.id}/front-1200`,fallback:c.full}));
+}
+// Last.fm (needs your free API key: Settings ▸ Artwork Tools ▸ Last.fm Key).
+const LASTFM_BLANK=/2a96cbd8b46e442fc41c2b86b821562f/;   // Last.fm's grey star placeholder
+function lastfmImage(images){
+  const list=(images||[]).filter(x=>x&&x['#text']&&!LASTFM_BLANK.test(x['#text']));
+  const big=list.find(x=>x.size==='extralarge')||list.find(x=>x.size==='mega')||list[list.length-1];
+  if(!big)return null;
+  const thumb=big['#text'],full=thumb.replace(/\/i\/u\/[^/]+\//,'/i/u/');   // drop the size folder for the original
+  return {thumb,full};
+}
+async function lastfm(params){
+  const key=String(settings.lastfmKey||'').trim();if(!key)throw new Error('Add your Last.fm key in Artwork Tools.');
+  const url='https://ws.audioscrobbler.com/2.0/?format=json&api_key='+encodeURIComponent(key)+'&'+new URLSearchParams(params);
+  let j;
+  try{const r=await fetch(url);j=await r.json()}catch(e){j=await jsonp(url,9000,'callback=')}
+  if(j&&j.error)throw new Error(j.error===10||j.error===26?'Last.fm rejected the API key.':j.error===29?'Last.fm is busy (rate limit).':(j.message||'Last.fm error '+j.error));
+  return j||{};
+}
+async function coversLastfm(q){
+  const out=[],add=(al,track)=>{const im=al&&lastfmImage(al.image);
+    if(im)out.push({key:'lastfm:'+(al.mbid||al.url||al.name),title:al.name||al.title||'',artist:typeof al.artist==='string'?al.artist:(al.artist&&al.artist.name)||'',
+      track,source:'Last.fm',thumb:im.thumb,full:im.full,fallback:im.thumb})};
+  if(q.artist&&q.album){const j=await lastfm({method:'album.getinfo',artist:q.artist,album:q.album,autocorrect:1});if(j.album)add(j.album)}
+  if(q.artist&&q.title){const j=await lastfm({method:'track.getinfo',artist:q.artist,track:q.title,autocorrect:1});
+    const t=j.track;if(t&&t.album)add({...t.album,name:t.album.title,artist:t.album.artist||q.artist},t.name)}
+  if(q.album||q.title){const j=await lastfm({method:'album.search',album:(q.album||q.title),limit:12});
+    ((j.results&&j.results.albummatches&&j.results.albummatches.album)||[]).forEach(al=>add(al))}
+  return out;
+}
+const COVER_SOURCES=[
+  {name:'Apple Music',run:q=>coversApple(q)},
+  {name:'Deezer',run:q=>coversDeezer(q)},
+  {name:'Last.fm',run:q=>coversLastfm(q),enabled:()=>!!String(settings.lastfmKey||'').trim()},
+  {name:'MusicBrainz',run:(q,s)=>coversMusicBrainz(q,s)}
+];
+// Turn any image (photo, thumbnail) into a square cover.
+async function squareCover(blob,px=1000){
+  const src=await createImageBitmap(blob).catch(()=>new Promise((res,rej)=>{const u=URL.createObjectURL(blob),im=new Image();
+    im.onload=()=>{URL.revokeObjectURL(u);res(im)};im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('That image couldn’t be read.'))};im.src=u}));
+  const side=Math.min(src.width,src.height),size=Math.min(px,side);
+  if(!side)throw new Error('That image couldn’t be read.');
+  const c=document.createElement('canvas');c.width=c.height=size;const g=c.getContext('2d');g.imageSmoothingQuality='high';
+  g.drawImage(src,(src.width-side)/2,(src.height-side)/2,side,side,0,0,size,size);if(src.close)src.close();
+  return await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('Couldn’t convert that image.')),'image/jpeg',.9));
+}
+async function useCover(s,c){
+  const waiting=loadingView('Saving cover…');push(waiting);
+  const finish=(t,m)=>{if(top()===waiting)replaceTop(msgView(t,m))};
+  try{
+    let blob=c.blob||null;
+    if(!blob)for(const u of [c.full,c.fallback,c.thumb].filter(Boolean)){blob=await fetchCover(u).catch(()=>null);if(blob)break}
+    if(blob){
+      if(c.square)blob=await squareCover(blob);
+      const n=await saveArtwork(s,blob,{source:'manual',score:1,album:c.title},{manual:true});
+      return finish(n?'Artwork Saved':'Song Missing',n?'Saved on this device from '+c.source+'. Your choice is protected from automatic changes.':'This song is no longer in the library.');
+    }
+    // Some image hosts allow showing a picture but not saving its file: keep the link instead.
+    const ok=await saveMatchedArtworkURL(s,{url:c.full||c.thumb,source:'manual',score:1,album:c.title});
+    finish(ok?'Artwork Linked':'Song Missing',ok?c.source+' doesn’t allow saving the file, so the cover is linked and shows when you’re online.':'This song is no longer in the library.');
+  }catch(e){finish('Could Not Save',e.message||'Try another cover.')}
+}
+function pickCoverPhoto(s){
+  const el=document.createElement('input');el.type='file';el.accept='image/*';el.style.display='none';document.body.appendChild(el);
+  el.addEventListener('change',()=>{const f=el.files&&el.files[0];el.remove();if(!f)return;
+    if(!/^image\//.test(f.type||'image/'))return push(msgView('Not an Image','Choose a photo or image file.'));
+    useCover(s,{blob:f,square:true,source:'your photos',title:''});
+  },{once:true});
+  el.click();
+}
+function coverPicker(s,q=coverQuery(s)){
+  const v={type:'covers',title:'Choose a Cover',sel:0,scroll:0,found:[],status:{},song:s,query:q};
+  const library=songs.filter(x=>x.id!==s.id&&albumArtworkKey(x)&&albumArtworkKey(x)===albumArtworkKey(s)&&(x.art||x.artUrl)&&!isYoutubeThumbnail(x.artUrl));
+  if(library.length){const d=library[0];v.found.push({key:'lib',title:d.album,artist:d.albumArtist||d.artist,source:'your library',thumb:d.artUrl,blob:d.art||null,full:d.art?null:d.artUrl})}
+  const yt=s.sourceId&&/^[\w-]{11}$/.test(s.sourceId)?s.sourceId:'';
+  v.items=()=>{
+    const seen=new Set(),cands=v.found.filter(c=>!seen.has(c.thumb)&&seen.add(c.thumb)).sort((a,b)=>(b.lib?9:coverRank(q,b))-(a.lib?9:coverRank(q,a)));
+    const pending=COVER_SOURCES.filter(x=>v.status[x.name]==='searching').map(x=>x.name);
+    const failed=COVER_SOURCES.filter(x=>v.status[x.name]&&v.status[x.name]!=='searching'&&v.status[x.name]!=='done');
+    return [
+      ...cands.map(c=>({thumb:c.thumb,label:c.title||'Cover',sub:[c.artist,c.year,c.source].filter(Boolean).join(' · '),action:()=>useCover(s,c)})),
+      ...(pending.length?[{tile:'…',label:'Searching '+pending.join(', ')+'…',sub:'More covers will appear here'}]:[]),
+      ...failed.map(x=>({tile:'↻',label:'Retry '+x.name,sub:v.status[x.name],action:()=>runSource(x)})),
+      ...(yt?[{thumb:`https://i.ytimg.com/vi/${yt}/hqdefault.jpg`,label:'Video Thumbnail',sub:'Cropped to a square · YouTube',
+        action:()=>useCover(s,{full:`https://i.ytimg.com/vi/${yt}/maxresdefault.jpg`,fallback:`https://i.ytimg.com/vi/${yt}/hqdefault.jpg`,square:true,source:'YouTube',title:''})}]:[]),
+      {tile:'▣',label:'Choose From Photos',sub:'Any image on this device',action:()=>pickCoverPhoto(s)},
+      {tile:'⧉',label:'Paste Image Link',sub:'A direct link to an image',action:go(()=>inputView('Image Link','https://…',url=>{
+        if(!/^https?:\/\//i.test(url.trim()))return replaceTop(msgView('Invalid Link','Paste a link that starts with https://'));
+        pop();useCover(s,{full:url.trim(),source:'your link',title:''});
+      }))},
+      {tile:'⌕',label:'Search Different Words',sub:[q.artist,q.album||q.title].filter(Boolean).join(' – '),action:go(()=>inputView('Search Covers','Artist – Album',text=>{
+        const [artist,...rest]=String(text).split(/\s+[-–—]\s+/);
+        const nq=rest.length?{artist:artist.trim(),album:rest.join(' - ').trim(),title:''}:{artist:'',album:text.trim(),title:text.trim()};
+        pop();
+        if(nq.album||nq.title)replaceTop(coverPicker(s,nq));
+      },[q.artist,q.album||q.title].filter(Boolean).join(' – ')))}
+    ];
+  };
+  const runSource=src=>{
+    v.status[src.name]='searching';if(top()===v)render();
+    src.run(q,s).then(list=>{v.found.push(...list);v.status[src.name]='done'})
+      .catch(e=>{v.status[src.name]=e&&e.retry||/busy|503/i.test(e&&e.message)?'Busy right now':'Couldn’t reach it'})
+      .finally(()=>{if(top()===v)render()});
+  };
+  if(!navigator.onLine)v.status.offline=1;
+  else if(q.artist||q.album||q.title)COVER_SOURCES.filter(x=>!x.enabled||x.enabled()).forEach(runSource);
+  return v;
+}
+function getArtwork(s){push(coverPicker(s))}
 async function setSongArtworkMetadata(s,field,value){
   const title=String(value||'').trim();
   if(!title)return replaceTop(msgView('Invalid Entry','Enter a non-empty value.'));
@@ -2148,11 +2345,17 @@ function artworkRepairMenu(s){
 }
 function artworkToolsMenu(){
   const locked=songs.filter(artworkProtected).length;
-  const matched=songs.filter(s=>s.art&&['itunes','coverartarchive','manual'].includes(s.artSource)).length;
+  const matched=songs.filter(s=>s.art&&['itunes','deezer','lastfm','coverartarchive','manual'].includes(s.artSource)).length;
   return list('Artwork Tools',()=>[
     {label:'Fallback Mode',val:settings.artworkMode==='Strict'?'Strict':'Thumbnails',action:()=>{
       settings.artworkMode=settings.artworkMode==='Strict'?'Thumbnails':'Strict';saveSettings();render();
     }},
+    {label:'Last.fm Key',val:settings.lastfmKey?'Added':'Add',chev:1,action:go(()=>inputView('Last.fm API Key','Paste your API key',v=>{
+      const key=String(v||'').trim();
+      if(key&&!/^[a-f0-9]{32}$/i.test(key))return replaceTop(msgView('Check the Key','A Last.fm API key is 32 letters and numbers (0-9, a-f).'));
+      settings.lastfmKey=key;saveSettings();
+      replaceTop(msgView(key?'Last.fm Added':'Last.fm Removed',key?'Last.fm covers now appear in Choose Album Cover and automatic lookups. The key stays on this device.':'Last.fm is no longer used.'));
+    },settings.lastfmKey||''))},
     {label:'Find Missing Artwork',chev:1,action:()=>findMissingArtwork(false)},
     {label:'Refresh All Artwork',chev:1,action:()=>refreshAllArtwork()},
     {label:'Repair a Song',chev:1,action:go(()=>list('Select Song',()=>songs.map(s=>({
@@ -2478,6 +2681,7 @@ function scroll(dir){
   if(v.type==='music-home'){const ns=Math.max(0,Math.min(3,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();renderMusicHome(v)}return}
   if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v)}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
+  if(v.type==='covers'){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}return}
   if(v.type==='list'){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}}
   else if(v.type==='flow'&&!v.opening){const n=v.albums.length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){const was=v.sel;v.sel=ns;click();
     if(v._lo!=null&&((v.sel<v._lo+6&&v._lo>0)||(v.sel>v._hi-6&&v._hi<n-1)))renderFlow(v,was);else flowUpdate(v);if(v.recommendItems){recommendationArtPreview(v,v.sel);recommendationMaybeLoadMore(v)}}}
@@ -2504,7 +2708,7 @@ function press(btn){
   else if(btn==='play'){playPause();if(v.type==='video')flashVo()}
   else if(btn==='select'){
     if(v.type==='music-home'){const x=v.choices[v.sel];if(x&&x.action)x.action()}
-    if(v.type==='list'){const x=itemsOf(v)[v.sel];if(x&&x.action)x.action()}
+    if(v.type==='list'||v.type==='covers'){const x=itemsOf(v)[v.sel];if(x&&x.action)x.action()}
     else if(v.type==='msg')pop();
     else if(v.type==='flow')selectFlow(v);
     else if(v.type==='input')submitInput();

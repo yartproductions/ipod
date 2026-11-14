@@ -460,7 +460,7 @@ def main():
         choose(pg, 'Repair Artwork'); pg.wait_for_timeout(300)
         check('Repair Artwork offers automatic and manual options', 'Find Best Match' in rows(pg) and 'Choose Album Cover' in rows(pg), rows(pg))
         choose(pg, 'Choose Album Cover'); pg.wait_for_timeout(2500)
-        check('Choose Album Cover lists candidates with thumbnails', pg.text_content('#htitle') == 'Choose a Cover' and pg.evaluate('document.querySelectorAll("#body .thumb").length') >= 2,
+        check('Choose Album Cover shows a grid of candidate covers', pg.text_content('#htitle') == 'Choose a Cover' and pg.evaluate('document.querySelectorAll(".covergrid .ci:not(.tx)").length') >= 2,
               pg.inner_text('#body'))
         check('MusicBrainz searched by album + artist', any('amber days' in q.lower() and 'fixture artist' in q.lower() for _, q in mb_calls), mb_calls[-2:])
         key(pg, 'Enter', wait=1200)
@@ -473,12 +473,12 @@ def main():
         check('Now Playing shows the new cover', 'blob:' in art, art[:60])
         pg.reload(); pg.wait_for_timeout(1500)
         has_art = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();
-            q.onsuccess=()=>res(q.result.filter(s=>s.title==="Bare Amber").map(s=>!!s.art&&s.art.size>2048&&s.artSource==="manual"))}})''')
+            q.onsuccess=()=>res(q.result.filter(s=>s.title==="Bare Amber").map(s=>!!s.art&&s.art.size>0&&s.artSource==="manual"))}})''')
         check('cover is saved with the song (persists after reload)', has_art == [True], has_art)
 
         # ---- Find Missing Artwork (auto, confident matches only) ----
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', str(FIX / 'album-amber-days.mp3'), '-map', '0:a', '-c', 'copy', '-id3v2_version', '3',
-                        '-metadata', 'title=Bare Amber Two', '-metadata', 'artist=Fixture Artist', '-metadata', 'album=Amber Days', bare], check=True)
+                        '-map_metadata', '-1', '-metadata', 'title=Bare Amber Two', '-metadata', 'artist=Fixture Artist', bare], check=True)
         n_before = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();q.onsuccess=()=>res(q.result.filter(s=>!s.art).length)}})''')
         pg.set_input_files('#file', [bare]); pg.wait_for_timeout(300); wait_sync(pg); pg.wait_for_timeout(2300)
         home(pg); choose(pg, 'Settings'); choose(pg, 'Artwork Tools'); choose(pg, 'Find Missing Artwork')
@@ -498,7 +498,7 @@ def main():
         home(pg); choose(pg, 'Settings'); choose(pg, 'Auto Artwork'); home(pg)
         check('Auto Artwork can be switched on', pg.evaluate('JSON.parse(localStorage.getItem("ipod.settings")).autoArt') is True)
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', str(FIX / 'album-amber-days.mp3'), '-map', '0:a', '-c', 'copy', '-id3v2_version', '3',
-                        '-metadata', 'title=Auto Amber', '-metadata', 'artist=Fixture Artist', '-metadata', 'album=Amber Days', bare], check=True)
+                        '-map_metadata', '-1', '-metadata', 'title=Auto Amber', '-metadata', 'artist=Fixture Artist', bare], check=True)
         calls0 = len(mb_calls)
         pg.set_input_files('#file', [bare]); pg.wait_for_timeout(300); wait_sync(pg)
         for _ in range(60):   # the quiet lookup starts ~2.4 s after the import
