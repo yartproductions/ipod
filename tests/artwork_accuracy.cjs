@@ -108,3 +108,22 @@ test('Album artwork reuse preserves release editions and other artists',()=>{
  assert.equal(reusable(studio,{id:'b'}),true);
  assert.equal(reusable({...studio,artworkAlbum:'Amber Days (Deluxe)'},{id:'b'}),false);
 });
+
+test('Concurrent tracks share a verified album lookup and reuse its cached result',async()=>{
+ const saved={};
+ let searches=0;
+ const resolveAlbum=new Function('albumArtworkKey','artSaved','artworkStore','fetchCover',
+  section('const albumArtworkPending=new Map();','/* ---------- Cover chooser')+'return resolveAlbumArtwork;')(
+   song=>song.album,saved,(key,match)=>{saved[key]=match},async()=>null);
+ const resolve=async()=>{searches++;return {match:{album:'Amber Days',url:'https://example.com/art'},blob:{}}};
+ const album={album:'Amber Days'};
+ const [a,b]=await Promise.all([resolveAlbum(album,resolve,false),resolveAlbum(album,resolve,false)]);
+ assert.equal(a,b);
+ assert.equal(searches,1);
+ assert.equal((await resolveAlbum(album,resolve,false)).match.url,a.match.url);
+ assert.equal(searches,1);
+ const deluxe={album:'Amber Days (Deluxe)'};
+ await Promise.all([resolveAlbum(deluxe,resolve,false),resolveAlbum(deluxe,resolve,false)]);
+ assert.equal(searches,3);
+ assert.equal(saved['album:Amber Days (Deluxe)'],undefined);
+});
