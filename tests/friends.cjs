@@ -18,7 +18,7 @@ assert.match(friends,/const bridge=window\.ipodFriendsBridge/);
 const originalFlow=fs.readFileSync(path.resolve(__dirname,'../index.html'),'utf8');
 const browsing=originalFlow.slice(originalFlow.indexOf('function renderFlow(v,from)'),originalFlow.indexOf('function flowUpdate(v)'));
 assert.doesNotMatch(browsing,/np-lyrics/);
-const np=originalFlow.slice(originalFlow.indexOf('function renderNowFlow()'),originalFlow.indexOf('\/\* ---------- Artwork lookup'));
+const np=originalFlow.slice(originalFlow.indexOf('function renderNowFlow('),originalFlow.indexOf('\/\* ---------- Artwork lookup'));
 assert.match(np,/np-lyric-lines/);
 // Smoke the optional module without loading Firebase or affecting music playback.
 let pushed=null,timeHandler=null;
