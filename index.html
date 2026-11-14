@@ -18,7 +18,16 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 html,body{height:100%;overflow:hidden;background:#000;font-family:-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;touch-action:none}
 body{display:flex;align-items:center;justify-content:center;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
-#wrap{animation:pop .9s cubic-bezier(.2,1.25,.35,1) both}
+#ambient{position:fixed;inset:0;overflow:hidden;pointer-events:none;isolation:isolate;background:#000}
+#ambient .ambient-art{position:absolute;inset:-15%;background-position:center;background-size:cover;filter:blur(38px) saturate(1.2);opacity:0;transition:opacity 1.4s ease;animation:ambientDrift 26s ease-in-out infinite alternate}
+#ambient .ambient-art.visible{opacity:.7}
+#ambient::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent,#0009),linear-gradient(#0003,#0006)}
+#ambient .ambient-grain{position:absolute;inset:-25%;width:150%;height:150%;opacity:.075;animation:ambientGrain .7s steps(1) infinite;background-repeat:repeat;background-size:160px}
+@keyframes ambientDrift{from{transform:translate(-2%,-1%) scale(1.02) rotate(-3deg)}to{transform:translate(3%,2%) scale(1.12) rotate(3deg)}}
+@keyframes ambientGrain{0%,100%{transform:translate(0,0)}25%{transform:translate(-3%,2%)}50%{transform:translate(2%,-3%)}75%{transform:translate(-2%,-1%)}}
+#ambient.paused .ambient-art,#ambient.paused .ambient-grain{animation-play-state:paused}
+@media(prefers-reduced-motion:reduce){#ambient .ambient-art,#ambient .ambient-grain{animation:none;transition:none}}
+#wrap{position:relative;z-index:1;animation:pop .9s cubic-bezier(.2,1.25,.35,1) both}
 @keyframes pop{0%{opacity:0;transform:translateY(60px) scale(.82)}60%{opacity:1}100%{opacity:1;transform:none}}
 #stage{width:320px;height:540px;transform-origin:center center;position:relative}
 
@@ -550,6 +559,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 </style>
 </head>
 <body>
+<div id="ambient" aria-hidden="true"><div class="ambient-art"></div><div class="ambient-art"></div><div class="ambient-grain"></div></div>
 <div id="wrap"><div id="stage">
   <div class="ipod" id="ipod">
     <div class="hold" id="hold" title="Hold"></div>
@@ -1560,9 +1570,46 @@ function renderHdr(){
   $('#pi').innerHTML=qi<0?'':!isPlaying()?'<svg viewBox="0 0 12 12"><rect x="2" y="2" width="3" height="8" fill="#2b7fde"/><rect x="7" y="2" width="3" height="8" fill="#2b7fde"/></svg>'
     :'<svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z" fill="#2b7fde"/></svg>';
 }
+let ambientCover=null,ambientLayer=0,ambientRequest=0;
+function updateAmbientArtwork(){
+  const panel=$('#ambient'),song=cur();
+  panel.classList.toggle('paused',document.hidden||!song||!isPlaying());
+  const cover=song?nowPlayingArt(song):null;
+  if(ambientCover===cover)return;
+  ambientCover=cover;
+  const request=++ambientRequest,layers=panel.querySelectorAll('.ambient-art');
+  if(!cover){layers.forEach(layer=>layer.classList.remove('visible'));return}
+  const image=new Image();
+  image.onload=()=>{
+    if(request!==ambientRequest)return;
+    ambientLayer=1-ambientLayer;
+    layers[ambientLayer].style.backgroundImage='url('+JSON.stringify(cover)+')';
+    layers[ambientLayer].classList.add('visible');
+    layers[1-ambientLayer].classList.remove('visible');
+  };
+  image.onerror=()=>{if(request===ambientRequest){layers.forEach(layer=>layer.classList.remove('visible'));ambientCover=null}};
+  image.src=cover;
+}
+{
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=128;
+  const context=canvas.getContext('2d');
+  if(context){
+    const noise=context.createImageData(128,128);
+    for(let i=0;i<noise.data.length;i+=4){
+      const value=Math.random()*255;
+      noise.data[i]=noise.data[i+1]=noise.data[i+2]=value;noise.data[i+3]=255;
+    }
+    context.putImageData(noise,0,0);
+    $('#ambient .ambient-grain').style.backgroundImage='url('+canvas.toDataURL()+')';
+  }
+}
+onActiveAudio('play',updateAmbientArtwork);
+onActiveAudio('pause',updateAmbientArtwork);
+document.addEventListener('visibilitychange',updateAmbientArtwork);
 let shownNowTrack=null;
 const NAV_EASE='cubic-bezier(.25,.8,.25,1)',NAV_MS=280;
 function render(){
+  updateAmbientArtwork();
   const dir=navDir;navDir=0;
   const reduce=!dir||!body.animate||window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.querySelectorAll('.navghost').forEach(g=>g.remove());   // a fast second press finishes the last slide
@@ -2337,7 +2384,7 @@ async function saveArtwork(s,blob,match={source:'manual',score:1},{manual=false,
     if(oldUrl&&oldUrl.startsWith('blob:'))URL.revokeObjectURL(oldUrl);
     queue.forEach(q=>{if(q.id===t.id){q.art=t.art;q.artUrl=t.artUrl;q.album=t.album;q.artSource=t.artSource;q.artConfidence=t.artConfidence}});
   }
-  if(saved){setSession();if(top()?.type==='now'&&cur()?.id===lib.id)render()}
+  if(saved){setSession();updateAmbientArtwork();if(top()?.type==='now'&&cur()?.id===lib.id)render()}
   return saved;
 }
 async function saveMatchedArtworkURL(s,match){
@@ -2350,7 +2397,7 @@ async function saveMatchedArtworkURL(s,match){
   catch(e){Object.assign(lib,prior,{artworkAlbum:prior.artworkAlbum,artworkUrl:prior.artworkUrl});throw e}
   if(old&&old.startsWith('blob:'))URL.revokeObjectURL(old);
   queue.forEach(q=>{if(q.id===lib.id){q.artUrl=lib.artUrl;q.album=lib.album;q.artSource=lib.artSource}});
-  if(cur()?.id===lib.id){setSession();if(top()?.type==='now')render()}
+  if(cur()?.id===lib.id){setSession();updateAmbientArtwork();if(top()?.type==='now')render()}
   return true;
 }
 async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected=false,refreshRun=null}={}){
