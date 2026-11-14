@@ -579,8 +579,9 @@ const $=s=>document.querySelector(s);
 const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#screen');
 let audio=new Audio(); audio.preload='auto';
 const mainDeck=audio, spareDeck=new Audio(); spareDeck.preload='auto';
+const backgroundDeck=new Audio(); backgroundDeck.preload='auto';
 function onActiveAudio(event,handler){
-  for(const deck of [mainDeck,spareDeck])deck.addEventListener(event,e=>{if(deck===audio)handler(e)});
+  for(const deck of [mainDeck,spareDeck,backgroundDeck])deck.addEventListener(event,e=>{if(deck===audio)handler(e)});
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -770,7 +771,7 @@ function curTime(){return audio.currentTime||0}
 function dur(){return audio.duration||0}
 function seekTo(t){if(isFinite(t)){cancelCrossfade();audio.currentTime=t}}
 function getVol(){return audio.volume}
-function setVol(v){mainDeck.volume=spareDeck.volume=Math.max(0,Math.min(1,v));return audio.volume}
+function setVol(v){backgroundDeck.volume=mainDeck.volume=spareDeck.volume=Math.max(0,Math.min(1,v));return audio.volume}
 /* iOS/CarPlay-connected audio: one persistent media element and hardware media controls.
    This is web media playback, not a native CarPlay app entitlement. */
 function resumeAudio(){prepareCrossfade();return audio.play().catch(e=>{
@@ -780,6 +781,10 @@ function resumeAudio(){prepareCrossfade();return audio.play().catch(e=>{
 function load(play){
   cancelCrossfade();
   const t=cur();if(!t)return;
+  const deck=settings.crossfade&&!document.hidden?mainDeck:backgroundDeck;
+  if(audio!==deck&&(audio===backgroundDeck||deck===backgroundDeck)){
+    const old=audio;audio=deck;old.pause();
+  }
   if(audio.src!==t.url)audio.src=t.url;
   audio.preload='auto';
   setSession();
@@ -797,7 +802,7 @@ const CROSSFADE_OPTIONS=[0,2,4,6,8,12];
 let fadeContext=null,fade=null;
 const deckGain=new Map();
 function prepareCrossfade(){
-  if(!settings.crossfade)return;
+  if(!settings.crossfade||document.hidden||audio===backgroundDeck)return;
   try{
     const Context=window.AudioContext||window.webkitAudioContext;
     if(!Context)return;
@@ -836,7 +841,7 @@ function crossfadeTarget(){
 }
 async function maybeCrossfade(){
   const seconds=settings.crossfade,remaining=audio.duration-audio.currentTime;
-  if(!seconds||fade||audio.paused||audio.seeking||fadeContext?.state!=='running'||deckGain.size!==2||
+  if(document.hidden||audio===backgroundDeck||!seconds||fade||audio.paused||audio.seeking||fadeContext?.state!=='running'||deckGain.size!==2||
     !Number.isFinite(remaining)||remaining<=.25||remaining>Math.min(seconds,audio.duration/2))return;
   const target=crossfadeTarget();
   if(!target)return;
@@ -848,7 +853,7 @@ async function maybeCrossfade(){
   if(fade!==transition)return;
   const latest=crossfadeTarget();
   const duration=Math.min(seconds,(outgoing.duration-outgoing.currentTime)/(outgoing.playbackRate||1));
-  if(outgoing.paused||duration<=.15||latest?.song!==target.song||latest?.index!==target.index||latest?.session!==target.session){cancelCrossfade();return}
+  if(document.hidden||outgoing!==audio||outgoing.paused||duration<=.15||latest?.song!==target.song||latest?.index!==target.index||latest?.session!==target.session){cancelCrossfade();return}
   audio=incoming;
   if(target.session){
     target.session.index=target.index;target.session.prefetched=false;
@@ -860,6 +865,19 @@ async function maybeCrossfade(){
   deckGain.get(incoming).linearRampToValueAtTime(1,end);
   transition.timer=setTimeout(()=>{if(fade===transition)cancelCrossfade()},duration*1000);
   setSession();syncMediaPlaybackState();syncMediaPosition();render();
+}
+function useDirectAudio(){
+  cancelCrossfade();
+  if(audio===backgroundDeck||!deckGain.has(audio)||!audio.src)return;
+  const old=audio,playing=!old.paused,position=old.currentTime;
+  backgroundDeck.src=old.src;
+  backgroundDeck.currentTime=position;
+  backgroundDeck.playbackRate=old.playbackRate;
+  audio=backgroundDeck;
+  old.pause();
+  if(playing)resumeAudio();
+  syncMediaPlaybackState();
+  syncMediaPosition();
 }
 onActiveAudio('timeupdate',maybeCrossfade);
 onActiveAudio('pause',cancelCrossfade);
@@ -883,7 +901,8 @@ onActiveAudio('ended',()=>next(false));
 ['loadedmetadata','durationchange','seeked'].forEach(e=>onActiveAudio(e,syncMediaPosition));
 // MediaSession metadata and position may be cleared when iOS changes audio route or suspends Safari.
 document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden&&cur()){setSession();syncMediaPlaybackState();syncMediaPosition()}
+  if(document.hidden)useDirectAudio();
+  else if(cur()){setSession();syncMediaPlaybackState();syncMediaPosition()}
 });
 function safeMediaAction(name,callback){
   if(!('mediaSession' in navigator))return;
@@ -1362,7 +1381,7 @@ function settingsMenu(){
     {label:'Repeat',icon:'repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
     {label:'Crossfade',val:settings.crossfade?settings.crossfade+' sec':'Off',action:()=>{
       settings.crossfade=CROSSFADE_OPTIONS[(CROSSFADE_OPTIONS.indexOf(settings.crossfade)+1)%CROSSFADE_OPTIONS.length];
-      if(settings.crossfade)prepareCrossfade();else cancelCrossfade();
+      if(settings.crossfade)prepareCrossfade();else useDirectAudio();
       saveSettings();render();
     }},
     {label:'Clicker',val:settings.clicker?'On':'Off',action:tog('clicker',[true,false])},
