@@ -1,6 +1,9 @@
 /* iPod Friends — optional anonymous social layer. The music player does not depend on Firebase. */
 (function(){
 'use strict';
+const bridge=window.ipodFriendsBridge;
+if(!bridge){console.error('iPod Friends: player bridge unavailable');return}
+const {audio,cur,list,go,push,replaceTop,top,msgView,loadingView,inputView}=bridge;
 const CONFIG={
   apiKey:"AIzaSyDSMe2R6QTVd3htWfP7-ScKMZyWd5dePNU",
   authDomain:"ipod-friends.firebaseapp.com",
