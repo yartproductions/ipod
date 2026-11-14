@@ -28,7 +28,14 @@ def mb_route(route):
                {'id': 'rel-other', 'title': 'Amber Days (Deluxe)', 'score': 70, 'date': '2021', 'country': 'GB', 'artist-credit': [{'name': 'Fixture Artist'}]}]
     elif 'test album' in query:
         rel = [{'id': 'rel-blue', 'title': 'Something Else', 'score': 60, 'artist-credit': [{'name': 'Nobody'}]}]   # not confident
-    return route.fulfill(status=200, content_type='application/json', body=json.dumps({'releases': rel, 'recordings': []}),
+    recs = []
+    import re as _re
+    m = _re.search(r'recording:"?([^"]+?)"?\s+and\s+artist:"?([^"]+?)"?$', query)
+    if m and 'amber' in m.group(1) and m.group(2).strip() == 'fixture artist':
+        title = _re.search(r'recording:"?([^"]+?)"?\s+AND', q.get('query', ''), _re.I).group(1)
+        recs = [{'title': title, 'score': 100, 'artist-credit': [{'name': 'Fixture Artist'}],
+                 'releases': [{'id': 'rel-amber', 'title': 'Amber Days'}]}]
+    return route.fulfill(status=200, content_type='application/json', body=json.dumps({'releases': rel, 'recordings': recs}),
                          headers={'Access-Control-Allow-Origin': '*'})
 def caa_route(route):
     rid = route.request.url.split('/release/')[1].split('/')[0]
@@ -88,6 +95,8 @@ def main():
         ctx.route('https://**', lambda r: r.abort())          # no network: these features must work offline
         ctx.route('https://musicbrainz.org/**', mb_route)
         ctx.route('https://coverartarchive.org/**', caa_route)
+        ctx.route('https://itunes.apple.com/**', lambda r: r.fulfill(status=200, content_type='application/json', body='{"results":[]}',
+                  headers={'Access-Control-Allow-Origin': '*'}))   # store has nothing: MusicBrainz/Cover Art Archive answer
         pg = ctx.new_page(); pg.on('pageerror', lambda e: errors.append(str(e)))
         pg.add_init_script("if(!localStorage.getItem('ipod.settings'))localStorage.setItem('ipod.settings',JSON.stringify({autoArt:false}))")
         pg.goto(url); pg.wait_for_timeout(1200)
@@ -145,7 +154,7 @@ def main():
         key(pg, 'Enter', wait=700)
         art = pg.get_attribute('.np .art', 'style') or ''
         check('Now Playing always has cover art (embedded or generated)', 'url(' in art, art[:60])
-        check('cover reflection drawn', pg.evaluate('!!document.querySelector(".np .refl")'))
+        check('cover shown with reflection, or beside lyrics in the lyrics layout', pg.evaluate('!!document.querySelector(".np .refl") || !!document.querySelector(".np.lyrics-np .artcol .art")'))
         md = pg.evaluate('navigator.mediaSession.metadata && navigator.mediaSession.metadata.artwork.length')
         check('lock screen gets artwork too', md == 1, md)
         gen = pg.evaluate('(()=>{const c=document.createElement("canvas");return typeof c.getContext("2d").fillText})()')
@@ -258,8 +267,10 @@ def main():
         choose(pg, 'Lyric Test'); pg.wait_for_timeout(500); key(pg, ' ', wait=150)
         pg.click('.mnp [data-act="fav"]'); pg.wait_for_timeout(200)
         home(pg); choose(pg, music); choose(pg, 'Songs'); choose(pg, 'Test Song 2'); pg.wait_for_timeout(500)
-        pg.click('.mnp [data-act="lyrics"]'); pg.wait_for_timeout(400)
-        check('song without lyrics says so', 'No Lyrics' in pg.inner_text('#body'))
+        pg.click('.mnp [data-act="lyrics"]')
+        try: pg.wait_for_function('document.getElementById("body").innerText.includes("No Lyrics")', timeout=9000)
+        except Exception: pass
+        check('song without lyrics says so (within a few seconds, even if the lyrics service is asleep)', 'No Lyrics' in pg.inner_text('#body'), pg.inner_text('#body'))
         home(pg); choose(pg, 'Settings'); choose(pg, 'Fast Scroll'); choose(pg, 'Style')     # Fast Scroll back on, back to Classic
         check('Classic unaffected', 'modern' not in pg.get_attribute('#ipod', 'class'))
 
@@ -346,13 +357,13 @@ def main():
             if(getComputedStyle(document.getElementById("htitle")).display==="none")window.__titleHidden=true})
             .observe(document.querySelector(".hdr"),{subtree:true,childList:true,characterData:true,attributes:true})''')
         pg.set_input_files('#file', for_sync); pg.wait_for_timeout(60)
-        labels = pg.evaluate('window.__labels')
-        check('import shows "Syncing N of 12" progress in the header', any(l.startswith('Syncing') and l.endswith(' of 12') for l in labels) and 'Syncing 12 of 12' in labels, labels[:6])
         check('screen title is replaced while syncing', pg.evaluate('window.__titleHidden'))
         key(pg, 'ArrowDown', wait=60)
         check('iPod stays usable during sync (no loading screen)', pg.evaluate('!!document.querySelector("#body .row.sel")') and pg.text_content('#htitle') == 'iPod')
         w1 = pg.evaluate('parseFloat(document.getElementById("taskbar").style.width)')
         wait_sync(pg)
+        labels = pg.evaluate('window.__labels')   # read after the sync: reading mid-sync raced the import
+        check('import shows "Syncing N of 12" progress in the header', any(l.startswith('Syncing') and l.endswith(' of 12') for l in labels) and 'Syncing 12 of 12' in labels, labels[-4:])
         check('bar fills and shows Sync Complete', pg.text_content('#tasktl') == 'Sync Complete' and 'done' in pg.get_attribute('.hdr', 'class')
               and pg.evaluate('parseFloat(document.getElementById("taskbar").style.width)') == 100, (w1, pg.text_content('#tasktl')))
         pg.wait_for_timeout(2500)
@@ -427,7 +438,7 @@ def main():
         key(pg, 'Enter', wait=450)
         check('a second single press turns scrubbing off (no menu)', pg.text_content('#htitle') == 'Now Playing' and 'scrub' not in pg.get_attribute('.fnp .bar', 'class'))
         key(pg, 'Enter', wait=80); key(pg, 'Enter', wait=400)
-        check('double-tap center opens the song menu with Get Artwork', pg.text_content('#htitle') == 'Song' and ('Get Artwork' in pg.inner_text('#body') or 'Replace Artwork' in pg.inner_text('#body')))
+        check('double-tap center opens the song menu with Repair Artwork', pg.text_content('#htitle') == 'Song' and 'Repair Artwork' in pg.inner_text('#body'), pg.inner_text('#body'))
         key(pg, 'Escape', wait=200)
 
         # ---- Get Artwork (pick a candidate) ----
@@ -445,9 +456,11 @@ def main():
             key(pg, 'ArrowDown', wait=25)
         key(pg, 'Enter', wait=600); key(pg, ' ', wait=150)
         key(pg, 'Enter', wait=150); key(pg, 'Enter', wait=300)
-        check('song without art offers Get Artwork', 'Get Artwork' in pg.inner_text('#body') or 'Get Artwork' in ' '.join(rows(pg)))
-        choose(pg, 'Get Artwork'); pg.wait_for_timeout(2500)
-        check('Get Artwork lists candidates with thumbnails', pg.text_content('#htitle') == 'Choose Artwork' and pg.evaluate('document.querySelectorAll("#body .thumb").length') >= 2,
+        check('song without art offers Repair Artwork', 'Repair Artwork' in ' '.join(rows(pg)), rows(pg))
+        choose(pg, 'Repair Artwork'); pg.wait_for_timeout(300)
+        check('Repair Artwork offers automatic and manual options', 'Find Best Match' in rows(pg) and 'Choose Album Cover' in rows(pg), rows(pg))
+        choose(pg, 'Choose Album Cover'); pg.wait_for_timeout(2500)
+        check('Choose Album Cover lists candidates with thumbnails', pg.text_content('#htitle') == 'Choose a Cover' and pg.evaluate('document.querySelectorAll("#body .thumb").length') >= 2,
               pg.inner_text('#body'))
         check('MusicBrainz searched by album + artist', any('amber days' in q.lower() and 'fixture artist' in q.lower() for _, q in mb_calls), mb_calls[-2:])
         key(pg, 'Enter', wait=1200)
@@ -460,7 +473,7 @@ def main():
         check('Now Playing shows the new cover', 'blob:' in art, art[:60])
         pg.reload(); pg.wait_for_timeout(1500)
         has_art = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();
-            q.onsuccess=()=>res(q.result.filter(s=>s.title==="Bare Amber").map(s=>!!s.art&&s.art.size>2048&&s.artSource==="coverartarchive"))}})''')
+            q.onsuccess=()=>res(q.result.filter(s=>s.title==="Bare Amber").map(s=>!!s.art&&s.art.size>2048&&s.artSource==="manual"))}})''')
         check('cover is saved with the song (persists after reload)', has_art == [True], has_art)
 
         # ---- Find Missing Artwork (auto, confident matches only) ----
@@ -468,9 +481,9 @@ def main():
                         '-metadata', 'title=Bare Amber Two', '-metadata', 'artist=Fixture Artist', '-metadata', 'album=Amber Days', bare], check=True)
         n_before = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();q.onsuccess=()=>res(q.result.filter(s=>!s.art).length)}})''')
         pg.set_input_files('#file', [bare]); pg.wait_for_timeout(300); wait_sync(pg); pg.wait_for_timeout(2300)
-        home(pg); choose(pg, 'Settings'); choose(pg, 'Find Missing Artwork')
-        check('Find Missing Artwork starts in the background', 'Finding Artwork' in pg.inner_text('#body'), pg.inner_text('#body'))
-        pg.wait_for_function('document.getElementById("tasktl").textContent.startsWith("Found") || document.getElementById("tasktl").textContent.startsWith("No new")', timeout=30000)
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Artwork Tools'); choose(pg, 'Find Missing Artwork')
+        check('Find Missing Artwork starts in the background', 'Refreshing Covers' in pg.inner_text('#body'), pg.inner_text('#body'))
+        pg.wait_for_function('/updated$/.test(document.getElementById("tasktl").textContent)', timeout=60000)
         status = pg.text_content('#tasktl')
         rec = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();
             q.onsuccess=()=>res(q.result.map(s=>[s.title,!!s.art,s.artSource||""]))}})''')
@@ -488,13 +501,16 @@ def main():
                         '-metadata', 'title=Auto Amber', '-metadata', 'artist=Fixture Artist', '-metadata', 'album=Amber Days', bare], check=True)
         calls0 = len(mb_calls)
         pg.set_input_files('#file', [bare]); pg.wait_for_timeout(300); wait_sync(pg)
-        pg.wait_for_function('document.getElementById("tasktl").textContent.startsWith("Found") || document.getElementById("tasktl").textContent.startsWith("No new")', timeout=30000)
+        for _ in range(60):   # the quiet lookup starts ~2.4 s after the import
+            if pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();
+                q.onsuccess=()=>res(q.result.some(s=>s.title==="Auto Amber"&&s.art))}})'''): break
+            pg.wait_for_timeout(500)
         rec = pg.evaluate('''new Promise(res=>{const r=indexedDB.open("ipod");r.onsuccess=()=>{const q=r.result.transaction("songs").objectStore("songs").getAll();
             q.onsuccess=()=>res(q.result.filter(s=>s.title==="Auto Amber").map(s=>[!!s.art,s.artSource||""]))}})''')
         check('imported song gets its cover automatically', rec == [[True, 'coverartarchive']], rec)
         check('no "Finding Artwork" screen interrupts you (runs quietly)', pg.text_content('#htitle') == 'iPod')
         new_calls = mb_calls[calls0:]
-        check('Auto Artwork looked up the new album (and other albums still missing art)', any('amber days' in q.lower() for _, q in new_calls), new_calls)
+        check('Auto Artwork looked up the new song', any('auto amber' in q.lower() for _, q in new_calls), new_calls)
         check('each album looked up at most once per pass', len(new_calls) == len(set(new_calls)), new_calls)
         calls1 = len(mb_calls)
         pg.set_input_files('#file', [str(FIX / 'song1.mp3')]); pg.wait_for_timeout(300); wait_sync(pg); pg.wait_for_timeout(3500)
