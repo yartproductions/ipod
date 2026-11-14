@@ -127,3 +127,20 @@ test('Concurrent tracks share a verified album lookup and reuse its cached resul
  assert.equal(searches,3);
  assert.equal(saved['album:Amber Days (Deluxe)'],undefined);
 });
+
+test('Refresh All searches each verified edition once per run',async()=>{
+ const refresh=new Function('albumArtworkKey',
+  section('async function refreshAlbumArtwork','/* ---------- Cover chooser')+'return refreshAlbumArtwork;')(s=>s.album);
+ const run=new Map();
+ const original={album:'Album'},deluxe={album:'Album (Deluxe)'};
+ const searches=[];
+ const lookup=album=>async()=>{searches.push(album);return {match:{album,url:'https://example.com/cover'},blob:{}}};
+ const first=await refresh(original,lookup(original.album),run);
+ assert.equal(await refresh(original,lookup(original.album),run),first);
+ await refresh(deluxe,lookup(original.album),run);
+ assert(!run.has(deluxe.album));
+ await refresh(deluxe,lookup(deluxe.album),run);
+ await refresh(deluxe,lookup(deluxe.album),run);
+ await refresh(original,lookup(original.album),new Map());
+ assert.deepEqual(searches,['Album','Album','Album (Deluxe)','Album']);
+});
