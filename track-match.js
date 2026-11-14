@@ -98,7 +98,17 @@ function begin(){
   replaceTop(inputView('Track Title','Exact title, including version',title=>{
    title=String(title||'').trim();
    if(!title)return replaceTop(msgView('Title Required','Enter the original song title.'));
-   startSearch({artist,title});
+   replaceTop(inputView('Duration (Optional)','M:SS, seconds, or 0 to skip',raw=>{
+    const value=String(raw||'').trim();
+    let duration=0;
+    if(/^\d+:\d{2}$/.test(value)){
+      const [min,sec]=value.split(':').map(Number);
+      if(sec>=60)return replaceTop(msgView('Invalid Duration','Seconds must be between 00 and 59.'));
+      duration=min*60+sec;
+    }else if(/^\d+$/.test(value))duration=Number(value);
+    else return replaceTop(msgView('Invalid Duration','Enter M:SS, total seconds, or 0 to skip.'));
+    startSearch({artist,title,duration});
+   },'0'));
   }));
  }));
 }
