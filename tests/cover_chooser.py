@@ -6,7 +6,7 @@ import cosmetics as C
 from playwright.sync_api import sync_playwright
 res = []
 def check(n, ok, d=''):
-    res.append(ok); print(('PASS ' if ok else 'FAIL ') + n + ('' if ok else f'  [{d}]'))
+    res.append(bool(ok)); print(('PASS ' if ok else 'FAIL ') + n + ('' if ok else f'  [{d}]'))
 state = {'mb_busy': True, 'mb_hits': 0}
 APPLE = C._png((220, 40, 60)); DEEZER = C._png((40, 200, 120)); PHOTO = C._png((30, 30, 200))
 def itunes(route):
@@ -22,6 +22,17 @@ def deezer(route):
           'cover_medium': 'https://cdn-images.dzcdn.net/images/cover/a/250x250.jpg', 'cover_xl': 'https://cdn-images.dzcdn.net/images/cover/a/1000x1000.jpg'}
     data = [{'title': 'Bare Amber', 'artist': {'name': 'Fixture Artist'}, 'album': al}] if '/search?' in route.request.url or 'search?' in route.request.url and 'album?' not in route.request.url else [{**al, 'artist': {'name': 'Fixture Artist'}}]
     route.fulfill(status=200, content_type='text/javascript', body=f"{q['callback']}({json.dumps({'data': data})})")
+LASTFM = C._png((150, 60, 200)); KEY = '0123456789abcdef0123456789abcdef'
+lastfm_calls = []
+def lastfm(route):
+    q = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(route.request.url).query)); lastfm_calls.append(q)
+    img = lambda h: [{'#text': f'https://lastfm.freetls.fastly.net/i/u/300x300/{h}.png', 'size': 'extralarge'}]
+    if q.get('api_key') != KEY: body = {'error': 10, 'message': 'Invalid API key'}
+    elif q['method'] == 'album.getinfo': body = {'album': {'name': 'Amber Days', 'artist': 'Fixture Artist', 'image': img('amberlfm')}}
+    elif q['method'] == 'track.getinfo': body = {'track': {'name': 'Bare Amber', 'artist': {'name': 'Fixture Artist'}, 'album': {'title': 'Amber Days', 'artist': 'Fixture Artist', 'image': img('amberlfm')}}}
+    else: body = {'results': {'albummatches': {'album': [{'name': 'Amber Days Remixed', 'artist': 'Other DJ', 'image': img('remix')},
+                                                         {'name': 'Blank', 'artist': 'x', 'image': [{'#text': 'https://lastfm.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png', 'size': 'extralarge'}]}]}}}
+    route.fulfill(status=200, content_type='application/json', body=json.dumps(body), headers={'Access-Control-Allow-Origin': '*'})
 def mb(route):
     state['mb_hits'] += 1
     if state['mb_busy']: return route.fulfill(status=503, body='busy', headers={'Access-Control-Allow-Origin': '*'})
@@ -57,12 +68,20 @@ with sync_playwright() as p:
     # Simulate a host that lets the grid show the picture but blocks saving the file (a CORS failure looks like a network error).
     ctx.route('https://cdn-images.dzcdn.net/**', lambda r: r.abort() if r.request.resource_type == 'fetch' else r.fulfill(status=200, content_type='image/jpeg', body=DEEZER))
     ctx.route('https://musicbrainz.org/**', mb)
+    ctx.route('https://ws.audioscrobbler.com/**', lastfm)
+    ctx.route('https://lastfm.freetls.fastly.net/**', lambda r: r.fulfill(status=200, content_type='image/jpeg', body=LASTFM, headers={'Access-Control-Allow-Origin': '*'}))
     ctx.route('https://coverartarchive.org/**', C.caa_route)
     pg = ctx.new_page(); errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
     pg.goto(url); pg.wait_for_timeout(800)
     pg.evaluate("localStorage.setItem('ipod.settings',JSON.stringify(Object.assign(JSON.parse(localStorage.getItem('ipod.settings')||'{}'),{autoArt:false})))")
     pg.reload(); pg.wait_for_timeout(800)
     pg.set_input_files('#file', [bare]); C.wait_sync(pg); pg.wait_for_timeout(500)
+    # Last.fm key: rejected when malformed, saved when valid
+    C.home(pg); C.choose(pg, 'Settings'); C.choose(pg, 'Artwork Tools'); C.choose(pg, 'Last.fm Key')
+    pg.fill('#inpt', 'not-a-key'); C.key(pg, 'Enter', wait=200)
+    check('malformed Last.fm key is refused', 'Check the Key' in pg.inner_text('#body'), pg.inner_text('#body'))
+    C.key(pg, 'Enter', wait=150); C.choose(pg, 'Last.fm Key'); pg.fill('#inpt', KEY); C.key(pg, 'Enter', wait=200)
+    check('valid Last.fm key is saved on the device', 'Last.fm Added' in pg.inner_text('#body') and KEY in pg.evaluate("localStorage.getItem('ipod.settings')"))
     open_chooser(pg)
     check('chooser opens as a cover grid right away', pg.text_content('#htitle') == 'Choose a Cover' and tiles(pg) > 0, pg.inner_text('#body'))
     pg.wait_for_timeout(1500)
@@ -72,6 +91,9 @@ with sync_playwright() as p:
     blob = ' | '.join(allcaps); walk_back(pg)
     check('Apple Music covers listed', 'Apple Music' in blob, blob)
     check('Deezer covers listed', 'Deezer' in blob, blob)
+    check('Last.fm covers listed with the key', 'Last.fm' in blob and 'Amber Days Remixed' in blob, blob)
+    check('Last.fm placeholder (grey star) is skipped', 'Blank' not in blob, blob)
+    check('Last.fm asked with the saved key', bool(lastfm_calls) and all(c.get('api_key') == KEY for c in lastfm_calls), lastfm_calls[:1])
     check('live/other editions offered too, not only the exact match', 'Amber Days (Live)' in blob, blob)
     check('best match first (album + artist match)', 'Amber Days' in allcaps[0] and '(Live)' not in allcaps[0], allcaps[0])
     check('manual options: photos, image link, different words', all(x in blob for x in ('Choose From Photos', 'Paste Image Link', 'Search Different Words')), blob)
@@ -84,6 +106,10 @@ with sync_playwright() as p:
     for _ in range(14): caps.append(caption(pg)); C.key(pg, 'ArrowDown', wait=40)
     walk_back(pg)
     check('Retry brings in MusicBrainz covers', any('MusicBrainz' in c for c in caps), caps)
+    # pick the Last.fm cover: saved at original size
+    walk_back(pg); walk_to(pg, 'Last.fm'); C.key(pg, 'Enter', wait=1500)
+    check('Last.fm cover saves', art_state(pg) == [[True, 'manual', '']] and 'Last.fm' in pg.inner_text('#body'), (art_state(pg), pg.inner_text('#body')))
+    C.key(pg, 'Enter', wait=200); walk_back(pg)
     # pick the Apple Music cover
     walk_to(pg, 'Apple Music'); C.key(pg, 'Enter', wait=1500)
     check('choosing a cover saves the image on the device', art_state(pg) == [[True, 'manual', '']], art_state(pg))

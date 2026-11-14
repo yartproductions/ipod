@@ -1825,6 +1825,17 @@ async function artworkFromDeezer(it){
   const best=(album&&hits.find(t=>artworkNormalize(t.album.title)===album))||hits.find(t=>!/\s-\s(single|ep)$/i.test(t.album.title)&&t.album.type!=='single')||hits[0];
   return {url:best.album.cover_xl,source:'deezer',score:1,album:best.album.title};
 }
+// Last.fm: the track's own album, only when artist and title match exactly.
+async function artworkFromLastfm(it){
+  if(!String(settings.lastfmKey||'').trim()||!known(it.artist)||!known(it.title))return null;
+  const j=await lastfm({method:'track.getinfo',artist:it.artist,track:it.title});
+  const t=j.track;if(!t||!t.album)return null;
+  if(artworkScore(it,{trackName:t.name,artistName:t.artist&&t.artist.name||''})<.92)return null;
+  const album=known(it.album)&&it.album!=='Offline Music'?artworkNormalize(it.album):'';
+  if(album&&artworkNormalize(t.album.title)!==album)return null;
+  const im=lastfmImage(t.album.image);if(!im)return null;
+  return {url:im.full,source:'lastfm',score:1,album:t.album.title};
+}
 async function artworkFromMusicBrainz(it){
   if(!known(it.artist)||!known(it.title))return null;
   // mbGet already applies the app's MusicBrainz request throttling.
@@ -1859,6 +1870,7 @@ async function recommendationArtwork(it,force=false){
     let match=null,busy=null;
     try{match=await artworkFromITunes(it)}catch(e){if(e.retry)busy=e}
     if(!match)try{match=await artworkFromDeezer(it)}catch(e){}
+    if(!match)try{match=await artworkFromLastfm(it)}catch(e){}
     if(!match)try{match=await artworkFromMusicBrainz(it)}catch(e){}
     if(match){artworkStore(key,match);return match.url}
     if(busy)throw busy;
@@ -2130,6 +2142,7 @@ async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected
   let busy=null;
   if(!match)try{match=await artworkFromITunes(lib)}catch(e){if(e.retry)busy=e}
   if(!match)try{match=await artworkFromDeezer(lib)}catch(e){}
+  if(!match)try{match=await artworkFromLastfm(lib)}catch(e){}
   if(!match)try{match=await artworkFromMusicBrainz(lib)}catch(e){}
   if(!match&&busy)throw busy;
   if(!match||!match.url)return null;
@@ -2143,14 +2156,14 @@ async function repairSongArtwork(s,{force=false,preferred=null,overrideProtected
 }
 /* ---------- Cover chooser: every source side by side, plus manual options ---------- */
 // Deezer's API has no CORS headers but supports JSONP, so it works from a web page.
-function jsonp(url,ms=9000){
+function jsonp(url,ms=9000,param='output=jsonp&callback='){
   return new Promise((resolve,reject)=>{
     const cb='__cv'+Math.random().toString(36).slice(2),el=document.createElement('script');
     const t=setTimeout(()=>{done();reject(new Error('timed out'))},ms);
     function done(){clearTimeout(t);try{delete window[cb]}catch(e){window[cb]=undefined}el.remove()}
     window[cb]=d=>{done();resolve(d)};
     el.onerror=()=>{done();reject(new Error('blocked'))};
-    el.src=url+(url.includes('?')?'&':'?')+'output=jsonp&callback='+cb;
+    el.src=url+(url.includes('?')?'&':'?')+param+cb;
     document.head.appendChild(el);
   });
 }
@@ -2184,9 +2197,38 @@ async function coversMusicBrainz(q,s){
   return list.map(c=>({key:'mb:'+c.id,title:c.title,artist:c.artist,year:c.year,source:'MusicBrainz',
     thumb:c.thumb,full:`${CAA}/release/${c.id}/front-1200`,fallback:c.full}));
 }
+// Last.fm (needs your free API key: Settings ▸ Artwork Tools ▸ Last.fm Key).
+const LASTFM_BLANK=/2a96cbd8b46e442fc41c2b86b821562f/;   // Last.fm's grey star placeholder
+function lastfmImage(images){
+  const list=(images||[]).filter(x=>x&&x['#text']&&!LASTFM_BLANK.test(x['#text']));
+  const big=list.find(x=>x.size==='extralarge')||list.find(x=>x.size==='mega')||list[list.length-1];
+  if(!big)return null;
+  const thumb=big['#text'],full=thumb.replace(/\/i\/u\/[^/]+\//,'/i/u/');   // drop the size folder for the original
+  return {thumb,full};
+}
+async function lastfm(params){
+  const key=String(settings.lastfmKey||'').trim();if(!key)throw new Error('Add your Last.fm key in Artwork Tools.');
+  const url='https://ws.audioscrobbler.com/2.0/?format=json&api_key='+encodeURIComponent(key)+'&'+new URLSearchParams(params);
+  let j;
+  try{const r=await fetch(url);j=await r.json()}catch(e){j=await jsonp(url,9000,'callback=')}
+  if(j&&j.error)throw new Error(j.error===10||j.error===26?'Last.fm rejected the API key.':j.error===29?'Last.fm is busy (rate limit).':(j.message||'Last.fm error '+j.error));
+  return j||{};
+}
+async function coversLastfm(q){
+  const out=[],add=(al,track)=>{const im=al&&lastfmImage(al.image);
+    if(im)out.push({key:'lastfm:'+(al.mbid||al.url||al.name),title:al.name||al.title||'',artist:typeof al.artist==='string'?al.artist:(al.artist&&al.artist.name)||'',
+      track,source:'Last.fm',thumb:im.thumb,full:im.full,fallback:im.thumb})};
+  if(q.artist&&q.album){const j=await lastfm({method:'album.getinfo',artist:q.artist,album:q.album,autocorrect:1});if(j.album)add(j.album)}
+  if(q.artist&&q.title){const j=await lastfm({method:'track.getinfo',artist:q.artist,track:q.title,autocorrect:1});
+    const t=j.track;if(t&&t.album)add({...t.album,name:t.album.title,artist:t.album.artist||q.artist},t.name)}
+  if(q.album||q.title){const j=await lastfm({method:'album.search',album:(q.album||q.title),limit:12});
+    ((j.results&&j.results.albummatches&&j.results.albummatches.album)||[]).forEach(al=>add(al))}
+  return out;
+}
 const COVER_SOURCES=[
   {name:'Apple Music',run:q=>coversApple(q)},
   {name:'Deezer',run:q=>coversDeezer(q)},
+  {name:'Last.fm',run:q=>coversLastfm(q),enabled:()=>!!String(settings.lastfmKey||'').trim()},
   {name:'MusicBrainz',run:(q,s)=>coversMusicBrainz(q,s)}
 ];
 // Turn any image (photo, thumbnail) into a square cover.
@@ -2258,7 +2300,7 @@ function coverPicker(s,q=coverQuery(s)){
       .finally(()=>{if(top()===v)render()});
   };
   if(!navigator.onLine)v.status.offline=1;
-  else if(q.artist||q.album||q.title)COVER_SOURCES.forEach(runSource);
+  else if(q.artist||q.album||q.title)COVER_SOURCES.filter(x=>!x.enabled||x.enabled()).forEach(runSource);
   return v;
 }
 function getArtwork(s){push(coverPicker(s))}
@@ -2303,11 +2345,17 @@ function artworkRepairMenu(s){
 }
 function artworkToolsMenu(){
   const locked=songs.filter(artworkProtected).length;
-  const matched=songs.filter(s=>s.art&&['itunes','coverartarchive','manual'].includes(s.artSource)).length;
+  const matched=songs.filter(s=>s.art&&['itunes','deezer','lastfm','coverartarchive','manual'].includes(s.artSource)).length;
   return list('Artwork Tools',()=>[
     {label:'Fallback Mode',val:settings.artworkMode==='Strict'?'Strict':'Thumbnails',action:()=>{
       settings.artworkMode=settings.artworkMode==='Strict'?'Thumbnails':'Strict';saveSettings();render();
     }},
+    {label:'Last.fm Key',val:settings.lastfmKey?'Added':'Add',chev:1,action:go(()=>inputView('Last.fm API Key','Paste your API key',v=>{
+      const key=String(v||'').trim();
+      if(key&&!/^[a-f0-9]{32}$/i.test(key))return replaceTop(msgView('Check the Key','A Last.fm API key is 32 letters and numbers (0-9, a-f).'));
+      settings.lastfmKey=key;saveSettings();
+      replaceTop(msgView(key?'Last.fm Added':'Last.fm Removed',key?'Last.fm covers now appear in Choose Album Cover and automatic lookups. The key stays on this device.':'Last.fm is no longer used.'));
+    },settings.lastfmKey||''))},
     {label:'Find Missing Artwork',chev:1,action:()=>findMissingArtwork(false)},
     {label:'Refresh All Artwork',chev:1,action:()=>refreshAllArtwork()},
     {label:'Repair a Song',chev:1,action:go(()=>list('Select Song',()=>songs.map(s=>({
