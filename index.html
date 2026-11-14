@@ -307,6 +307,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .fnp .cv{position:absolute;left:-42px;top:0;width:84px;height:84px;border-radius:3px;background-size:cover;background-position:center;cursor:pointer;
   transition:transform .38s cubic-bezier(.2,.8,.3,1),opacity .38s,filter .38s;box-shadow:0 2px 8px rgba(0,0,0,.45);
   -webkit-box-reflect:below 2px linear-gradient(transparent 62%,rgba(255,255,255,.22))}
+.fnp .cv-motion{width:100%;height:100%;border-radius:inherit;background-position:center;background-size:cover}
 .fnp.instant .cv{transition:none}
 .fnp .tag{position:absolute;top:2px;font-size:8.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;opacity:.5}
 .fnp .tag.l{left:8px}.fnp .tag.r{right:8px}
@@ -1420,8 +1421,17 @@ function renderHdr(){
   $('#pi').innerHTML=qi<0?'':!isPlaying()?'<svg viewBox="0 0 12 12"><rect x="2" y="2" width="3" height="8" fill="#2b7fde"/><rect x="7" y="2" width="3" height="8" fill="#2b7fde"/></svg>'
     :'<svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z" fill="#2b7fde"/></svg>';
 }
+let shownNowTrack=null;
 function render(){
   const v=top();
+  const track=v.type==='now'?cur():null;
+  const index=importedPlayback?.queue===queue?importedPlayback.index:qi;
+  const session=importedPlayback?.queue===queue?importedPlayback:queue;
+  const prior=shownNowTrack;
+  shownNowTrack=track?{track,index,session}:null;
+  const changed=track&&(!prior||prior.track!==track||prior.index!==index||prior.session!==session);
+  const direction=prior?.session===session&&index<prior.index?-1:1;
+
   const isVid=false;
   screenEl.classList.toggle('video',isVid);
 
@@ -1469,7 +1479,7 @@ function render(){
   }else if(v.type==='brick'){
     brickMount(v);
   }else if(v.type==='now'&&settings.npStyle==='Flow'&&cur()){
-    renderNowFlow();
+    renderNowFlow(changed?direction:0);
   }else if(v.type==='now'&&settings.style==='Modern'&&cur()){
     const s=cur(),art=artFor(s);screenEl.classList.add('nowmod');if(scrub)ctl=null;
     body.innerHTML=`<div class="mnp" id="np">
@@ -1496,13 +1506,14 @@ function render(){
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
     body.innerHTML=`<div class="np lyrics-np" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)">${nowPlayingNeighbors()}<div class="cnt">${qi+1} of ${queue.length}</div>
-      <div class="top"><div class="artcol"><div class="art${s.blob?' offline-cover':''}${lastArtId!==s.id?' fresh':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
+      <div class="top"><div class="artcol"><div class="art${s.blob?' offline-cover':''}" style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div></div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
       <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
       <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/></svg><div class="vb"><i id="vbi"></i></div>
       <svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/><path d="M8.5 3.5a3.5 3.5 0 010 5M10 2a5.5 5.5 0 010 8" stroke="#333" fill="none"/></svg></div></div>`;
+    if(changed)animateNowCover('#np .art',direction,!!prior);
     lastArtId=s.id;tick();
     ensureNowLyrics(s);
   }else if(isVid){
@@ -2025,10 +2036,23 @@ function nowPlayingNeighbors(){
   };
   return `<div class="np-neighbors" aria-hidden="true">${neighbor(-1,'previous')}${neighbor(1,'upcoming')}</div>`;
 }
-function renderNowFlow(){
-  const s=cur(),from=flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
+function animateNowCover(selector,direction,glide){
+  if(!direction||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const cover=$(selector);
+  cover?.animate([
+    {transform:`perspective(400px) translateX(${glide?direction*50:0}px) rotateY(${direction*-66}deg) scale(.88)`,opacity:.38},
+    {transform:'perspective(400px) translateX(0) rotateY(0deg) scale(1)',opacity:1}
+  ],{duration:360,easing:'cubic-bezier(.2,.8,.25,1)'});
+  if(glide)$('#np .np-neighbors')?.animate([
+    {transform:`translateX(${direction*24}px)`,opacity:.25},
+    {transform:'translateX(0)',opacity:1}
+  ],{duration:360,easing:'cubic-bezier(.2,.8,.25,1)'});
+}
+function renderNowFlow(direction=0){
+  const reduced=direction&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const s=cur(),from=!reduced&&flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
   const lo=Math.max(0,qi-5),hi=Math.min(queue.length-1,qi+5);let cards='';
-  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${queue[i].blob?' offline-cover':''}" data-q="${i}" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div>`;
+  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${queue[i].blob?' offline-cover':''}" data-q="${i}"><div class="cv-motion" style="background-image:url(&quot;${esc(artFor(queue[i]))}&quot;)"></div></div>`;
   body.innerHTML=`<div class="fnp instant lyrics-flow" id="np" style="--np-art:url(&quot;${esc(artFor(s))}&quot;)">${nowPlayingNeighbors()}<span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
     <div class="stage">${cards}</div>
     <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
@@ -2037,11 +2061,13 @@ function renderNowFlow(){
     <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
     <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/></svg><div class="vb"><i id="vbi"></i></div>
       <svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/><path d="M8.5 3.5a3.5 3.5 0 010 5M10 2a5.5 5.5 0 010 8" fill="none"/></svg></div></div>`;
+  const panel=$('#np');
   const els=[...document.querySelectorAll('#np .cv')];
   els.forEach(el=>nowFlowPos(el,+el.dataset.q-from));           // start where the shelf was …
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#np');if(!f)return;f.classList.remove('instant');
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{const f=$('#np');if(!f||f!==panel)return;f.classList.remove('instant');
     els.forEach(el=>nowFlowPos(el,+el.dataset.q-qi))}));        // … and glide to the new song
   els.forEach(el=>el.addEventListener('click',()=>{const q=+el.dataset.q;if(q!==qi){click();qi=q;load(true)}}));
+  if(direction)animateNowCover('#np .cv[data-q="'+qi+'"] .cv-motion',direction,true);
   flowNpQi=qi;tick();ensureNowLyrics(s);
 }
 
