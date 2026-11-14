@@ -13,6 +13,8 @@ assert.match(friends,/sharing:false/);
 assert.match(friends,/seconds>=30/);
 assert.match(friends,/\.slice\(0,3\)/);
 assert.match(friends,/firebase-firestore-compat/);
+assert.match(html,/window\.ipodFriendsBridge=Object\.freeze/);
+assert.match(friends,/const bridge=window\.ipodFriendsBridge/);
 const originalFlow=fs.readFileSync(path.resolve(__dirname,'../index.html'),'utf8');
 const browsing=originalFlow.slice(originalFlow.indexOf('function renderFlow(v,from)'),originalFlow.indexOf('function flowUpdate(v)'));
 assert.doesNotMatch(browsing,/np-lyrics/);
@@ -21,9 +23,14 @@ assert.match(np,/np-lyric-lines/);
 // Smoke the optional module without loading Firebase or affecting music playback.
 let pushed=null,timeHandler=null;
 const mockAudio={addEventListener(name,fn){if(name==='timeupdate')timeHandler=fn},paused:true};
-const fakeWindow={};
-const friendsModule=new Function('window','audio','navigator','push','msgView',friends+';return window.ipodFriends;')(
- fakeWindow,mockAudio,{onLine:false},view=>{pushed=view},(title,msg)=>({title,msg}));
+const fakeWindow={ipodFriendsBridge:{
+ audio:mockAudio,cur:()=>null,list:(title,items)=>({title,items}),go:fn=>fn,
+ push:view=>{pushed=view},replaceTop:()=>{},top:()=>null,
+ msgView:(title,msg)=>({title,msg}),loadingView:title=>({title}),
+ inputView:()=>({})
+}};
+const friendsModule=new Function('window','navigator','console',friends+';return window.ipodFriends;')(
+ fakeWindow,{onLine:false},console);
 assert.equal(typeof friendsModule.open,'function');
 assert.equal(typeof timeHandler,'function');
 friendsModule.open();
