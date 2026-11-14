@@ -190,6 +190,7 @@ function playTrack(pl,index){
 function playlistTracks(pl){
  const albums=pl.tracks.map((track,index)=>({
   album:track.title,artist:track.artist,
+  getTrack:()=>({song:available(track),video:trackVideo(track)}),
   isOffline:()=>!!available(track)?.blob,
   getArt:()=>{
    const local=available(track);
@@ -229,7 +230,7 @@ function playlistView(pl){
     if(!ready.length)push(msgView('No Offline Songs','Match or add songs before playing.'));
     else b.playImported(ready.map(song=>({song})),0,()=>sharedPlaylistCover(pl));
    }},
-   ...pl.tracks.map((t,i)=>({label:(i+1)+'. '+t.title,icon:'music',val:t.artist,action:()=>playTrack(pl,i)}))
+   ...pl.tracks.map((t,i)=>({label:(i+1)+'. '+t.title,icon:'music',val:t.artist,getTrack:()=>({song:available(t),video:trackVideo(t)}),action:()=>playTrack(pl,i)}))
   ];
  });
 }
