@@ -96,6 +96,15 @@ function playlistView(pl){
    {label:'Available Offline',val:existing+' tracks'},
    {label:'YouTube Links',val:matched+' matched'},
    {label:'Match Unresolved',action:()=>matchPlaylist(pl)},
+   ...pl.tracks.map((t,i)=>t.status==='review'&&t.choices?.length?{label:'Review '+(i+1)+'. '+t.title,
+     val:t.choices.length+' candidates',action:()=>push(list('Review YouTube Result',[
+      {label:'Original',val:t.artist+' — '+t.title},
+      ...t.choices.map(c=>({label:c.title,val:c.artist,action:()=>{
+       t.youtubeId=c.id;t.status='matched';delete t.choices;
+       const all=read(),index=all.findIndex(p=>p.id===pl.id);
+       if(index>=0){all[index]=pl;write(all)}push(msgView('Match Selected',c.artist+' — '+c.title));
+      }}))
+     ]))}:null).filter(Boolean),
    {label:'Play Available Offline',action:()=>{
     const ready=pl.tracks.map(available).filter(Boolean);
     if(!ready.length)push(msgView('No Offline Songs','Match or add songs before playing.'));
@@ -164,6 +173,7 @@ async function matchPlaylist(pl){
    if(available(t)){t.status='local';matched++;continue}
    const found=await youtubeMatch(t);
    t.status=found.status;if(found.youtubeId)t.youtubeId=found.youtubeId;
+   if(found.choices?.length)t.choices=found.choices;
    if(found.status==='matched')matched++;else if(found.status==='review')review++;else unmatched++;
    // Allow the UI to repaint; avoid requesting every playlist track simultaneously.
    if(i%5===4)await new Promise(r=>setTimeout(r,50));
