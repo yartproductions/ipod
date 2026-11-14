@@ -199,13 +199,15 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
   box-shadow:0 0 0 1px rgba(255,255,255,.3),0 6px 14px rgba(0,0,0,.45);transition:opacity .35s ease}
 .np-neighbors i.offline-cover{box-shadow:0 0 0 1px rgba(255,214,130,.6),0 0 8px rgba(255,186,72,.35),0 6px 14px rgba(0,0,0,.45)}
 .np.lyrics-np .np-neighbors .previous{left:112px;top:32px;transform:rotateY(52deg)}
-.np.lyrics-np .np-neighbors .upcoming{right:-20px;top:32px;transform:rotateY(-52deg)}
+.np-neighbors .upcoming{margin-right:calc((var(--k) - 1) * -24px);scale:calc(1 - (var(--k) - 1) * .1);filter:brightness(calc(1 - (var(--k) - 1) * .2))}
+.np-neighbors .upcoming.k2{opacity:.26}.np-neighbors .upcoming.k3{opacity:.18}
+.np.lyrics-np .np-neighbors .upcoming{right:20px;top:32px;transform:rotateY(-52deg)}
 .mnp .np-neighbors{z-index:1}
 .mnp .np-neighbors .previous{display:none}
-.mnp .np-neighbors .upcoming{right:-20px;top:46px;transform:rotateY(-52deg);opacity:.3}
+.mnp .np-neighbors .upcoming{right:20px;top:46px;transform:rotateY(-52deg)}
 .fnp .np-neighbors .previous{display:none}
-.fnp .np-neighbors .upcoming{right:-20px;top:26px;transform:rotateY(-52deg);opacity:0}
-.fnp.lyrics-flow .np-neighbors .upcoming{opacity:.34}
+.fnp .np-neighbors .upcoming{right:20px;top:26px;transform:rotateY(-52deg);visibility:hidden}
+.fnp.lyrics-flow .np-neighbors .upcoming{visibility:visible}
 #np .offline-cover,#flow .offline-cover{box-shadow:0 0 0 1px rgba(255,214,130,.7),0 0 10px rgba(255,186,72,.45),0 4px 12px rgba(0,0,0,.4)}
 .np.lyrics-np .art{position:relative;width:92px;height:92px;background-size:cover;background-position:center;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5)}
 .np.lyrics-np .refl{display:none}
@@ -2200,9 +2202,13 @@ function nowPlayingNeighbors(){
     const media=saved||track?.video;
     if(!media)return '';
     const art=session?.cover?.()||(saved?artFor(saved):genArt(media.album||media.title,media.artist));
-    return `<i class="${direction}${saved?.blob?' offline-cover':''}" style="background-image:url(&quot;${esc(art)}&quot;)"></i>`;
+    const k=Math.abs(offset);
+    return `<i class="${direction} k${k}${saved?.blob?' offline-cover':''}" style="--k:${k};background-image:url(&quot;${esc(art)}&quot;)"></i>`;
   };
-  return `<div class="np-neighbors" aria-hidden="true">${neighbor(-1,'previous')}${neighbor(1,'upcoming')}</div>`;
+  // One previous song and up to three upcoming ones, stacked like a little Cover Flow.
+  const remaining=session?session.tracks.length-1-session.index:queue.length-1-qi;
+  const up=[1,2,3].filter(k=>k<=remaining).map(k=>neighbor(k,'upcoming')).reverse().join('');   // farthest first, nearest on top
+  return `<div class="np-neighbors" aria-hidden="true">${neighbor(-1,'previous')}${up}</div>`;
 }
 const NP_EASE='cubic-bezier(.2,.8,.25,1)';
 function animateNowCover(selector,direction,glide,mode='flip'){
