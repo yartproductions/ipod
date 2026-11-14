@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const b=window.ipodPlaylistImportBridge;if(!b)return;
-const {list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,playYT,playList,getSongs}=b;
+const {list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,playYT,getSongs}=b;
 const KEY='ipod.importedPlaylists.v1';
 const text=x=>String(x??'').trim();
 const clean=x=>text(x).slice(0,200);
@@ -132,12 +132,56 @@ function available(t){return getSongs().find(s=>s.sourceId&&s.sourceId===t.youtu
  getSongs().find(s=>(matcher()?.exactCandidate?.(t,s)||
  (!matcher()&&normalize(s.title)===normalize(t.title)&&normalize(s.artist)===normalize(t.artist)))&&
  (!t.duration||!s.duration||Math.abs(t.duration-s.duration)<=Math.max(5,t.duration*.03)));}
+function trackVideo(track){
+ return /^[A-Za-z0-9_-]{11}$/.test(track.youtubeId||'')?
+  {kind:'yt',id:track.youtubeId,title:track.title,artist:track.artist,album:track.album}:null;
+}
+function queuePlaylistDownloads(pl){
+ const videos=new Map();
+ for(const track of pl.tracks){
+  const video=trackVideo(track);
+  if(video&&!available(track)?.blob)videos.set(video.id,video);
+ }
+ if(!videos.size){push(msgView('Nothing to Download','Match any remaining songs to YouTube first.'));return}
+ for(const video of videos.values())b.enqueueYT(video).catch(()=>{});
+ push(msgView('Downloads Queued',videos.size+' track(s). You can keep browsing or check Downloads.'));
+}
+function playlistCover(pl){
+ const song=getSongs().find(s=>s.id===pl.coverSongId&&!s.deleted);
+ return song?.artUrl&&!b.isYoutubeThumbnail(song.artUrl)?song.artUrl:null;
+}
+function sharedPlaylistCover(pl){
+ const current=read().find(p=>p.id===pl.id)||pl;
+ return current.useSharedCover?playlistCover(current):null;
+}
+function saveCoverSettings(pl,settings){
+ const all=read(),index=all.findIndex(p=>p.id===pl.id);
+ if(index<0)return;
+ all[index]={...all[index],...settings};
+ write(all);
+ Object.assign(pl,settings);
+ b.render();
+}
+function choosePlaylistCover(pl){
+ const seen=new Set();
+ const choices=pl.tracks.map(available).filter(song=>{
+  if(!song?.artUrl||b.isYoutubeThumbnail(song.artUrl))return false;
+  const key=JSON.stringify([song.artist,song.album,song.album?song.artSource==='manual'?song.id:'':song.id]);
+  if(seen.has(key))return false;
+  seen.add(key);return true;
+ });
+ if(!choices.length){push(msgView('No Covers Available','Save a playlist song with album artwork first.'));return}
+ push(list('Choose Playlist Cover',choices.map(song=>({
+  label:song.album||song.title,val:song.artist,thumb:song.artUrl,
+  action:()=>{saveCoverSettings(pl,{coverSongId:song.id,useSharedCover:true});replaceTop(msgView('Playlist Cover Set',song.album||song.title))}
+ }))));
+}
 function playTrack(pl,index){
  const tracks=pl.tracks.map(track=>({
   song:available(track),
-  video:track.youtubeId?{kind:'yt',id:track.youtubeId,title:track.title,artist:track.artist,album:track.album}:null
+  video:trackVideo(track)
  }));
- if(tracks[index].song||tracks[index].video)b.playImported(tracks,index);
+ if(tracks[index].song||tracks[index].video)b.playImported(tracks,index,()=>sharedPlaylistCover(pl));
  else{
   const track=pl.tracks[index];
   push(msgView('Unmatched Track',track.artist+' — '+track.title+'. Use Playlist Options to match it.'));
@@ -149,7 +193,7 @@ function playlistTracks(pl){
   isOffline:()=>!!available(track)?.blob,
   getArt:()=>{
    const local=available(track);
-   return local?b.artFor(local):b.genArt(track.album||track.title,track.artist);
+   return sharedPlaylistCover(pl)||(local?b.artFor(local):b.genArt(track.album||track.title,track.artist));
   },
   play:()=>playTrack(pl,index)
  }));
@@ -164,6 +208,12 @@ function playlistView(pl){
    {label:'Tracks',val:pl.tracks.length+' total'},
    {label:'Available Offline',val:existing+' tracks'},
    {label:'YouTube Links',val:matched+' matched'},
+   {label:'Queue Downloads',icon:'download',action:()=>queuePlaylistDownloads(pl)},
+   {label:'Choose Playlist Cover',icon:'picture',chev:1,action:()=>choosePlaylistCover(pl)},
+   {label:'Use One Cover',val:pl.useSharedCover&&playlistCover(pl)?'On':'Off',action:()=>{
+    if(!playlistCover(pl))choosePlaylistCover(pl);
+    else saveCoverSettings(pl,{useSharedCover:!pl.useSharedCover});
+   }},
    ...(pl.tracks.some(t=>!t.youtubeId)?[{label:'Match Unresolved',icon:'search',action:()=>matchPlaylist(pl)}]:[]),
    ...pl.tracks.map((t,i)=>t.status==='review'&&t.choices?.length?{label:'Review '+(i+1)+'. '+t.title,
      val:t.choices.length+' candidates',action:()=>push(list('Review YouTube Result',[
@@ -177,7 +227,7 @@ function playlistView(pl){
    {label:'Play Available Offline',icon:'play',action:()=>{
     const ready=pl.tracks.map(available).filter(Boolean);
     if(!ready.length)push(msgView('No Offline Songs','Match or add songs before playing.'));
-    else playList(ready,0);
+    else b.playImported(ready.map(song=>({song})),0,()=>sharedPlaylistCover(pl));
    }},
    ...pl.tracks.map((t,i)=>({label:(i+1)+'. '+t.title,icon:'music',val:t.artist,action:()=>playTrack(pl,i)}))
   ];
@@ -325,7 +375,9 @@ function flow(){
  if(!b.openPlaylistFlow||!playlists.length){library();return}
  const cards=playlists.map(pl=>{
   const getArt=()=>{
-   for(const track of pl.tracks){
+   const current=read().find(p=>p.id===pl.id)||pl;
+   const cover=playlistCover(current);if(cover)return cover;
+   for(const track of current.tracks){
     const cover=available(track)?.artUrl;
     if(cover&&!b.isYoutubeThumbnail(cover))return cover;
    }
