@@ -386,6 +386,17 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .sheet .btns{flex:none;border-top:1px solid #c9ccd0}
 .sheet .bt{height:25px;line-height:25px;padding:0 10px;font-size:13px;font-weight:700;color:#111;cursor:pointer}
 .sheet .bt.sel{color:#fff;background:linear-gradient(#5fb4f8,#2b7fde 55%,#1f6ccb)}
+.sheet.radial .card{width:244px;background:#202832f5;border:1px solid #758091;border-radius:50%;height:174px;color:#fff}
+.sheet.radial .st,.sheet.radial .sbody,.sheet.radial .hint{display:none}
+.sheet.radial .btns{position:relative;flex:1;border:0}
+.sheet.radial .bt{position:absolute;display:grid;place-items:center;text-align:center;width:76px;height:42px;padding:3px;line-height:1.1;white-space:normal;font-size:11px;color:#fff;background:#343f4f;border-radius:20px}
+.sheet.radial .bt.sel{background:linear-gradient(#5fb4f8,#226dcc)}
+.sheet.radial .bt[aria-disabled="true"]{opacity:.45}
+.sheet.radial .bt:nth-child(1){top:9px;left:calc(50% - 38px)}
+.sheet.radial .bt:nth-child(2){top:65px;right:9px}
+.sheet.radial .bt:nth-child(3){bottom:9px;left:calc(50% - 38px)}
+.sheet.radial .bt:nth-child(4){top:65px;left:9px}
+.sheet.radial .radial-caption{position:absolute;top:76px;left:86px;right:86px;text-align:center;font-size:10px;line-height:1.15;color:#cbd5e1;pointer-events:none}
 .sheet .hint{font-size:9.5px;color:#7a8494;text-align:center;padding:2px 0 4px}
 .modern .sheet{background:rgba(0,0,0,.45);backdrop-filter:blur(3px)}
 .modern .sheet .card{border:0;border-radius:14px;background:#1b2533;box-shadow:0 10px 30px rgba(0,0,0,.55)}
@@ -2778,8 +2789,21 @@ function songOptions(s){return list('Song',()=>[
     {label:'Length',val:fmt(s===cur()?dur():s.duration||0)},{label:'Format',val:fmtOf(s)},
     {label:'Size',val:s.blob?(s.blob.size/1048576).toFixed(1)+' MB':'—'},{label:'Favorite',val:s.favorite?'Yes':'No'}]))},
 ])}
-function upNextView(){return list('Up Next',()=>queue.map((t,i)=>({label:(i===qi?'▶ ':'')+t.title,val:i<qi?'played':undefined,
-  action:()=>{qi=i;load(true);pop()}})).slice(Math.max(0,qi)),{emptyText:'Nothing queued.'})}
+function upNextView(){return list('Up Next',()=>{
+  const session=importedPlayback?.queue===queue?importedPlayback:null;
+  const current=session?session.index:qi;
+  const tracks=session?session.tracks:queue.map(song=>({song}));
+  return tracks.slice(Math.max(0,current)).map((track,offset)=>{
+    const song=importedTrackSong(track),index=current+offset;
+    const job=track.video&&downloadJobs.get(track.video.id);
+    const status=offset===0?'Now Playing':song?'Ready':job?.state==='Failed'?'Download failed':job?'Downloading':'Not saved';
+    return {label:(offset===0?'▶ ':'')+(song?.title||track.video?.title||track.song?.title||'Unknown Track'),
+      val:status,getTrack:()=>track,action:()=>{
+        if(session){if(session.pending)return;pop();startImported(session,index,{open:true})}
+        else{qi=index;load(true);pop();if(top().type!=='now')push(nowView())}
+      }};
+  });
+},{emptyText:'Nothing queued.'})}
 // Lyrics embedded in the song file itself (ID3 USLT); nothing is fetched from the internet.
 async function readLyrics(blob){
   try{const h=new Uint8Array(await blob.slice(0,10).arrayBuffer());if(h[0]!==73||h[1]!==68||h[2]!==51)return '';
@@ -3072,25 +3096,37 @@ function highlightedTrack(view){
   }
   return null;
 }
-function queuePlayNext(track){
+function queueTrack(track,playNext){
   if(!cur()||(!track?.song&&!track?.video)||track.song?.deleted)return false;
   const session=importedPlayback?.queue===queue?importedPlayback:null;
   if(session?.pending)return false;
   const song=importedTrackSong(track);
-  if(!session&&song)queue.splice(qi+1,0,song);
+  if(!session&&song)queue.splice(playNext?qi+1:queue.length,0,song);
   else{
     const active=session||{cover:null,tracks:queue.map(song=>({song})),index:qi,queue,pending:false,prefetched:false};
-    active.tracks.splice(active.index+1,0,track);
+    active.tracks.splice(playNext?active.index+1:active.tracks.length,0,track);
     importedPlayback=active;
     if(!song&&track.video){
-      active.prefetched=true;
+      if(playNext)active.prefetched=true;
       enqueueYT(track.video).catch(()=>{});
     }
   }
   setSession();
-  setHdrTask('Queued to Play Next',1,true);
+  setHdrTask(playNext?'Queued to Play Next':'Added to Queue',1,true);
   triggerHaptic('success');
   return true;
+}
+function openQueueRing(track){
+  const canQueue=!!(track?.song||track?.video);
+  const add=playNext=>{
+    if(!queueTrack(track,playNext))push(msgView('Queue Unavailable','Try again when the next track is ready.'));
+  };
+  openSheet('queue-ring','Playback','',[
+    {label:'Queue Song Next',disabled:!canQueue,run:()=>add(true)},
+    {label:'See the Queue',run:()=>push(upNextView())},
+    {label:'Add to the Queue',disabled:!canQueue,run:()=>add(false)},
+    {label:'Currently Playing',run:()=>{if(top().type!=='now')push(nowView())}}
+  ]);
 }
 let centerPress=null;
 function clearCenterPress(){
@@ -3106,10 +3142,10 @@ center.addEventListener('pointerdown',e=>{
   center.setPointerCapture(e.pointerId);
   const pressState={id:e.pointerId,long:false,timer:null,x:e.clientX,y:e.clientY};
   centerPress=pressState;
-  if(cur()&&(track?.song||track?.video)&&!holdOn){
+  if(cur()&&!holdOn&&!sheet&&view.type!=='input'){
     pressState.timer=setTimeout(()=>{
       pressState.long=true;
-      if(!holdOn&&top()===view&&view.sel===selected)queuePlayNext(track);
+      if(!holdOn&&!sheet&&cur()&&top()===view&&view.sel===selected)openQueueRing(track);
     },550);
   }
 });
@@ -3194,25 +3230,37 @@ function changelogHTML(list,limit){
 let sheet=null;   // {kind, sel, buttons:[{label, run}], off}
 function openSheet(kind,title,html,buttons){
   sheet={kind,sel:0,buttons,off:0,scrolls:kind==='whatsnew'};$('#sheetT').textContent=title;$('#sheetIn').innerHTML=html;$('#sheetIn').style.transform='';
-  $('#sheetBtns').innerHTML=buttons.map((b,i)=>`<div class="bt${i===0?' sel':''}" data-b="${i}">${esc(b.label)}</div>`).join('')+
+  const radial=kind==='queue-ring';
+  sheet.sel=buttons.findIndex(b=>!b.disabled);
+  $('#sheet').classList.toggle('radial',radial);
+  $('#sheetBtns').innerHTML=buttons.map((b,i)=>`<div class="bt${i===sheet.sel?' sel':''}" data-b="${i}"${b.disabled?' aria-disabled="true"':''}>${esc(b.label)}</div>`).join('')+
+    (radial?'<span class="radial-caption">Playback</span>':'')+
     (settings.style==='Modern'?'':'<div class="hint">Spin to choose · Center to select</div>');
   $('#sheet').classList.add('on');triggerHaptic('success');
 }
-function closeSheet(){sheet=null;$('#sheet').classList.remove('on')}
+function closeSheet(){sheet=null;$('#sheet').classList.remove('on','radial')}
 function sheetSel(i){if(!sheet)return;sheet.sel=i;document.querySelectorAll('#sheetBtns .bt').forEach((el,k)=>el.classList.toggle('sel',k===i))}
 function sheetScroll(dir){
-  if(!sheet)return;const inn=$('#sheetIn'),box=$('#sheetB'),max=Math.max(0,inn.scrollHeight-box.clientHeight);
+  if(!sheet)return;
+  if(sheet.kind==='queue-ring'){
+    let next=sheet.sel;
+    do{next=(next+dir+sheet.buttons.length)%sheet.buttons.length}while(sheet.buttons[next].disabled);
+    if(next!==sheet.sel){sheetSel(next);click()}
+    return;
+  }
+  const inn=$('#sheetIn'),box=$('#sheetB'),max=Math.max(0,inn.scrollHeight-box.clientHeight);
   if(sheet.scrolls&&max>0&&!(dir>0&&sheet.off>=max&&sheet.buttons.length>1)&&!(dir<0&&sheet.off<=0&&sheet.sel>0)){   // scroll text first, then move between buttons
     const no=Math.max(0,Math.min(max,sheet.off+dir*20));if(no!==sheet.off){sheet.off=no;inn.style.transform=`translateY(${-no}px)`;click();return}}
   const ns=Math.max(0,Math.min(sheet.buttons.length-1,sheet.sel+dir));if(ns!==sheet.sel){sheetSel(ns);click()}
 }
 function sheetPress(btn){
   if(!sheet)return false;click();
+  if(btn==='menu'&&sheet.kind==='queue-ring'){closeSheet();return true}
   if(btn==='menu'){const b=sheet.buttons.find(x=>x.cancel)||sheet.buttons[sheet.buttons.length-1];closeSheet();b.run&&b.run();return true}
-  if(btn==='select'){const b=sheet.buttons[sheet.sel];closeSheet();b.run&&b.run();return true}
+  if(btn==='select'){const b=sheet.buttons[sheet.sel];if(b.disabled)return true;closeSheet();b.run&&b.run();return true}
   return true;   // swallow ⏮ ⏭ ⏯ while the frame is up
 }
-$('#sheetBtns').addEventListener('click',e=>{const el=e.target.closest('[data-b]');if(!el||!sheet)return;sheetSel(+el.dataset.b);sheetPress('select')});
+$('#sheetBtns').addEventListener('click',e=>{const el=e.target.closest('[data-b]');if(!el||!sheet||sheet.buttons[+el.dataset.b]?.disabled)return;sheetSel(+el.dataset.b);sheetPress('select')});
 // ----- applying an update -----
 async function applyUpdate(){
   setHdrTask('Updating…',.5);
