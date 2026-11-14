@@ -6,7 +6,9 @@ const code=html.slice(html.indexOf('const CROSSFADE_OPTIONS='),html.indexOf('fun
 const test=new Function(code+`
   const makeDeck=()=>({duration:100,currentTime:0,playbackRate:1,paused:true,
     async play(){this.paused=false},pause(){this.paused=true},removeAttribute(){this.src=''},load(){}});
-  const mainDeck=makeDeck(),spareDeck=makeDeck(),ramps=[];
+  const mainDeck=makeDeck(),spareDeck=makeDeck(),backgroundDeck=makeDeck(),ramps=[];
+  const document={hidden:false};
+  const resumeAudio=()=>audio.play();
   let audio=mainDeck,qi=0,importedPlayback=null;
   const queue=[{url:'blob:first'},{url:'blob:second'}],settings={crossfade:4,repeat:'Off'};
   function onActiveAudio(){}
@@ -23,11 +25,15 @@ const test=new Function(code+`
     mainDeck.currentTime=96;
     await maybeCrossfade();
     const during=[qi,audio===spareDeck,mainDeck.paused];
-    cancelCrossfade();
-    return {before,during,ramps,stopped:mainDeck.paused,playing:!spareDeck.paused};
+    spareDeck.currentTime=2;
+    document.hidden=true;
+    useDirectAudio();
+    await maybeCrossfade();
+    return {before,during,ramps,stopped:mainDeck.paused&&spareDeck.paused,
+      playing:audio===backgroundDeck&&!backgroundDeck.paused,position:audio.currentTime};
   })();
 `);
 test().then(result=>{
-  assert.deepEqual(result,{before:0,during:[1,true,false],ramps:[[0,14],[1,14]],stopped:true,playing:true});
-  console.log('PASS crossfade starts inside the selected window and overlaps both decks');
+  assert.deepEqual(result,{before:0,during:[1,true,false],ramps:[[0,14],[1,14]],stopped:true,playing:true,position:2});
+  console.log('PASS crossfade starts inside the selected window and hands playback off when hidden');
 }).catch(error=>{console.error(error);process.exitCode=1});
