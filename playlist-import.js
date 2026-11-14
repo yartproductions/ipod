@@ -162,7 +162,7 @@ function playlistView(pl){
    {label:'Tracks',val:pl.tracks.length+' total'},
    {label:'Available Offline',val:existing+' tracks'},
    {label:'YouTube Links',val:matched+' matched'},
-   ...(pl.tracks.some(t=>!t.youtubeId)?[{label:'Match Unresolved',action:()=>matchPlaylist(pl)}]:[]),
+   ...(pl.tracks.some(t=>!t.youtubeId)?[{label:'Match Unresolved',icon:'search',action:()=>matchPlaylist(pl)}]:[]),
    ...pl.tracks.map((t,i)=>t.status==='review'&&t.choices?.length?{label:'Review '+(i+1)+'. '+t.title,
      val:t.choices.length+' candidates',action:()=>push(list('Review YouTube Result',[
       {label:'Original',val:t.artist+' — '+t.title},
@@ -172,19 +172,19 @@ function playlistView(pl){
        if(index>=0){all[index]=pl;write(all)}push(msgView('Match Selected',c.artist+' — '+c.title));
       }}))
      ]))}:null).filter(Boolean),
-   {label:'Play Available Offline',action:()=>{
+   {label:'Play Available Offline',icon:'play',action:()=>{
     const ready=pl.tracks.map(available).filter(Boolean);
     if(!ready.length)push(msgView('No Offline Songs','Match or add songs before playing.'));
     else playList(ready,0);
    }},
-   ...pl.tracks.map((t,i)=>({label:(i+1)+'. '+t.title,val:t.artist,action:()=>playTrack(pl,i)}))
+   ...pl.tracks.map((t,i)=>({label:(i+1)+'. '+t.title,icon:'music',val:t.artist,action:()=>playTrack(pl,i)}))
   ];
  });
 }
 function preview(data){return list('Import Preview',[
  {label:'Playlist',val:data.name},{label:'Source',val:data.provider},{label:'Songs',val:String(data.tracks.length)},
  {label:'Save to iPod',action:()=>replaceTop(playlistView(save(data)))},
- ...data.tracks.slice(0,25).map((t,i)=>({label:(i+1)+'. '+t.title,val:t.artist}))
+ ...data.tracks.slice(0,25).map((t,i)=>({label:(i+1)+'. '+t.title,icon:'music',val:t.artist}))
 ]);}
 function picker(context={}){
  const el=document.createElement('input');el.type='file';el.accept='.json,.csv,.txt';el.style.display='none';
@@ -302,7 +302,7 @@ async function matchPlaylist(pl){
  }catch(e){if(top()===loading)replaceTop(msgView('Matching Failed',e.message))}
 }
 function library(){push(list('Imported Playlists',()=>[
- {label:'Import Another',action:open},
+ {label:'Import Another',icon:'plus',action:open},
  ...read().map(p=>({label:p.name,val:p.tracks.length+' tracks',action:()=>push(playlistView(p))}))
 ]));}
 function flow(){
@@ -323,11 +323,11 @@ function flow(){
  b.openPlaylistFlow(cards);
 }
 function importView(){return list('Import Playlist',[
- {label:'Paste Playlist Link',action:linkInput},
- {label:'Import CSV / JSON / TXT',action:picker},
- {label:'Import Private YouTube Playlist',action:()=>push(exportView('YouTube',''))},
- {label:'Saved Playlists',action:flow},
- {label:'How It Works',action:()=>push(msgView('Import Music','A playlist stores song metadata and verified YouTube references. It never automatically downloads audio. Match unresolved tracks before playback.'))}
+ {label:'Paste Playlist Link',icon:'link',action:linkInput},
+ {label:'Import CSV / JSON / TXT',icon:'download',action:picker},
+ {label:'Import Private YouTube Playlist',icon:'playlist',action:()=>push(exportView('YouTube',''))},
+ {label:'Saved Playlists',icon:'playlist',action:flow},
+ {label:'How It Works',icon:'info',action:()=>push(msgView('Import Music','A playlist stores song metadata and verified YouTube references. It never automatically downloads audio. Match unresolved tracks before playback.'))}
 ]);}
 function open(){push(importView());}
 window.ipodPlaylistImport={open,library:flow,parseFile,detect,duration,youtubeTracks,youtubeMatch};
