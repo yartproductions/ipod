@@ -30,6 +30,8 @@ const importer=new Function('window','localStorage','document',code+';return win
 assert.equal(importer.detect('https://open.qobuz.com/playlist/65537360').id,'65537360');
 assert.equal(importer.detect('https://music.youtube.com/playlist?list=PLabcdef12345').provider,'youtube');
 assert.equal(importer.detect('https://fakeqobuz.com/playlist/123'),null);
+assert.equal(importer.detect('https://open.spotify.com/intl-es/playlist/3cEYpjA9oz9GiPac4AsH4n?si=share').provider,'spotify');
+assert.equal(importer.detect('https://open.spotify.com.example/playlist/3cEYpjA9oz9GiPac4AsH4n'),null);
 const csv=importer.parseFile('Track,Artist,Duration\n"Wicked Games","The Weeknd",5:27','music.csv');
 assert.equal(csv[0].duration,327);
 const qobuz=importer.parseFile(JSON.stringify({tracks:{items:[{track:{title:'Wicked Games',performer:{name:'The Weeknd'},album:{title:'Trilogy'},duration:327}}]}}),'playlist.json');
