@@ -950,7 +950,7 @@ async function acquireYT(it,onProgress=()=>{}){
  if(blob.size<1024)throw new Error('Audio file was empty or incomplete.');
  const parsed=cleanMusicVideoText(it.title||info.title||'Untitled');
  const rec={id:'yt-'+id,sourceId:id,blob,title:parsed||'Untitled',
-  artist:it.artist||'Unknown Artist',album:'Offline Music',
+  artist:it.artist||'Unknown Artist',album:it.album||'Offline Music',
   artworkUrl:'https://i.ytimg.com/vi/'+id+'/hqdefault.jpg',artSource:'youtube-thumb'};
  await dbPut(rec);const song=hydrate(rec);songs.push(song);sortSongs();
  if(settings.autoArt) Promise.resolve().then(()=>repairSongArtwork(song,{preferred:it.artSource==='matched-cover'?it.art:null})).catch(()=>{});
