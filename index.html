@@ -614,6 +614,13 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
   background:linear-gradient(#e9ebee,#cdd0d5);box-shadow:inset 0 1px 1px rgba(255,255,255,.9),0 0 0 1px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.15)}
 .black .center{background:linear-gradient(#36373b,#232427);box-shadow:inset 0 1px 1px rgba(255,255,255,.1),0 0 0 1px #000}
 .center.down{filter:brightness(.9)}
+#center.favorite-holding,.rdial .rhub.favorite-holding{--hold-angle:0deg}
+.favorite-holding::before{content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;
+  background:conic-gradient(#ffd16a var(--hold-angle),rgba(255,209,106,.18) 0);
+  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 0);
+  mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 0)}
+#center.favorite-holding{box-shadow:0 0 10px #ffc55299}
+.rdial .rhub.favorite-holding b{font-size:15px;font-variant-numeric:tabular-nums}
 #center.favorite-confirmed{display:grid;place-items:center;color:#fff4c2;background:radial-gradient(circle at 45% 32%,#ffe69a,#ba7212);box-shadow:0 0 18px #ffcc63,inset 0 1px 3px #fff5b8;filter:none;font-size:32px;text-shadow:0 1px 3px #85500c}
 #center.favorite-confirmed::after{content:"★"}
 </style>
@@ -3434,53 +3441,116 @@ async function favoriteHighlighted(track){
     if(top().type==='now')render();
   }catch(e){push(msgView('Could Not Favorite',e.message))}
 }
+const QUEUE_HOLD_MS=550,FAVORITE_HOLD_MS=1550;
 function clearCenterPress(){
-  if(centerPress){
-    clearTimeout(centerPress.timer);
-    clearTimeout(centerPress.favoriteTimer);
-  }
+  const state=centerPress;
+  if(!state)return;
   centerPress=null;
-  center.classList.remove('down');
+  clearTimeout(state.ringTimer);
+  clearTimeout(state.favoriteTimer);
+  cancelAnimationFrame(state.frame);
+  center.classList.remove('down','favorite-holding');
+  center.style.removeProperty('--hold-angle');
+  if(sheet?.kind==='queue-ring')radialHub();
 }
-center.addEventListener('pointerdown',e=>{
-  if(!e.isPrimary||e.button!==0)return;
-  e.preventDefault();e.stopPropagation();
-  const view=top(),track=view.type==='now'?{song:cur()}:highlightedTrack(view),selected=view.sel;
-  const canFavorite=!!(track?.song||track?.video);
+function centerSelectionStillActive(state){
+  return centerPress===state&&!holdOn&&top()===state.view&&state.view.sel===state.selected&&
+    sheet===state.sheet&&(!state.current||cur()===state.track.song);
+}
+function updateFavoriteHold(state){
+  if(!centerSelectionStillActive(state)){clearCenterPress();return}
+  const remaining=Math.max(0,FAVORITE_HOLD_MS-(performance.now()-state.started));
+  const angle=360*(1-remaining/FAVORITE_HOLD_MS)+'deg';
+  center.style.setProperty('--hold-angle',angle);
+  const hub=state.sheet?.kind==='queue-ring'&&$('#sheetBtns .rhub');
+  if(hub){
+    hub.classList.add('favorite-holding');
+    hub.style.setProperty('--hold-angle',angle);
+    hub.querySelector('i').textContent='Favorite';
+    hub.querySelector('b').textContent=(Math.ceil(remaining/100)/10).toFixed(1)+'s';
+    hub.querySelector('span').textContent='Keep holding Center';
+  }
+  state.frame=requestAnimationFrame(()=>updateFavoriteHold(state));
+}
+function beginCenterPress(id){
+  if(centerPress)return;
+  wake();
+  const view=top(),highlighted=highlightedTrack(view);
+  const radial=sheet?.kind==='queue-ring';
+  const useCurrent=radial||view.type==='now'||!(highlighted?.song||highlighted?.video);
+  const track=useCurrent?{song:cur()}:highlighted;
+  const canHold=!holdOn&&(!sheet||radial)&&view.type!=='input';
+  const canFavorite=canHold&&!!(track?.song||track?.video);
+  const state={id,view,track,selected:view.sel,sheet,current:useCurrent,
+    started:performance.now(),long:false,ringTimer:null,favoriteTimer:null,frame:null};
+  centerPress=state;
   center.classList.add('down');
-  center.setPointerCapture(e.pointerId);
-  const pressState={track,view,stillSelected:null,id:e.pointerId,long:false,favorited:false,timer:null,favoriteTimer:null,x:e.clientX,y:e.clientY};
-  const stillSelected=()=>centerPress===pressState&&!holdOn&&!sheet&&top()===view&&view.sel===selected&&
-    (view.type!=='now'||cur()===track?.song);
-  pressState.stillSelected=stillSelected;
-  centerPress=pressState;
-  if((cur()||canFavorite)&&!holdOn&&!sheet&&view.type!=='input'){
-    pressState.timer=setTimeout(()=>{
-      pressState.long=true;
-      if(stillSelected()&&canFavorite)triggerHaptic('confirm');
-    },550);
-    if(canFavorite)pressState.favoriteTimer=setTimeout(()=>{
-      if(!stillSelected())return;
-      pressState.favorited=true;
+  if(canFavorite)center.classList.add('favorite-holding');
+  if(canHold&&(cur()||canFavorite)){
+    state.ringTimer=setTimeout(()=>{
+      if(!centerSelectionStillActive(state))return;
+      state.long=true;
+      if(!sheet&&cur()){
+        openQueueRing(view.type==='now'?null:highlighted);
+        state.sheet=sheet;
+      }
+      triggerHaptic('confirm');
+    },QUEUE_HOLD_MS);
+  }
+  if(canFavorite){
+    updateFavoriteHold(state);
+    state.favoriteTimer=setTimeout(()=>{
+      if(!centerSelectionStillActive(state)){clearCenterPress();return}
+      if(sheet?.kind==='queue-ring')closeSheet();
+      clearCenterPress();
       if(track.video&&!importedTrackSong(track))setHdrTask('Saving for Favorites…',.05);
       favoriteHighlighted(track);
-    },1250);
+    },FAVORITE_HOLD_MS);
   }
+}
+function moveCenterPress(id,x,y){
+  if(centerPress?.id!==id)return;
+  const bounds=center.getBoundingClientRect(),margin=14;
+  if(x<bounds.left-margin||x>bounds.right+margin||y<bounds.top-margin||y>bounds.bottom+margin)clearCenterPress();
+}
+function finishCenterPress(id){
+  if(centerPress?.id!==id)return;
+  const short=!centerPress.long;
+  clearCenterPress();
+  if(short)press('select');
+}
+center.addEventListener('contextmenu',e=>e.preventDefault());
+center.addEventListener('pointerdown',e=>{
+  if(e.pointerType==='touch'){e.stopPropagation();return}
+  if(!e.isPrimary||e.button!==0)return;
+  e.preventDefault();e.stopPropagation();
+  center.setPointerCapture(e.pointerId);
+  beginCenterPress(e.pointerId);
 });
 center.addEventListener('pointermove',e=>{
-  if(centerPress?.id===e.pointerId&&Math.hypot(e.clientX-centerPress.x,e.clientY-centerPress.y)>14)clearCenterPress();
+  if(e.pointerType!=='touch')moveCenterPress(e.pointerId,e.clientX,e.clientY);
 });
 center.addEventListener('pointerup',e=>{
   e.stopPropagation();
-  if(centerPress?.id!==e.pointerId)return;
-  const state=centerPress;
-  const showRing=state.long&&!state.favorited&&cur()&&state.stillSelected();
-  clearCenterPress();
-  if(showRing)openQueueRing(state.view.type==='now'?null:state.track);
-  else if(!state.long)press('select');
+  if(e.pointerType!=='touch')finishCenterPress(e.pointerId);
 });
-center.addEventListener('pointercancel',clearCenterPress);
-center.addEventListener('lostpointercapture',clearCenterPress);
+for(const event of ['pointercancel','lostpointercapture']){
+  center.addEventListener(event,e=>{if(e.pointerType!=='touch'&&centerPress?.id===e.pointerId)clearCenterPress()});
+}
+for(const event of ['touchstart','touchmove','touchend','touchcancel']){
+  center.addEventListener(event,e=>{
+    e.preventDefault();e.stopPropagation();
+    const touch=event==='touchstart'?e.changedTouches[0]:Array.from(e.changedTouches)
+      .find(t=>'touch:'+t.identifier===centerPress?.id);
+    if(!touch)return;
+    const id='touch:'+touch.identifier;
+    if(event==='touchstart')beginCenterPress(id);
+    else if(event==='touchmove')moveCenterPress(id,touch.clientX,touch.clientY);
+    else if(event==='touchend')finishCenterPress(id);
+    else clearCenterPress();
+  },{passive:false});
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)clearCenterPress()});
 
 addEventListener('keydown',e=>{
   if(e.target&&e.target.id==='inpt')return;const k=e.key;
@@ -3564,7 +3634,8 @@ function openSheet(kind,title,html,buttons){
   }else
   $('#sheetBtns').innerHTML=buttons.map((b,i)=>`<div class="bt${i===sheet.sel?' sel':''}" data-b="${i}"${b.disabled?' aria-disabled="true"':''}>${esc(b.label)}</div>`).join('')+
     (settings.style==='Modern'?'':'<div class="hint">Spin to choose · Center to select</div>');
-  $('#sheet').classList.add('on');triggerHaptic('success');
+  $('#sheet').classList.add('on');
+  if(!radial)triggerHaptic('success');
 }
 function closeSheet(){sheet=null;$('#sheet').classList.remove('on','radial')}
 function sheetSel(i){
@@ -3578,8 +3649,11 @@ function sheetSel(i){
 }
 function radialHub(){
   const b=sheet?.buttons[sheet.sel],hub=$('#sheetBtns .rhub');if(!b||!hub)return;
+  hub.classList.remove('favorite-holding');
+  hub.style.removeProperty('--hold-angle');
+  hub.querySelector('i').textContent='Playback';
   hub.querySelector('b').textContent=b.label;
-  hub.querySelector('span').textContent=b.disabled?'Not available for this song':(b.hint||'');
+  hub.querySelector('span').textContent=b.disabled?'Not available for this song':(b.hint||'Hold Center to favorite');
 }
 function sheetScroll(dir){
   if(!sheet)return;
