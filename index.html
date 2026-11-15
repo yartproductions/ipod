@@ -659,7 +659,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -713,7 +713,7 @@ function triggerHaptic(kind='selection'){
 /* ---------- click + haptics ---------- */
 let actx=null, clickBuf=null;
 function click(){
-  if(settings.clicker){try{
+  if(settings.clicker&&!settings.carPlayMode){try{
     actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();
     if(!clickBuf){clickBuf=actx.createBuffer(1,Math.floor(actx.sampleRate*.006),actx.sampleRate);
       const d=clickBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length/6));}
@@ -855,7 +855,7 @@ function resumeAudio(){prepareCrossfade();return audio.play().catch(e=>{
 function load(play){
   cancelCrossfade();
   const t=cur();if(!t)return;
-  const deck=settings.crossfade&&!document.hidden?mainDeck:backgroundDeck;
+  const deck=crossfadeEnabled()&&!document.hidden?mainDeck:backgroundDeck;
   if(audio!==deck&&(audio===backgroundDeck||deck===backgroundDeck)){
     const old=audio;audio=deck;old.pause();
   }
@@ -873,10 +873,11 @@ function next(manual){if(!cur())return;
 function prev(){if(!cur())return;if(curTime()>3){seekTo(0);return}if(importedPlayback?.queue===queue)return advanceImported(-1,true);if(qi>0){qi--;load(true)}else seekTo(0)}
 function playPause(){if(!cur()){shuffleAll();return}audio.paused?resumeAudio():audio.pause()}
 const CROSSFADE_OPTIONS=[0,2,4,6,8,12];
+function crossfadeEnabled(){return !settings.carPlayMode&&settings.crossfade>0}
 let fadeContext=null,fade=null;
 const deckGain=new Map();
 function prepareCrossfade(){
-  if(!settings.crossfade||document.hidden||audio===backgroundDeck)return;
+  if(!crossfadeEnabled()||document.hidden||audio===backgroundDeck)return;
   try{
     const Context=window.AudioContext||window.webkitAudioContext;
     if(!Context)return;
@@ -915,7 +916,7 @@ function crossfadeTarget(){
 }
 async function maybeCrossfade(){
   const seconds=settings.crossfade,remaining=audio.duration-audio.currentTime;
-  if(document.hidden||audio===backgroundDeck||!seconds||fade||audio.paused||audio.seeking||fadeContext?.state!=='running'||deckGain.size!==2||
+  if(document.hidden||audio===backgroundDeck||!crossfadeEnabled()||fade||audio.paused||audio.seeking||fadeContext?.state!=='running'||deckGain.size!==2||
     !Number.isFinite(remaining)||remaining<=.25||remaining>Math.min(seconds,audio.duration/2))return;
   const target=crossfadeTarget();
   if(!target)return;
@@ -927,7 +928,7 @@ async function maybeCrossfade(){
   if(fade!==transition)return;
   const latest=crossfadeTarget();
   const duration=Math.min(seconds,(outgoing.duration-outgoing.currentTime)/(outgoing.playbackRate||1));
-  if(document.hidden||outgoing!==audio||outgoing.paused||duration<=.15||latest?.song!==target.song||latest?.index!==target.index||latest?.session!==target.session){cancelCrossfade();return}
+  if(document.hidden||!crossfadeEnabled()||outgoing!==audio||outgoing.paused||duration<=.15||latest?.song!==target.song||latest?.index!==target.index||latest?.session!==target.session){cancelCrossfade();return}
   audio=incoming;
   if(target.session){
     target.session.index=target.index;target.session.prefetched=false;
@@ -948,6 +949,7 @@ function useDirectAudio(){
   backgroundDeck.currentTime=position;
   backgroundDeck.playbackRate=old.playbackRate;
   audio=backgroundDeck;
+  notePlayback('Switched audio player');
   old.pause();
   if(playing)resumeAudio();
   syncMediaPlaybackState();
@@ -956,6 +958,18 @@ function useDirectAudio(){
 onActiveAudio('timeupdate',maybeCrossfade);
 onActiveAudio('pause',cancelCrossfade);
 onActiveAudio('seeking',cancelCrossfade);
+const playbackLog=[];
+function notePlayback(event){
+  const elapsed=Math.floor(audio.currentTime||0);
+  playbackLog.unshift({label:event,val:fmt(elapsed)});
+  if(playbackLog.length>40)playbackLog.pop();
+}
+for(const event of ['play','pause','playing','waiting','stalled','ended','error']){
+  onActiveAudio(event,()=>notePlayback(event));
+}
+function playbackLogView(){
+  return list('Playback Log',()=>playbackLog.slice(),{emptyText:'Play a song to record playback events.'});
+}
 function syncMediaPlaybackState(){
   if(!('mediaSession' in navigator))return;
   try{navigator.mediaSession.playbackState=audio.paused?'paused':'playing'}catch(e){}
@@ -975,12 +989,16 @@ onActiveAudio('ended',()=>next(false));
 ['loadedmetadata','durationchange','seeked'].forEach(e=>onActiveAudio(e,syncMediaPosition));
 // MediaSession metadata and position may be cleared when iOS changes audio route or suspends Safari.
 document.addEventListener('visibilitychange',()=>{
+  notePlayback(document.hidden?'App hidden':'App visible');
   if(document.hidden)useDirectAudio();
   else if(cur()){setSession();syncMediaPlaybackState();syncMediaPosition()}
 });
 function safeMediaAction(name,callback){
   if(!('mediaSession' in navigator))return;
-  try{navigator.mediaSession.setActionHandler(name,callback)}catch(e){}
+  try{navigator.mediaSession.setActionHandler(name,event=>{
+    notePlayback('Media control: '+name);
+    callback(event);
+  })}catch(e){}
 }
 function setSession(){
   if(!('mediaSession' in navigator))return;
@@ -1455,9 +1473,15 @@ function settingsMenu(){
     {label:'Repeat',icon:'repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
     {label:'Crossfade',val:settings.crossfade?settings.crossfade+' sec':'Off',action:()=>{
       settings.crossfade=CROSSFADE_OPTIONS[(CROSSFADE_OPTIONS.indexOf(settings.crossfade)+1)%CROSSFADE_OPTIONS.length];
-      if(settings.crossfade)prepareCrossfade();else useDirectAudio();
+      if(crossfadeEnabled())prepareCrossfade();else useDirectAudio();
       saveSettings();render();
     }},
+    {label:'CarPlay Mode',val:settings.carPlayMode?'On':'Off',action:()=>{
+      settings.carPlayMode=!settings.carPlayMode;
+      if(settings.carPlayMode)useDirectAudio();
+      saveSettings();render();
+    }},
+    {label:'Playback Log',chev:1,action:go(playbackLogView)},
     {label:'Clicker',val:settings.clicker?'On':'Off',action:tog('clicker',[true,false])},
     {label:'Haptics',val:settings.haptics?'On':'Off',action:tog('haptics',[true,false])},
     ...(settings.haptics?[
