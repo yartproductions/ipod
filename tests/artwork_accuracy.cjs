@@ -52,6 +52,7 @@ test('Flow Now Playing still renders synchronized lyrics',()=>{
  render();
  assert.match(body.innerHTML,/np-lyric-lines/);assert(lyrics);
  assert.match(body.innerHTML,/--np-art:url/);
+ assert.match(body.innerHTML,/<textPath[^>]*>YELLOW ◆/);
  assert.match(body.innerHTML,/lyrics-flow/);   // lyrics column only when the song has lyrics
 });
 test('Strict mode rejects thumbnails and allows matched art',()=>{
