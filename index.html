@@ -1639,7 +1639,8 @@ function aboutView(){return list('About',[
   {label:'Version',val:'3.13'}])}
 function extrasMenu(){return list('Extras',[
   {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
-  {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))}])}
+  {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))},
+  {label:'Bubbles',chev:1,action:go(()=>({type:'bubbles',title:'Bubbles',g:null}))}])}
 
 /* ---------- Clock ---------- */
 function renderClock(){
@@ -1708,6 +1709,168 @@ function brickInput(v,btn,dir){
   if(dir){if(!g.paused&&!g.over){const nx=Math.max(0,Math.min(270-g.pw,g.px+dir*16));if(nx!==g.px){g.px=nx;click()}}return}   // tick + haptic per paddle step
   if(btn==='select'){if(g.over){v.g=brickNew();return}if(g.stuck){g.stuck=false;const a=(Math.random()*.6-.3);g.vx=2.6*Math.sin(a);g.vy=-2.6*Math.cos(a)-(g.level-1)*.25;return}g.paused=!g.paused}
   if(btn==='play')g.paused=!g.paused;
+}
+/* ---------- Bubbles (original bubble shooter): wheel aims, center shoots, ⏭/⏮ swap, ⏯ pauses ---------- */
+const BUB={R:8,COLS:8,FX:67,FW:136,TOP:16,BOTTOM:176,LX:135};
+BUB.RH=BUB.R*Math.sqrt(3);BUB.LY=BUB.BOTTOM-BUB.R-3;BUB.DEATH=BUB.LY-BUB.R*2-2;
+const BUB_COLORS=[['#ff4b3e','#b3120c'],['#fff27a','#c9b01c'],['#7fe4ff','#1d8fc4'],['#7cf08a','#1f9e3a'],['#d39bff','#7a2fc9'],['#ffb054','#c9620f']];
+const bubSprites=[];
+function bubSprite(c){
+  if(bubSprites[c])return bubSprites[c];
+  const s=document.createElement('canvas'),R=BUB.R,S=4;s.width=s.height=R*2*S;const x=s.getContext('2d');x.scale(S,S);
+  const [hi,lo]=BUB_COLORS[c];
+  const g=x.createRadialGradient(R*.75,R*.62,R*.15,R,R,R);g.addColorStop(0,'#ffffff');g.addColorStop(.28,hi);g.addColorStop(1,lo);
+  x.fillStyle=g;x.beginPath();x.arc(R,R,R-.4,0,Math.PI*2);x.fill();
+  x.save();x.beginPath();x.arc(R,R,R-.4,0,Math.PI*2);x.clip();          // glassy band like the old iPod game balls
+  x.fillStyle='rgba(255,255,255,.28)';x.fillRect(0,R*.98,R*2,R*.22);x.fillStyle='rgba(255,255,255,.14)';x.fillRect(0,R*1.32,R*2,R*.14);x.restore();
+  x.fillStyle='rgba(255,255,255,.85)';x.beginPath();x.ellipse(R*.72,R*.55,R*.32,R*.2,-.5,0,Math.PI*2);x.fill();
+  x.strokeStyle='rgba(0,0,0,.35)';x.lineWidth=.6;x.beginPath();x.arc(R,R,R-.5,0,Math.PI*2);x.stroke();
+  return bubSprites[c]=s;
+}
+let bubField=null;
+function bubFieldArt(){   // swirly cyan backdrop, drawn once
+  if(bubField)return bubField;
+  const s=document.createElement('canvas'),S=2;s.width=BUB.FW*S;s.height=(BUB.BOTTOM-BUB.TOP)*S;const x=s.getContext('2d');x.scale(S,S);
+  const h=BUB.BOTTOM-BUB.TOP,g=x.createLinearGradient(0,0,0,h);g.addColorStop(0,'#69d6ef');g.addColorStop(1,'#33a9d4');x.fillStyle=g;x.fillRect(0,0,BUB.FW,h);
+  const ring=(cx,cy,r0,n,gap,a)=>{x.strokeStyle=`rgba(255,255,255,${a})`;for(let i=0;i<n;i++){x.lineWidth=2+i%2*1.5;x.beginPath();x.arc(cx,cy,r0+i*gap,0,Math.PI*2);x.stroke()}};
+  ring(BUB.FW*.82,h*.18,10,6,9,.16);ring(BUB.FW*.3,h*.62,6,5,8,.14);ring(BUB.FW*.9,h*.8,4,4,7,.12);ring(-6,h*.3,14,4,10,.1);
+  x.fillStyle='rgba(255,255,255,.12)';x.beginPath();x.arc(BUB.FW*.3,h*.62,4,0,Math.PI*2);x.fill();
+  return bubField=s;
+}
+const bubCols=r=>r%2?BUB.COLS-1:BUB.COLS;
+function bubPos(g,r,c){return {x:BUB.FX+BUB.R+c*BUB.R*2+(r%2?BUB.R:0),y:BUB.TOP+g.drop*BUB.RH+BUB.R+r*BUB.RH}}
+function bubNeighbors(r,c){const o=r%2?[[0,-1],[0,1],[-1,0],[-1,1],[1,0],[1,1]]:[[0,-1],[0,1],[-1,-1],[-1,0],[1,-1],[1,0]];
+  return o.map(([dr,dc])=>[r+dr,c+dc]).filter(([rr,cc])=>rr>=0&&cc>=0&&cc<bubCols(rr))}
+function bubNew(level=1,score=0){
+  const colors=Math.min(6,3+Math.ceil(level/2)),rows=Math.min(4+level,8),grid=[];
+  for(let r=0;r<rows;r++){grid[r]=[];for(let c=0;c<bubCols(r);c++){
+    const near=[grid[r][c-1],r?grid[r-1][c]:undefined].filter(v=>v!=null);
+    grid[r][c]=near.length&&Math.random()<.32?near[Math.random()*near.length|0]:Math.random()*colors|0}}   // a few natural clusters
+  const g={level,score,colors,grid,drop:0,shots:0,perDrop:Math.max(4,8-Math.floor(level/2)),angle:90,cur:0,next:0,
+    shot:null,fx:[],paused:false,over:false,won:false,intro:true,t:0,best:+(ls.get('ipod.bubbles.best',0))||0};
+  g.cur=bubPick(g);g.next=bubPick(g);return g;
+}
+function bubPick(g){const live=new Set();g.grid.forEach(row=>row&&row.forEach(v=>v!=null&&live.add(v)));const a=[...live];return a.length?a[Math.random()*a.length|0]:Math.random()*g.colors|0}
+function bubRows(g){return g.grid.length}
+let bubRAF=null;
+function bubblesMount(v){
+  if(!v.g)v.g=bubNew();
+  body.innerHTML='<canvas class="game" id="game" width="540" height="380"></canvas>';
+  cancelAnimationFrame(bubRAF);let last=performance.now();
+  const loop=t=>{if(top()!==v)return;const dt=Math.min(40,t-last)/16.67;last=t;bubStep(v.g,dt);bubDraw(v.g);bubRAF=requestAnimationFrame(loop)};
+  bubRAF=requestAnimationFrame(loop);
+}
+function bubShoot(g){
+  if(g.shot||g.over||g.paused)return;
+  const a=g.angle*Math.PI/180,sp=6.2;
+  g.shot={x:BUB.LX,y:BUB.LY,vx:Math.cos(a)*sp,vy:-Math.sin(a)*sp,c:g.cur};
+  g.cur=g.next;g.next=bubPick(g);if(settings.haptics)triggerHaptic('selection');
+}
+function bubStep(g,dt){
+  g.t+=dt;
+  for(const f of g.fx){f.t+=dt;if(f.kind==='fall'){f.vy+=.32*dt;f.x+=f.vx*dt;f.y+=f.vy*dt}}
+  g.fx=g.fx.filter(f=>f.kind==='fall'?f.y<BUB.BOTTOM+20:f.t<14);
+  if(g.paused||g.over||!g.shot)return;
+  const s=g.shot,steps=4;
+  for(let i=0;i<steps;i++){
+    s.x+=s.vx*dt/steps;s.y+=s.vy*dt/steps;
+    const minX=BUB.FX+BUB.R,maxX=BUB.FX+BUB.FW-BUB.R;
+    if(s.x<minX){s.x=minX;s.vx=Math.abs(s.vx);if(settings.haptics)triggerHaptic('selection')}
+    if(s.x>maxX){s.x=maxX;s.vx=-Math.abs(s.vx);if(settings.haptics)triggerHaptic('selection')}
+    const ceil=BUB.TOP+g.drop*BUB.RH+BUB.R;
+    let hit=s.y<=ceil;
+    if(!hit)for(let r=0;r<g.grid.length&&!hit;r++)for(let c=0;c<bubCols(r);c++){if(g.grid[r][c]==null)continue;const p=bubPos(g,r,c);if(Math.hypot(p.x-s.x,p.y-s.y)<BUB.R*2-2.5){hit=true;break}}
+    if(hit){bubSnap(g,s);return}
+  }
+}
+function bubSnap(g,s){
+  // nearest free cell to where the ball stopped
+  let best=null,bd=1e9;
+  const rowsTry=Math.max(g.grid.length+1,1);
+  for(let r=0;r<=rowsTry;r++){if(!g.grid[r])g.grid[r]=[];for(let c=0;c<bubCols(r);c++){if(g.grid[r][c]!=null)continue;
+    const attached=r===0||bubNeighbors(r,c).some(([rr,cc])=>g.grid[rr]&&g.grid[rr][cc]!=null);if(!attached)continue;
+    const p=bubPos(g,r,c),d=Math.hypot(p.x-s.x,p.y-s.y);if(d<bd){bd=d;best=[r,c]}}}
+  g.shot=null;if(!best)return;
+  const [r,c]=best;g.grid[r][c]=s.c;g.shots++;
+  // pop a group of 3+
+  const same=[[r,c]],seen=new Set([r+','+c]);
+  for(let i=0;i<same.length;i++)for(const [rr,cc] of bubNeighbors(...same[i])){const k=rr+','+cc;if(seen.has(k)||!g.grid[rr]||g.grid[rr][cc]!==s.c)continue;seen.add(k);same.push([rr,cc])}
+  let popped=0,dropped=0;
+  if(same.length>=3){
+    for(const [rr,cc] of same){const p=bubPos(g,rr,cc);g.fx.push({kind:'pop',x:p.x,y:p.y,c:g.grid[rr][cc],t:0});g.grid[rr][cc]=null}popped=same.length;
+    // anything no longer hanging from the ceiling falls
+    const keep=new Set(),q=[];(g.grid[0]||[]).forEach((v,cc)=>{if(v!=null){keep.add('0,'+cc);q.push([0,cc])}});
+    for(let i=0;i<q.length;i++)for(const [rr,cc] of bubNeighbors(...q[i])){const k=rr+','+cc;if(keep.has(k)||!g.grid[rr]||g.grid[rr][cc]==null)continue;keep.add(k);q.push([rr,cc])}
+    g.grid.forEach((row,rr)=>row&&row.forEach((v,cc)=>{if(v!=null&&!keep.has(rr+','+cc)){const p=bubPos(g,rr,cc);g.fx.push({kind:'fall',x:p.x,y:p.y,c:v,vx:(Math.random()-.5)*1.4,vy:-1.5-Math.random(),t:0});row[cc]=null;dropped++}}));
+    g.score+=popped*10+(dropped?20*Math.pow(2,Math.min(dropped,10)-1):0);
+    if(settings.haptics)triggerHaptic(dropped?'success':'confirm');
+  }else if(g.shots%g.perDrop===0){g.drop++;if(settings.haptics)triggerHaptic('success')}   // ceiling comes down
+  while(g.grid.length&&g.grid[g.grid.length-1].every(v=>v==null))g.grid.pop();
+  if(!g.grid.some(row=>row.some(v=>v!=null))){   // cleared the board
+    g.won=true;g.score+=500*g.level;if(settings.haptics)triggerHaptic('success');
+    setTimeout(()=>{if(g.won){const n=bubNew(g.level+1,g.score);Object.assign(g,n,{intro:true})}},1400);return}
+  g.grid.forEach((row,rr)=>row.forEach((v,cc)=>{if(v!=null&&bubPos(g,rr,cc).y>BUB.DEATH)g.over=true}));
+  if(g.over){if(g.score>g.best){g.best=g.score;ls.set('ipod.bubbles.best',g.best)}if(settings.haptics)triggerHaptic('success')}
+  if(!g.grid.flat().includes(g.cur))g.cur=bubPick(g);if(!g.grid.flat().includes(g.next))g.next=bubPick(g);
+}
+function bubDraw(g){
+  const cv=$('#game');if(!cv)return;const x=cv.getContext('2d');x.setTransform(2,0,0,2,0,0);x.imageSmoothingQuality='high';
+  // deep blue cabinet
+  const bg=x.createLinearGradient(0,0,0,190);bg.addColorStop(0,'#0b2a9a');bg.addColorStop(1,'#051463');x.fillStyle=bg;x.fillRect(0,0,270,190);
+  x.drawImage(bubFieldArt(),BUB.FX,BUB.TOP,BUB.FW,BUB.BOTTOM-BUB.TOP);
+  x.strokeStyle='rgba(255,255,255,.25)';x.lineWidth=1;x.strokeRect(BUB.FX-.5,BUB.TOP-.5,BUB.FW+1,BUB.BOTTOM-BUB.TOP+1);
+  // the ceiling, with warning arrows that flash on the last shot before it drops
+  const cy=BUB.TOP+g.drop*BUB.RH;
+  if(g.drop){const pg=x.createLinearGradient(0,BUB.TOP,0,cy);pg.addColorStop(0,'#0a1b5c');pg.addColorStop(1,'#1d3fa8');x.fillStyle=pg;x.fillRect(BUB.FX,BUB.TOP,BUB.FW,cy-BUB.TOP)}
+  x.fillStyle='#2b2f36';x.fillRect(BUB.FX,cy-3,BUB.FW,3);x.fillStyle='#8a929c';x.fillRect(BUB.FX,cy-3,BUB.FW,1);
+  const left=g.perDrop-(g.shots%g.perDrop),warn=left<=1&&Math.floor(g.t/8)%2===0;
+  x.fillStyle=warn?'#fff':'rgba(255,255,255,.55)';
+  for(const ax of [BUB.FX+18,BUB.FX+BUB.FW-18])for(let k=0;k<3;k++){const ay=cy-14+k*4-(g.drop?0:2);if(ay<1)continue;x.beginPath();x.moveTo(ax-4,ay);x.lineTo(ax+4,ay);x.lineTo(ax,ay+3);x.fill()}
+  // bubbles
+  g.grid.forEach((row,r)=>row.forEach((v,c)=>{if(v==null)return;const p=bubPos(g,r,c);x.drawImage(bubSprite(v),p.x-BUB.R,p.y-BUB.R,BUB.R*2,BUB.R*2)}));
+  for(const f of g.fx){
+    if(f.kind==='fall'){x.globalAlpha=Math.max(0,1-f.t/40);x.drawImage(bubSprite(f.c),f.x-BUB.R,f.y-BUB.R,BUB.R*2,BUB.R*2);x.globalAlpha=1}
+    else{const k=f.t/14;x.globalAlpha=1-k;x.drawImage(bubSprite(f.c),f.x-BUB.R*(1+k*.6),f.y-BUB.R*(1+k*.6),BUB.R*2*(1+k*.6),BUB.R*2*(1+k*.6));
+      x.strokeStyle='#fff';x.lineWidth=1.2;x.beginPath();x.arc(f.x,f.y,BUB.R+k*9,0,Math.PI*2);x.stroke();x.globalAlpha=1}}
+  // danger line
+  x.strokeStyle='rgba(255,255,255,.22)';x.setLineDash([3,3]);x.beginPath();x.moveTo(BUB.FX,BUB.DEATH+BUB.R);x.lineTo(BUB.FX+BUB.FW,BUB.DEATH+BUB.R);x.stroke();x.setLineDash([]);
+  // launcher base + aim
+  x.fillStyle='#062071';x.beginPath();x.moveTo(BUB.FX,BUB.BOTTOM);x.lineTo(BUB.FX+BUB.FW,BUB.BOTTOM);x.lineTo(BUB.FX+BUB.FW,BUB.BOTTOM+14);x.lineTo(BUB.FX,BUB.BOTTOM+14);x.fill();
+  x.strokeStyle='#4f7be8';x.lineWidth=1.5;x.beginPath();x.arc(BUB.LX,BUB.LY+3,BUB.R+5,Math.PI,0);x.stroke();
+  const a=g.angle*Math.PI/180,ca=Math.cos(a),sa=-Math.sin(a);
+  if(!g.over&&!g.paused){x.strokeStyle='rgba(255,255,255,.45)';x.setLineDash([2,4]);x.beginPath();x.moveTo(BUB.LX+ca*14,BUB.LY+sa*14);x.lineTo(BUB.LX+ca*58,BUB.LY+sa*58);x.stroke();x.setLineDash([])}
+  x.save();x.translate(BUB.LX,BUB.LY);x.rotate(-a);x.fillStyle='#fff';x.strokeStyle='rgba(0,0,0,.35)';x.lineWidth=.8;   // white pointer
+  x.beginPath();x.moveTo(BUB.R+14,0);x.lineTo(BUB.R+6,-4);x.lineTo(BUB.R+7,-1.3);x.lineTo(BUB.R+1,-1.3);x.lineTo(BUB.R+1,1.3);x.lineTo(BUB.R+7,1.3);x.lineTo(BUB.R+6,4);x.closePath();x.fill();x.stroke();x.restore();
+  if(!g.shot)x.drawImage(bubSprite(g.cur),BUB.LX-BUB.R,BUB.LY-BUB.R+Math.sin(g.t/9)*.6,BUB.R*2,BUB.R*2);
+  if(g.shot)x.drawImage(bubSprite(g.shot.c),g.shot.x-BUB.R,g.shot.y-BUB.R,BUB.R*2,BUB.R*2);
+  // side panels: LEVEL + next on the left, SCORE on the right
+  x.textAlign='center';x.fillStyle='#fff';x.shadowColor='rgba(0,0,0,.6)';x.shadowBlur=2;
+  x.font='800 18px "Arial Black",-apple-system,Helvetica,Arial';x.fillText(String(g.level),33,128);
+  x.font='800 9px -apple-system,Helvetica,Arial';x.fillText('LEVEL',33,141);
+  x.font='800 15px "Arial Black",-apple-system,Helvetica,Arial';x.fillText(String(g.score),236,128);
+  x.font='800 9px -apple-system,Helvetica,Arial';x.fillText('SCORE',236,141);
+  x.fillStyle='#9fb6ff';x.font='700 7.5px -apple-system,Helvetica,Arial';x.fillText('BEST '+g.best,236,153);
+  x.fillText('NEXT',33,40);x.shadowBlur=0;
+  x.strokeStyle='rgba(255,255,255,.35)';x.lineWidth=1;x.beginPath();x.arc(33,58,BUB.R+5,0,Math.PI*2);x.stroke();
+  x.drawImage(bubSprite(g.next),33-BUB.R,58-BUB.R,BUB.R*2,BUB.R*2);
+  for(let i=0;i<g.perDrop;i++){x.fillStyle=i<left?'#ffe066':'rgba(255,255,255,.18)';x.beginPath();x.arc(33-(g.perDrop-1)*3.5+i*7,84,2.2,0,Math.PI*2);x.fill()}
+  x.fillStyle='#9fb6ff';x.font='700 7px -apple-system,Helvetica,Arial';x.fillText('SHOTS',33,96);
+  // faint scanlines for the old-screen feel
+  x.fillStyle='rgba(0,0,30,.07)';for(let y=0;y<190;y+=2)x.fillRect(0,y,270,1);
+  const banner=(a,b)=>{x.fillStyle='rgba(4,12,48,.82)';x.fillRect(BUB.FX+4,72,BUB.FW-8,44);x.strokeStyle='rgba(255,255,255,.35)';x.strokeRect(BUB.FX+4.5,72.5,BUB.FW-9,43);
+    x.fillStyle='#fff';x.font='800 13px "Arial Black",-apple-system,Helvetica,Arial';x.fillText(a,BUB.LX,92);x.fillStyle='#9fb6ff';x.font='600 8px -apple-system,Helvetica,Arial';x.fillText(b,BUB.LX,106)};
+  if(g.over)banner('GAME OVER','Center to play again');
+  else if(g.won)banner('CLEARED!','+'+(500*g.level)+' bonus');
+  else if(g.paused)banner('PAUSED','Center to resume');
+  else if(g.intro)banner('LEVEL '+g.level,'Spin to aim · Center to shoot');
+  x.textAlign='left';
+}
+function bubblesInput(v,btn,dir){
+  const g=v.g;if(!g)return;
+  if(dir){if(g.paused||g.over)return;const na=Math.max(12,Math.min(168,g.angle-dir*3));if(na!==g.angle){g.angle=na;click()}return}
+  if(btn==='select'){if(g.over){v.g=bubNew();return}if(g.paused){g.paused=false;return}if(g.intro){g.intro=false;return}bubShoot(g)}
+  if(btn==='play'&&!g.over)g.paused=!g.paused;
+  if((btn==='next'||btn==='prev')&&!g.shot&&!g.over&&!g.paused){[g.cur,g.next]=[g.next,g.cur];if(settings.haptics)triggerHaptic('selection')}
 }
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
@@ -1965,7 +2128,7 @@ function render(){
   const reduce=!dir||!body.animate||window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   document.querySelectorAll('.navghost').forEach(g=>g.remove());   // a fast second press finishes the last slide
   let ghost=null;
-  if(!reduce&&body.childElementCount&&top().type!=='brick'){
+  if(!reduce&&body.childElementCount&&top().type!=='brick'&&top().type!=='bubbles'){
     ghost=document.createElement('div');ghost.className='navghost';ghost.setAttribute('aria-hidden','true');
     ghost.innerHTML=body.innerHTML;ghost.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));
   }
@@ -2051,6 +2214,8 @@ function renderView(){
     renderClock();
   }else if(v.type==='brick'){
     brickMount(v);
+  }else if(v.type==='bubbles'){
+    bubblesMount(v);
   }else if(v.type==='now'&&settings.npStyle==='Flow'&&cur()){
     renderNowFlow(changed?direction:0);
   }else if(v.type==='now'&&settings.style==='Modern'&&cur()){
@@ -3360,7 +3525,7 @@ function wake(){
   clearTimeout(lightTimer);
   if(holdOn)return;
   const ms={'10 sec':1e4,'20 sec':2e4,'1 min':6e4}[settings.backlight];
-  if(ms&&!(top()&&top().type==='brick'))lightTimer=setTimeout(()=>screenEl.classList.add('dim'),ms);
+  if(ms&&!(top()&&(top().type==='brick'||top().type==='bubbles')))lightTimer=setTimeout(()=>screenEl.classList.add('dim'),ms);
 }
 // ----- Fast scroll (acceleration) + jump letter -----
 let lastTickAt=0,streak=0,letterTimer=null;
@@ -3378,6 +3543,7 @@ function scroll(dir){
   if(sheet){sheetScroll(dir);return}
   const v=top();
   if(v.type==='brick'){brickInput(v,null,dir);return}
+  if(v.type==='bubbles'){bubblesInput(v,null,dir);return}
   if(v.type==='music-home'){const ns=Math.max(0,Math.min(3,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();renderMusicHome(v)}return}
   if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v);updateFavoriteStar()}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
@@ -3398,6 +3564,7 @@ function press(btn){
   if(holdOn){showLock();return}
   if(sheet){sheetPress(btn);return}
   if(top().type==='brick'&&btn!=='menu'){click();brickInput(top(),btn,0);return}
+  if(top().type==='bubbles'&&btn!=='menu'){if(btn!=='select')click();bubblesInput(top(),btn,0);return}
   click();
   if(btn==='select')triggerHaptic('confirm');
   const v=top();
