@@ -6,8 +6,10 @@ const source=html.slice(html.indexOf('let centerPress=null'),html.indexOf("addEv
 const run=new Function('assert',`
  const events=new Map(),timers=new Map(),frames=new Map(),pulses=[],selections=[];
  let now=0,id=0,sheet=null,holdOn=false,saved=0;
+ const classes=new Set();
  const node=()=>({textContent:'',classList:{add(){},remove(){}},style:{setProperty(){},removeProperty(){}}});
- const center={...node(),addEventListener:(event,handler)=>events.set(event,handler),
+ const center={...node(),classList:{add:name=>classes.add(name),remove:name=>classes.delete(name),
+   toggle:(name,on)=>on?classes.add(name):classes.delete(name)},addEventListener:(event,handler)=>events.set(event,handler),
    getBoundingClientRect:()=>({left:10,right:100,top:10,bottom:100})};
  const captions=new Map(['i','b','span'].map(tag=>[tag,node()]));
  const hub={...node(),querySelector:tag=>captions.get(tag)};
@@ -53,6 +55,10 @@ const run=new Function('assert',`
    await Promise.resolve();
    assert.equal(saved,1);
    assert.equal(song.favorite,true);
+   assert(classes.has('favorite-saved'));
+   advance(3600);
+   assert(!classes.has('favorite-confirmed'));
+   assert(classes.has('favorite-saved'));
    assert.equal(sheet,null);
    assert.deepEqual(pulses,['confirm','confirm','confirm']);
  })();
