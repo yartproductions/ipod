@@ -23,6 +23,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 #ambient .ambient-art.visible{opacity:.94}
 #ambient .ambient-art.dissolving{transition:none;mask-size:128px 128px;-webkit-mask-size:128px 128px}
 #ambient::after{content:"";position:absolute;inset:0;z-index:3;background:radial-gradient(ellipse at center,transparent,#0004)}
+#ambient .ambient-particles{position:absolute;inset:0;z-index:2;width:100%;height:100%}
 #ambient .ambient-grain{position:absolute;z-index:2;inset:-25%;width:150%;height:150%;opacity:.12;mix-blend-mode:soft-light;animation:ambientGrain .7s steps(1) infinite;background-repeat:repeat;background-size:160px}
 @keyframes ambientDrift{from{transform:translate(-2%,-1%) scale(1.02) rotate(-3deg)}to{transform:translate(3%,2%) scale(1.12) rotate(3deg)}}
 @keyframes ambientGrain{0%,100%{transform:translate(0,0)}25%{transform:translate(-3%,2%)}50%{transform:translate(2%,-3%)}75%{transform:translate(-2%,-1%)}}
@@ -615,7 +616,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 </style>
 </head>
 <body>
-<div id="ambient" aria-hidden="true"><div class="ambient-art"></div><div class="ambient-art"></div><div class="ambient-grain"></div></div>
+<div id="ambient" aria-hidden="true"><div class="ambient-art"></div><div class="ambient-art"></div><canvas class="ambient-particles"></canvas><div class="ambient-grain"></div></div>
 <div id="wrap"><div id="stage">
   <div class="ipod" id="ipod">
     <div class="hold" id="hold" title="Hold"></div>
@@ -1719,11 +1720,111 @@ function dissolveAmbientArtwork(incoming,outgoing){
   };
   animation=requestAnimationFrame(reveal);
 }
+const ambientParticles=(()=>{
+  const canvas=$('.ambient-particles'),context=canvas.getContext('2d');
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+  const fallback=['#e8c8ff','#a9c9ef','#f3dfc0'];
+  const eddies=[{x:.18,y:.15,direction:1},{x:.82,y:.85,direction:-1}];
+  const grains=[];
+  let palette=fallback,frame=0,last=0,enabled=false,playing=false;
+
+  function artworkPalette(image){
+    const sample=document.createElement('canvas');
+    sample.width=sample.height=24;
+    try{
+      const brush=sample.getContext('2d');
+      brush.drawImage(image,0,0,24,24);
+      const pixels=brush.getImageData(0,0,24,24).data,colors=[];
+      for(let i=0;i<pixels.length;i+=4){
+        if(pixels[i+3]<128)continue;
+        const rgb=[pixels[i],pixels[i+1],pixels[i+2]];
+        if(Math.max(...rgb)<32)continue;
+        colors.push('rgb('+rgb.map(channel=>Math.round(channel*.78+56)).join(',')+')');
+      }
+      return colors.length?colors:fallback;
+    }catch{return null}
+  }
+  function emit(eddy,burst=false){
+    const radius=.18+Math.random()*.88;
+    const arm=Math.random()<.5?0:Math.PI;
+    const angle=arm+eddy.direction*(radius*5+last/1800)+(Math.random()-.5)*.85;
+    grains.push({
+      eddy,angle,radius,burst,
+      speed:(.75+Math.random()*.6)*(burst?2.25:1),age:0,
+      life:burst?1.5+Math.random()*1.35:2.4+Math.random()*3.2,
+      size:.5+Math.random()*(burst?1.8:1.1),
+      color:palette[Math.floor(Math.random()*palette.length)]
+    });
+  }
+  function draw(now){
+    frame=0;
+    const dt=last?Math.min(.055,(now-last)/1000):0;
+    if(last&&now-last<28){frame=requestAnimationFrame(draw);return}
+    last=now;
+    const scale=Math.min(.8,720/Math.max(canvas.clientWidth,canvas.clientHeight));
+    const width=Math.max(1,Math.round(canvas.clientWidth*scale));
+    const height=Math.max(1,Math.round(canvas.clientHeight*scale));
+    if(canvas.width!==width||canvas.height!==height){
+      canvas.width=width;canvas.height=height;
+    }
+    context.clearRect(0,0,width,height);
+    const radius=Math.min(width,height)*.33;
+    for(let i=grains.length-1;i>=0;i--){
+      const grain=grains[i],eddy=grain.eddy;
+      grain.age+=dt;
+      if(grain.age>=grain.life){grains.splice(i,1);continue}
+      const x=width*eddy.x+Math.cos(grain.angle)*radius*grain.radius;
+      const y=height*eddy.y+Math.sin(grain.angle)*radius*grain.radius*1.2;
+      // Faster rotation at the center and gradual inward drift form two spirals.
+      grain.angle+=eddy.direction*grain.speed*dt/(.35+grain.radius);
+      grain.radius=Math.max(.07,grain.radius+dt*(grain.burst ? .24 : -.065));
+      const fade=Math.min(1,grain.age*4,(grain.life-grain.age)*2);
+      context.globalAlpha=fade*.75;
+      context.fillStyle=grain.color;
+      context.fillRect(x,y,grain.size,grain.size);
+    }
+    for(const eddy of eddies){
+      const count=grains.filter(grain=>grain.eddy===eddy).length;
+      for(let i=count;i<105;i++)emit(eddy);
+    }
+    frame=requestAnimationFrame(draw);
+  }
+  function sync(){
+    if(!context)return;
+    if(enabled&&playing&&!reduced.matches){
+      if(!frame)frame=requestAnimationFrame(draw);
+      return;
+    }
+    cancelAnimationFrame(frame);frame=0;last=0;
+    if(!enabled||reduced.matches){
+      context.clearRect(0,0,canvas.width,canvas.height);
+      grains.length=0;
+    }
+  }
+  reduced.addEventListener('change',sync);
+  return {
+    setPlaying(active,hasCover){playing=active;enabled=hasCover;sync()},
+    setArtwork(image,changed){
+      if(!context)return;
+      if(changed&&playing&&!reduced.matches){
+        for(const eddy of eddies)for(let i=0;i<65;i++)emit(eddy,true);
+      }
+      palette=artworkPalette(image)||fallback;
+      if(palette===fallback&&/^https?:/.test(image.src)){
+        const readable=new Image(),cover=image.src;
+        readable.crossOrigin='anonymous';
+        readable.onload=()=>{if(ambientCover===cover)palette=artworkPalette(readable)||fallback};
+        readable.src=cover;
+      }
+    }
+  };
+})();
 function updateAmbientArtwork(){
   const panel=$('#ambient'),song=cur();
   panel.classList.toggle('paused',document.hidden||!song||!isPlaying());
   if(document.hidden)finishAmbientDissolve?.();
   const cover=song?nowPlayingArt(song):null;
+  ambientParticles.setPlaying(!document.hidden&&isPlaying(),!!cover);
   if(ambientCover===cover)return;
   ambientCover=cover;
   const request=++ambientRequest,layers=panel.querySelectorAll('.ambient-art');
@@ -1733,6 +1834,7 @@ function updateAmbientArtwork(){
     if(request!==ambientRequest)return;
     finishAmbientDissolve?.();
     const outgoing=layers[ambientLayer];
+    ambientParticles.setArtwork(image,outgoing.classList.contains('visible'));
     ambientLayer=1-ambientLayer;
     const incoming=layers[ambientLayer];
     outgoing.style.zIndex='0';
