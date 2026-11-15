@@ -21,8 +21,9 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 #ambient{position:fixed;inset:0;overflow:hidden;pointer-events:none;isolation:isolate;background:#000}
 #ambient .ambient-art{position:absolute;inset:-15%;background-position:center;background-size:cover;opacity:0;transition:opacity 1.4s ease;animation:ambientDrift 26s ease-in-out infinite alternate}
 #ambient .ambient-art.visible{opacity:.94}
-#ambient::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent,#0004)}
-#ambient .ambient-grain{position:absolute;inset:-25%;width:150%;height:150%;opacity:.12;mix-blend-mode:soft-light;animation:ambientGrain .7s steps(1) infinite;background-repeat:repeat;background-size:160px}
+#ambient .ambient-art.dissolving{transition:none;mask-size:128px 128px;-webkit-mask-size:128px 128px}
+#ambient::after{content:"";position:absolute;inset:0;z-index:3;background:radial-gradient(ellipse at center,transparent,#0004)}
+#ambient .ambient-grain{position:absolute;z-index:2;inset:-25%;width:150%;height:150%;opacity:.12;mix-blend-mode:soft-light;animation:ambientGrain .7s steps(1) infinite;background-repeat:repeat;background-size:160px}
 @keyframes ambientDrift{from{transform:translate(-2%,-1%) scale(1.02) rotate(-3deg)}to{transform:translate(3%,2%) scale(1.12) rotate(3deg)}}
 @keyframes ambientGrain{0%,100%{transform:translate(0,0)}25%{transform:translate(-3%,2%)}50%{transform:translate(2%,-3%)}75%{transform:translate(-2%,-1%)}}
 #ambient.paused .ambient-art,#ambient.paused .ambient-grain{animation-play-state:paused}
@@ -1624,23 +1625,80 @@ function renderHdr(){
     :'<svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z" fill="#2b7fde"/></svg>';
 }
 let ambientCover=null,ambientLayer=0,ambientRequest=0;
+let finishAmbientDissolve=null;
+let ambientMasks=null;
+function grainMasks(){
+  if(ambientMasks)return ambientMasks;
+  const canvas=document.createElement('canvas');
+  canvas.width=canvas.height=128;
+  const context=canvas.getContext('2d');
+  if(!context)return [];
+  const image=context.createImageData(canvas.width,canvas.height);
+  const grain=Uint8Array.from({length:image.data.length/4},()=>Math.random()*256);
+  ambientMasks=Array.from({length:16},(_,frame)=>{
+    const threshold=(frame+1)*15;
+    for(let i=0;i<grain.length;i++)image.data[i*4+3]=grain[i]<threshold?255:0;
+    context.putImageData(image,0,0);
+    return 'url('+canvas.toDataURL()+')';
+  });
+  return ambientMasks;
+}
+function dissolveAmbientArtwork(incoming,outgoing){
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
+  const supportsMask=window.CSS?.supports('mask-image','url("")')||window.CSS?.supports('-webkit-mask-image','url("")');
+  const masks=!document.hidden&&!reduced.matches&&supportsMask&&outgoing.classList.contains('visible')?grainMasks():[];
+  if(!masks.length){
+    incoming.classList.add('visible');
+    outgoing.classList.remove('visible');
+    return;
+  }
+  let animation,frame=-1;
+  const applyMask=index=>{
+    incoming.style.maskImage=masks[index];
+    incoming.style.webkitMaskImage=masks[index];
+  };
+  const finish=()=>{
+    cancelAnimationFrame(animation);
+    outgoing.classList.remove('visible');
+    incoming.style.maskImage='';
+    incoming.style.webkitMaskImage='';
+    incoming.classList.remove('dissolving');
+    finishAmbientDissolve=null;
+  };
+  finishAmbientDissolve=finish;
+  incoming.classList.add('dissolving','visible');
+  applyMask(0);
+  const start=performance.now();
+  const reveal=now=>{
+    const next=Math.floor((now-start)*masks.length/1100);
+    if(next>=masks.length||reduced.matches)return finish();
+    if(next!==frame){applyMask(next);frame=next}
+    animation=requestAnimationFrame(reveal);
+  };
+  animation=requestAnimationFrame(reveal);
+}
 function updateAmbientArtwork(){
   const panel=$('#ambient'),song=cur();
   panel.classList.toggle('paused',document.hidden||!song||!isPlaying());
+  if(document.hidden)finishAmbientDissolve?.();
   const cover=song?nowPlayingArt(song):null;
   if(ambientCover===cover)return;
   ambientCover=cover;
   const request=++ambientRequest,layers=panel.querySelectorAll('.ambient-art');
-  if(!cover){layers.forEach(layer=>layer.classList.remove('visible'));return}
+  if(!cover){finishAmbientDissolve?.();layers.forEach(layer=>layer.classList.remove('visible'));return}
   const image=new Image();
   image.onload=()=>{
     if(request!==ambientRequest)return;
+    finishAmbientDissolve?.();
+    const outgoing=layers[ambientLayer];
     ambientLayer=1-ambientLayer;
-    layers[ambientLayer].style.backgroundImage='url('+JSON.stringify(cover)+')';
-    layers[ambientLayer].classList.add('visible');
-    layers[1-ambientLayer].classList.remove('visible');
+    const incoming=layers[ambientLayer];
+    outgoing.style.zIndex='0';
+    incoming.style.zIndex='1';
+    incoming.style.backgroundImage='url('+JSON.stringify(cover)+')';
+    dissolveAmbientArtwork(incoming,outgoing);
   };
-  image.onerror=()=>{if(request===ambientRequest){layers.forEach(layer=>layer.classList.remove('visible'));ambientCover=null}};
+  image.onerror=()=>{if(request===ambientRequest){finishAmbientDissolve?.();ambientCover=null}};
   image.src=cover;
 }
 {
