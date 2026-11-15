@@ -222,6 +222,23 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .fnp.lyrics-flow .np-neighbors .upcoming{visibility:visible}
 #np .offline-cover,#flow .offline-cover{box-shadow:0 0 0 1px rgba(255,214,130,.7),0 0 10px rgba(255,186,72,.45),0 4px 12px rgba(0,0,0,.4)}
 .np.lyrics-np .art{position:relative;width:92px;height:92px;background-size:cover;background-position:center;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5)}
+/* A record jacket in Now Playing. The sleeve stays in front of the disc. */
+.vinyl-jacket{isolation:isolate}
+.vinyl-jacket::before{content:"";position:absolute;inset:3%;z-index:-1;border-radius:50%;pointer-events:none;
+  box-shadow:0 0 0 1px #45424a,0 4px 11px #0009;
+  background:radial-gradient(circle,#111 0 3%,#be9146 4% 18%,transparent 19%),
+    conic-gradient(from 20deg,#16171c,#54535b,#15161b 42%,#1b1c21 63%,#46464e 76%,#15161b);
+  transform:translateX(var(--disc-peek,24%)) rotate(32deg)}
+.vinyl-jacket::after{content:"";position:absolute;inset:3%;z-index:-1;border-radius:50%;pointer-events:none;
+  background:repeating-radial-gradient(circle,transparent 0 2px,#ffffff16 3px,#0003 4px);
+  transform:translateX(var(--disc-peek,24%)) rotate(32deg)}
+#np.vinyl-enter .vinyl-jacket::before,#np.vinyl-enter .vinyl-jacket::after{
+  animation:vinylSlide 1.65s var(--vinyl-delay,.15s) cubic-bezier(.22,.75,.25,1) both}
+@keyframes vinylSlide{from{transform:translateX(0) rotate(-32deg)}to{transform:translateX(var(--disc-peek,24%)) rotate(32deg)}}
+@media(prefers-reduced-motion:reduce){#np.vinyl-enter .vinyl-jacket::before,#np.vinyl-enter .vinyl-jacket::after{animation:none}}
+.np:not(.lyrics-on) .vinyl-jacket{--disc-peek:14%}
+.mnp .modern-jacket{position:absolute;left:14px;top:36px;width:72px;height:72px;--disc-peek:26%}
+.mnp .modern-jacket .sleeve{position:absolute;inset:0;border-radius:5px;background-position:center;background-size:cover;box-shadow:0 3px 12px #0008}
 .np.lyrics-np .refl{display:none}
 .np.lyrics-np .np-lyrics{min-width:0;flex:1;position:relative;overflow:hidden;display:flex;opacity:0;transform:translateX(8px);transition:opacity .35s ease .1s,transform .45s cubic-bezier(.2,.8,.25,1) .1s;flex-direction:column;justify-content:center;text-align:left;mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%);-webkit-mask-image:linear-gradient(transparent 0%,#000 12%,#000 83%,transparent 100%)}
 .np.lyrics-np .np-lyrics .lyric-lines{max-height:100%;overflow-y:auto;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.65;font-weight:650;color:rgba(255,255,255,.92)}
@@ -621,6 +638,11 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
   mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 0)}
 #center.favorite-holding{box-shadow:0 0 10px #ffc55299}
 .rdial .rhub.favorite-holding b{font-size:15px;font-variant-numeric:tabular-nums}
+#center.favorite-saved:not(.favorite-confirmed)::after{
+  content:"★";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  color:#d9931e;font-size:21px;text-shadow:0 0 7px #ffc45a99;pointer-events:none
+}
+.black #center.favorite-saved::after,.modern:not(.lightui) #center.favorite-saved::after{color:#ffce64}
 #center.favorite-confirmed{display:grid;place-items:center;color:#fff4c2;background:radial-gradient(circle at 45% 32%,#ffe69a,#ba7212);box-shadow:0 0 18px #ffcc63,inset 0 1px 3px #fff5b8;filter:none;font-size:32px;text-shadow:0 1px 3px #85500c}
 #center.favorite-confirmed::after{content:"★"}
 </style>
@@ -680,6 +702,9 @@ const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
 let listened=ls.get('ipod.listeningHistory',[]);
 if(!Array.isArray(listened))listened=[];
+listened=listened.map(entry=>typeof entry==='string'?{id:entry,at:null}:entry)
+  .filter(entry=>typeof entry?.id==='string');
+let lastListenedSong=null;
 
 /* ---------- layout ---------- */
 function fit(){const s=Math.min(innerWidth/335,innerHeight/555,1.7);$('#stage').style.transform=`scale(${s})`}
@@ -878,6 +903,7 @@ function load(play){
   if(audio!==deck&&(audio===backgroundDeck||deck===backgroundDeck)){
     const old=audio;audio=deck;old.pause();
   }
+  if(play)lastListenedSong=null;
   if(audio.src!==t.url)audio.src=t.url;
   audio.preload='auto';
   stageDirectAudio();
@@ -1323,23 +1349,48 @@ function prefetchImported(){
 }
 onActiveAudio('timeupdate',prefetchImported);
 
-onActiveAudio('playing',()=>{
+function recordListening(){
   const song=cur();
-  if(!song?.id||audio.src!==song.url||listened[0]===song.id)return;
-  listened=[song.id,...listened.filter(id=>id!==song.id)].slice(0,100);
+  if(!song?.id||audio.paused||audio.src!==song.url||lastListenedSong===song)return;
+  lastListenedSong=song;
+  listened=[{id:song.id,at:Date.now()},...listened].slice(0,500);
   ls.set('ipod.listeningHistory',listened);
-});
+}
+onActiveAudio('playing',recordListening);
+onActiveAudio('timeupdate',recordListening);
+onActiveAudio('ended',()=>{if(settings.repeat==='One')lastListenedSong=null});
 
+function latestListeningSession(entries){
+  const session=[];
+  for(const entry of entries){
+    if(!Number.isFinite(entry.at))continue;
+    if(session.length&&session.at(-1).at-entry.at>45*60*1000)break;
+    session.push(entry);
+  }
+  return session;
+}
 function listeningHistoryMenu(){
   const library=new Map(songs.map(song=>[song.id,song]));
-  const recent=listened.map(id=>library.get(id)).filter(Boolean);
+  const toSongs=entries=>[...new Set(entries.map(entry=>entry.id))].map(id=>library.get(id)).filter(Boolean);
+  const recent=toSongs(listened);
   if(!recent.length)return msgView('Listening History','Songs appear here after you play them.');
+  const save=(label,entries)=>{
+    const tracks=toSongs(entries);
+    if(!tracks.length)return push(msgView('No Listening History','No available songs in this time range.'));
+    window.ipodPlaylistImport?.saveListeningHistory(label+' · '+new Date().toLocaleDateString(),tracks);
+  };
   return list('Listening History',[
     {label:'Browse History',icon:'album',chev:1,action:()=>push(songFlowView('Listening History',recent))},
-    {label:'Save as Playlist',icon:'plus',action:()=>{
-      const name='Listening History · '+new Date().toLocaleDateString();
-      window.ipodPlaylistImport?.saveListeningHistory(name,recent);
-    }}
+    {label:'Save as Playlist',icon:'plus',chev:1,action:()=>push(list('Save Listening History',[
+      {label:'Last Hour',action:()=>save('Last Hour',listened.filter(entry=>entry.at>=Date.now()-60*60*1000))},
+      {label:'Most Recent Session',action:()=>save('Recent Session',latestListeningSession(listened))},
+      {label:'Yesterday’s Session',action:()=>{
+        const today=new Date();today.setHours(0,0,0,0);
+        const yesterday=new Date(today);yesterday.setDate(yesterday.getDate()-1);
+        save('Yesterday’s Session',latestListeningSession(listened.filter(entry=>entry.at>=+yesterday&&entry.at<+today)));
+      }},
+      {label:'All Recent Songs',action:()=>save('Listening History',listened)}
+    ]))}
   ]);
 }
 
@@ -1906,7 +1957,7 @@ function updateAmbientArtwork(){
 onActiveAudio('play',updateAmbientArtwork);
 onActiveAudio('pause',updateAmbientArtwork);
 document.addEventListener('visibilitychange',updateAmbientArtwork);
-let shownNowTrack=null;
+let shownNowTrack=null,vinylStartedAt=0;
 const NAV_EASE='cubic-bezier(.25,.8,.25,1)',NAV_MS=280;
 function render(){
   updateAmbientArtwork();
@@ -1918,7 +1969,21 @@ function render(){
     ghost=document.createElement('div');ghost.className='navghost';ghost.setAttribute('aria-hidden','true');
     ghost.innerHTML=body.innerHTML;ghost.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));
   }
+  const previousTrack=shownNowTrack;
+  const wasNowPlaying=!!$('#np');
   renderView();
+  updateFavoriteStar();
+  const nowPlaying=$('#np');
+  if(nowPlaying&&shownNowTrack){
+    const now=performance.now();
+    if(!wasNowPlaying||previousTrack?.track!==shownNowTrack.track||previousTrack?.index!==shownNowTrack.index||
+        previousTrack?.session!==shownNowTrack.session)vinylStartedAt=now;
+    const elapsed=now-vinylStartedAt;
+    if(elapsed<1800){
+      nowPlaying.style.setProperty('--vinyl-delay',(150-elapsed)+'ms');
+      nowPlaying.classList.add('vinyl-enter');
+    }
+  }
   if(!ghost)return;
   const w=screenEl.clientWidth||270;
   body.after(ghost);
@@ -1992,6 +2057,7 @@ function renderView(){
     const s=cur(),art=nowPlayingArt(s);screenEl.classList.add('nowmod');if(scrub)ctl=null;
     body.innerHTML=`<div class="mnp${hasNowLyrics(s)?' lyrics-on':''}" id="np">
       <div class="bg${lastArtId!==s.id&&!changed?' fresh':''}" style="background-image:url(&quot;${esc(art)}&quot;)"></div><div class="shade"></div>${nowPlayingNeighbors()}
+      <div class="modern-jacket vinyl-jacket" aria-hidden="true"><div class="sleeve" style="background-image:url(&quot;${esc(art)}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
       <div class="cnt">${qi+1} of ${queue.length}</div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
@@ -2015,7 +2081,7 @@ function renderView(){
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
     body.innerHTML=`<div class="np lyrics-np${hasNowLyrics(s)?' lyrics-on':''}" id="np" style="--np-art:url(&quot;${esc(nowPlayingArt(s))}&quot;)">${nowPlayingNeighbors()}<div class="cnt">${qi+1} of ${queue.length}</div>
-      <div class="top"><div class="artcol"><div class="art${showOfflineMark(s)?' offline-cover':''}" style="background-image:url(&quot;${esc(nowPlayingArt(s))}&quot;)"></div></div>
+      <div class="top"><div class="artcol vinyl-jacket"><div class="art${showOfflineMark(s)?' offline-cover':''}" style="background-image:url(&quot;${esc(nowPlayingArt(s))}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div></div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}${s.album?`<span class="alx"> — ${esc(s.album)}</span>`:''}</div><div class="al">${esc(s.album)}</div></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
@@ -2513,6 +2579,7 @@ function renderFlow(v,from){
     const prior=v.sel;v.sel=index;click();
     if((index<v._lo+6&&v._lo>0)||(index>v._hi-6&&v._hi<n-1))renderFlow(v,prior);
     else flowUpdate(v);
+    updateFavoriteStar();
     if(v.recommendItems){recommendationArtPreview(v,v.sel);recommendationMaybeLoadMore(v)}
   }));
   const renderedFlow=$('#flow');
@@ -2581,7 +2648,7 @@ function renderNowFlow(direction=0){
   const reduced=direction&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const s=cur(),from=!reduced&&flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
   const lo=Math.max(0,qi-5),hi=Math.min(queue.length-1,qi+5);let cards='';
-  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${showOfflineMark(queue[i])?' offline-cover':''}" data-q="${i}"><div class="cv-motion" style="background-image:url(&quot;${esc(nowPlayingArt(queue[i]))}&quot;)"></div></div>`;
+  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${showOfflineMark(queue[i])?' offline-cover':''}${i===qi?' vinyl-jacket':''}" data-q="${i}"><div class="cv-motion" style="background-image:url(&quot;${esc(nowPlayingArt(queue[i]))}&quot;)"></div></div>`;
   body.innerHTML=`<div class="fnp instant${hasNowLyrics(s)?' lyrics-flow':''}" id="np" style="--np-art:url(&quot;${esc(nowPlayingArt(s))}&quot;)">${nowPlayingNeighbors()}<span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
     <div class="stage">${cards}</div>
     <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
@@ -3028,6 +3095,7 @@ function songRecord(s){const {kind,url,artUrl,...rec}=s;return rec}
 async function toggleFavorite(s){
   s.favorite=!s.favorite;const lib=songs.find(x=>x.id===s.id);if(lib&&lib!==s)lib.favorite=s.favorite;
   if(s.blob)try{await dbPut(songRecord(lib||s))}catch(e){}
+  updateFavoriteStar();
   triggerHaptic(s.favorite?'success':'selection');
   if(top().type==='now'){render();npToast(s.favorite?'Added to Favorites':'Removed from Favorites')}
 }
@@ -3311,12 +3379,12 @@ function scroll(dir){
   const v=top();
   if(v.type==='brick'){brickInput(v,null,dir);return}
   if(v.type==='music-home'){const ns=Math.max(0,Math.min(3,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();renderMusicHome(v)}return}
-  if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v)}return}
+  if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v);updateFavoriteStar()}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
   if(v.type==='covers'){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}return}
   if(v.type==='list'){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();render()}}
   else if(v.type==='flow'&&!v.opening){const n=v.albums.length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){const was=v.sel;v.sel=ns;click();
-    if(v._lo!=null&&((v.sel<v._lo+6&&v._lo>0)||(v.sel>v._hi-6&&v._hi<n-1)))renderFlow(v,was);else flowUpdate(v);if(v.recommendItems){recommendationArtPreview(v,v.sel);recommendationMaybeLoadMore(v)}}}
+    if(v._lo!=null&&((v.sel<v._lo+6&&v._lo>0)||(v.sel>v._hi-6&&v._hi<n-1)))renderFlow(v,was);else flowUpdate(v);updateFavoriteStar();if(v.recommendItems){recommendationArtPreview(v,v.sel);recommendationMaybeLoadMore(v)}}}
   else if(v.type==='lyrics'){const el=$('#lyr .in');if(!el)return;const max=Math.max(0,el.scrollHeight-150);const no=Math.max(0,Math.min(max,v.off+dir*22));if(no!==v.off){v.off=no;click();el.style.transform=`translateY(${-no}px)`}}
   else if(v.type==='now'&&ctl!=null){click();ctl=(ctl+dir+ACTS.length)%ACTS.length;applyCtlFocus()}
   else if(v.type==='now'||v.type==='video'){
@@ -3424,6 +3492,12 @@ function openQueueRing(track){
   ]);
 }
 let centerPress=null,favoriteGlowTimer=null;
+function updateFavoriteStar(){
+  const view=top();
+  const track=view.type==='now'?null:highlightedTrack(view);
+  const song=track?.song|| (track?.video?importedTrackSong(track):cur());
+  center.classList.toggle('favorite-saved',!!song?.favorite);
+}
 async function favoriteHighlighted(track){
   try{
     const song=importedTrackSong(track)||(track.video?await enqueueYT(track.video):null);
@@ -3434,6 +3508,7 @@ async function favoriteHighlighted(track){
       queue.forEach(entry=>{if(entry.id===song.id)entry.favorite=true});
     }
     triggerHaptic('confirm');
+    updateFavoriteStar();
     center.classList.add('favorite-confirmed');
     clearTimeout(favoriteGlowTimer);
     favoriteGlowTimer=setTimeout(()=>center.classList.remove('favorite-confirmed'),1400);
