@@ -329,10 +329,17 @@ async function youtubeMatch(track){
  if(verified.length!==1)return {status:verified.length?'review':'unmatched',choices:verified};
  return {status:'matched',youtubeId:verified[0].id};
 }
+const matchingPlaylists=new Set();
 async function matchPlaylist(pl){
+ if(matchingPlaylists.has(pl.id)){
+  push(msgView('Matching in Progress','This playlist is already being matched.'));
+  return;
+ }
+ matchingPlaylists.add(pl.id);
  const loading=loadingView('Matching Tracks…');push(loading);
  try{
   const tracks=pl.tracks.map(x=>({...x}));let matched=0,review=0,unmatched=0,attempted=0;
+  let interruption=null;
   const cache=new Map();
   for(const playlist of read()){
    for(const track of playlist.tracks){
@@ -347,18 +354,25 @@ async function matchPlaylist(pl){
    const key=matchKey(t),cached=cache.get(key);
    if(cached){t.youtubeId=cached;t.status='matched';t.checked=true;matched++;continue}
    if(t.status==='unmatched'&&t.checked){unmatched++;continue}
-   if(attempted>=25)continue;
+   if(interruption||attempted>=25)continue;
+   let found;
+   try{found=await youtubeMatch(t)}
+   catch(error){interruption=error;continue}
    attempted++;
-   const found=await youtubeMatch(t);
    t.status=found.status;t.checked=true;if(found.youtubeId){t.youtubeId=found.youtubeId;cache.set(key,found.youtubeId)}
    if(found.choices?.length)t.choices=found.choices;
    if(found.status==='matched')matched++;else if(found.status==='review')review++;else unmatched++;
    // Allow the UI to repaint; avoid requesting every playlist track simultaneously.
    if(i%5===4)await new Promise(r=>setTimeout(r,50));
   }
-  pl.tracks=tracks;const all=read(),idx=all.findIndex(p=>p.id===pl.id);
-  if(idx>=0){all[idx]=pl;write(all)}
-  if(top()===loading)replaceTop(list('Matching Complete',[
+  const all=read(),idx=all.findIndex(p=>p.id===pl.id);
+  if(idx>=0){all[idx]={...all[idx],tracks};write(all)}
+  pl.tracks=tracks;
+  const quota=interruption?.dailyQuota;
+  const summary=quota?'YouTube search resets at midnight Pacific. Your matches are saved.':
+   interruption?interruption.message:null;
+  if(top()===loading)replaceTop(list(quota?'YouTube Search Limit':interruption?'Matching Paused':'Matching Complete',[
+   ...(summary?[{label:'Why Matching Paused',action:()=>push(msgView('Matching Paused',summary))}]:[]),
    {label:'Matched',val:String(matched)},{label:'Needs Review',val:String(review)},
    {label:'Unmatched',val:String(unmatched)},
    {label:'Processed This Batch',val:String(attempted)},
@@ -366,6 +380,7 @@ async function matchPlaylist(pl){
    {label:'View Playlist',action:()=>push(playlistView(pl))}
   ]));
  }catch(e){if(top()===loading)replaceTop(msgView('Matching Failed',e.message))}
+ finally{matchingPlaylists.delete(pl.id)}
 }
 function library(){push(list('Imported Playlists',()=>[
  {label:'Import Another',icon:'plus',action:open},

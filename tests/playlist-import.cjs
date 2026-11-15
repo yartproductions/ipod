@@ -106,5 +106,26 @@ assert.equal(qobuz[0].album,'Trilogy');
  screens.at(-1).onSubmit('https://youtu.be/AAAAAAAAAAA?list=PLabcdef12345');
  await new Promise(resolve=>setImmediate(resolve));
  assert.equal(screens.at(-1).title,'Import Private YouTube Playlist');
+ const key=[...storage.keys()][0],originalApi=bridge.ytApi;
+ localStorage.setItem(key,JSON.stringify([{id:'quota-test',name:'Quota test',tracks:[
+  {...qobuz[0]}, {title:'Different Song',artist:'Different Artist'}, {title:'Later Song',artist:'Other Artist'}
+ ]}]));
+ let searches=0;
+ // The bridge captures its request function when the module loads.
+ const quotaWindow={...window,ipodPlaylistImportBridge:{...bridge,ytApi:async(endpoint,params)=>{
+  if(endpoint==='search'&&++searches===2)throw Object.assign(Error('Daily search limit'),{dailyQuota:true});
+  return originalApi(endpoint,params);
+ }}};
+ const quotaImporter=new Function('window','localStorage','document',code+';return window.ipodPlaylistImport')(quotaWindow,localStorage,document);
+ quotaImporter.library();
+ screens.push(flowCards[0].action().albums.at(-1).action());
+ screens.at(-1).rows.find(row=>row.label==='Match Unresolved').action();
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(screens.at(-1).title,'YouTube Search Limit');
+ assert.equal(searches,2);
+ const checkpoint=JSON.parse(localStorage.getItem(key))[0].tracks;
+ assert.equal(checkpoint[0].youtubeId,'AAAAAAAAAAA');
+ assert.equal(checkpoint[1].checked,undefined);
+ assert.equal(screens.at(-1).rows.find(row=>row.label==='Remaining').val,'2');
  console.log('PASS Qobuz links, exported metadata, CSV, YouTube playlists, exact matching and menu isolation');
 })().catch(e=>{console.error(e);process.exitCode=1});
