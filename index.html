@@ -20,9 +20,8 @@
 html,body{height:100%;overflow:hidden;background:#000;font-family:-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;touch-action:none}
 body{display:flex;align-items:center;justify-content:center;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 #ambient{position:fixed;inset:0;overflow:hidden;pointer-events:none;isolation:isolate;background:#000}
-#ambient .ambient-art{position:absolute;inset:-15%;background-position:center;background-size:cover;opacity:0;transition:opacity 1.4s ease;animation:ambientDrift 26s ease-in-out infinite alternate}
-#ambient .ambient-art.visible{opacity:.94}
-#ambient .ambient-art.dissolving{transition:none;mask-size:128px 128px;-webkit-mask-size:128px 128px}
+#ambient .ambient-art{position:absolute;inset:-15%;background-position:center;background-size:cover;opacity:0;animation:ambientDrift 26s ease-in-out infinite alternate}
+#ambient .ambient-art.visible{opacity:1}
 #ambient::after{content:"";position:absolute;inset:0;z-index:3;background:radial-gradient(ellipse at center,transparent,#0004)}
 #ambient .ambient-particles{position:absolute;inset:0;z-index:2;width:100%;height:100%}
 #ambient .ambient-grain{position:absolute;z-index:2;inset:-25%;width:150%;height:150%;opacity:.12;mix-blend-mode:soft-light;animation:ambientGrain .7s steps(1) infinite;background-repeat:repeat;background-size:160px}
@@ -1964,56 +1963,27 @@ function renderHdr(){
 }
 let ambientCover=null,ambientLayer=0,ambientRequest=0;
 let finishAmbientDissolve=null;
-let ambientMasks=null;
-function grainMasks(){
-  if(ambientMasks)return ambientMasks;
-  const canvas=document.createElement('canvas');
-  canvas.width=canvas.height=128;
-  const context=canvas.getContext('2d');
-  if(!context)return [];
-  const image=context.createImageData(canvas.width,canvas.height);
-  const grain=Uint8Array.from({length:image.data.length/4},()=>Math.random()*256);
-  ambientMasks=Array.from({length:16},(_,frame)=>{
-    const threshold=(frame+1)*15;
-    for(let i=0;i<grain.length;i++)image.data[i*4+3]=grain[i]<threshold?255:0;
-    context.putImageData(image,0,0);
-    return 'url('+canvas.toDataURL()+')';
-  });
-  return ambientMasks;
-}
+let pendingAmbientArtwork=null;
 function dissolveAmbientArtwork(incoming,outgoing){
   const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
-  const supportsMask=window.CSS?.supports('mask-image','url("")')||window.CSS?.supports('-webkit-mask-image','url("")');
-  const masks=!document.hidden&&!reduced.matches&&supportsMask&&outgoing.classList.contains('visible')?grainMasks():[];
-  if(!masks.length){
+  let animation;
+  const finish=()=>{
+    if(finishAmbientDissolve!==finish)return;
     incoming.classList.add('visible');
     outgoing.classList.remove('visible');
-    return;
-  }
-  let animation,frame=-1;
-  const applyMask=index=>{
-    incoming.style.maskImage=masks[index];
-    incoming.style.webkitMaskImage=masks[index];
-  };
-  const finish=()=>{
-    cancelAnimationFrame(animation);
-    outgoing.classList.remove('visible');
-    incoming.style.maskImage='';
-    incoming.style.webkitMaskImage='';
-    incoming.classList.remove('dissolving');
+    animation?.cancel();
+    reduced.removeEventListener('change',finish);
     finishAmbientDissolve=null;
+    const pending=pendingAmbientArtwork;pendingAmbientArtwork=null;
+    pending?.();
   };
   finishAmbientDissolve=finish;
-  incoming.classList.add('dissolving','visible');
-  applyMask(0);
-  const start=performance.now();
-  const reveal=now=>{
-    const next=Math.floor((now-start)*masks.length/1100);
-    if(next>=masks.length||reduced.matches)return finish();
-    if(next!==frame){applyMask(next);frame=next}
-    animation=requestAnimationFrame(reveal);
-  };
-  animation=requestAnimationFrame(reveal);
+  incoming.classList.add('visible');
+  if(document.hidden||reduced.matches||!incoming.animate){finish();return}
+  // Keep the old cover opaque underneath so the blend never dips through black.
+  animation=incoming.animate([{opacity:0},{opacity:1}],{duration:1800,easing:'ease-in-out'});
+  animation.onfinish=finish;
+  reduced.addEventListener('change',finish);
 }
 const ambientParticles=(()=>{
   const canvas=$('.ambient-particles'),context=canvas.getContext('2d');
@@ -2123,21 +2093,24 @@ function updateAmbientArtwork(){
   if(ambientCover===cover)return;
   ambientCover=cover;
   const request=++ambientRequest,layers=panel.querySelectorAll('.ambient-art');
-  if(!cover){finishAmbientDissolve?.();layers.forEach(layer=>layer.classList.remove('visible'));return}
+  if(!cover){pendingAmbientArtwork=null;finishAmbientDissolve?.();layers.forEach(layer=>layer.classList.remove('visible'));return}
   const image=new Image();
   image.onload=()=>{
     if(request!==ambientRequest)return;
-    finishAmbientDissolve?.();
-    const outgoing=layers[ambientLayer];
-    ambientParticles.setArtwork(image,outgoing.classList.contains('visible'));
-    ambientLayer=1-ambientLayer;
-    const incoming=layers[ambientLayer];
-    outgoing.style.zIndex='0';
-    incoming.style.zIndex='1';
-    incoming.style.backgroundImage='url('+JSON.stringify(cover)+')';
-    dissolveAmbientArtwork(incoming,outgoing);
+    const show=()=>{
+      if(request!==ambientRequest)return;
+      const outgoing=layers[ambientLayer];
+      ambientParticles.setArtwork(image,outgoing.classList.contains('visible'));
+      ambientLayer=1-ambientLayer;
+      const incoming=layers[ambientLayer];
+      outgoing.style.zIndex='0';incoming.style.zIndex='1';
+      incoming.style.backgroundImage='url('+JSON.stringify(cover)+')';
+      dissolveAmbientArtwork(incoming,outgoing);
+    };
+    // Finish the current blend before reusing its two layers; only keep the latest skip.
+    if(finishAmbientDissolve)pendingAmbientArtwork=show;else show();
   };
-  image.onerror=()=>{if(request===ambientRequest){finishAmbientDissolve?.();ambientCover=null}};
+  image.onerror=()=>{if(request===ambientRequest){pendingAmbientArtwork=null;ambientCover=null}};
   image.src=cover;
 }
 {
