@@ -224,19 +224,22 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .np.lyrics-np .art{position:relative;width:92px;height:92px;background-size:cover;background-position:center;border-radius:6px;box-shadow:0 8px 20px rgba(0,0,0,.5)}
 /* A record jacket in Now Playing. The sleeve stays in front of the disc. */
 .vinyl-jacket{isolation:isolate}
-.vinyl-jacket::before{content:"";position:absolute;inset:3%;z-index:-1;border-radius:50%;pointer-events:none;
+.vinyl-disc{position:absolute;inset:3%;z-index:-1;pointer-events:none;transform:translateX(var(--disc-peek,24%))}
+.vinyl-record{display:block;width:100%;height:100%;border-radius:50%;overflow:hidden;
   box-shadow:0 0 0 1px #45424a,0 4px 11px #0009;
   background:radial-gradient(circle,#111 0 3%,#be9146 4% 18%,transparent 19%),
     conic-gradient(from 20deg,#16171c,#54535b,#15161b 42%,#1b1c21 63%,#46464e 76%,#15161b);
-  transform:translateX(var(--disc-peek,24%)) rotate(32deg)}
-.vinyl-jacket::after{content:"";position:absolute;inset:3%;z-index:-1;border-radius:50%;pointer-events:none;
-  background:repeating-radial-gradient(circle,transparent 0 2px,#ffffff16 3px,#0003 4px);
-  transform:translateX(var(--disc-peek,24%)) rotate(32deg)}
-#np.vinyl-enter .vinyl-jacket::before,#np.vinyl-enter .vinyl-jacket::after{
-  animation:vinylSlide 1.65s var(--vinyl-delay,.15s) cubic-bezier(.22,.75,.25,1) both}
-@keyframes vinylSlide{from{transform:translateX(0) rotate(-32deg)}to{transform:translateX(var(--disc-peek,24%)) rotate(32deg)}}
-@media(prefers-reduced-motion:reduce){#np.vinyl-enter .vinyl-jacket::before,#np.vinyl-enter .vinyl-jacket::after{animation:none}}
-.np:not(.lyrics-on) .vinyl-jacket{--disc-peek:14%}
+  animation:vinylSpin 3.6s linear var(--vinyl-spin-delay,0s) infinite paused}
+.vinyl-record::before{content:"";position:absolute;inset:0;border-radius:50%;
+  background:repeating-radial-gradient(circle,transparent 0 2px,#ffffff16 3px,#0003 4px)}
+.vinyl-record svg{position:relative;display:block;width:100%;height:100%}
+.vinyl-record text{fill:#f8db9c;font-size:7px;font-weight:750;letter-spacing:.45px}
+#np.vinyl-spinning .vinyl-record{animation-play-state:running}
+#np.vinyl-enter .vinyl-disc{animation:vinylSlide 1.65s var(--vinyl-delay,.15s) cubic-bezier(.22,.75,.25,1) both}
+@keyframes vinylSlide{from{transform:translateX(0)}to{transform:translateX(var(--disc-peek,24%))}}
+@keyframes vinylSpin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){#np.vinyl-enter .vinyl-disc,.vinyl-record{animation:none}}
+.np:not(.lyrics-on) .vinyl-jacket{--disc-peek:17%}
 .mnp .modern-jacket{position:absolute;left:14px;top:36px;width:72px;height:72px;--disc-peek:26%}
 .mnp .modern-jacket .sleeve{position:absolute;inset:0;border-radius:5px;background-position:center;background-size:cover;box-shadow:0 3px 12px #0008}
 .np.lyrics-np .refl{display:none}
@@ -2119,6 +2122,10 @@ function updateAmbientArtwork(){
 }
 onActiveAudio('play',updateAmbientArtwork);
 onActiveAudio('pause',updateAmbientArtwork);
+onActiveAudio('playing',()=>$('#np')?.classList.add('vinyl-spinning'));
+for(const event of ['pause','waiting','ended']){
+  onActiveAudio(event,()=>$('#np')?.classList.remove('vinyl-spinning'));
+}
 document.addEventListener('visibilitychange',updateAmbientArtwork);
 let shownNowTrack=null,vinylStartedAt=0;
 const NAV_EASE='cubic-bezier(.25,.8,.25,1)',NAV_MS=280;
@@ -2138,6 +2145,8 @@ function render(){
   updateFavoriteStar();
   const nowPlaying=$('#np');
   if(nowPlaying&&shownNowTrack){
+    nowPlaying.classList.toggle('vinyl-spinning',isPlaying());
+    nowPlaying.style.setProperty('--vinyl-spin-delay',-(curTime()%3.6)+'s');
     const now=performance.now();
     if(!wasNowPlaying||previousTrack?.track!==shownNowTrack.track||previousTrack?.index!==shownNowTrack.index||
         previousTrack?.session!==shownNowTrack.session)vinylStartedAt=now;
@@ -2222,7 +2231,7 @@ function renderView(){
     const s=cur(),art=nowPlayingArt(s);screenEl.classList.add('nowmod');if(scrub)ctl=null;
     body.innerHTML=`<div class="mnp${hasNowLyrics(s)?' lyrics-on':''}" id="np">
       <div class="bg${lastArtId!==s.id&&!changed?' fresh':''}" style="background-image:url(&quot;${esc(art)}&quot;)"></div><div class="shade"></div>${nowPlayingNeighbors()}
-      <div class="modern-jacket vinyl-jacket" aria-hidden="true"><div class="sleeve" style="background-image:url(&quot;${esc(art)}&quot;)"></div></div>
+      <div class="modern-jacket vinyl-jacket" aria-hidden="true">${vinylDisc(s)}<div class="sleeve" style="background-image:url(&quot;${esc(art)}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
       <div class="cnt">${qi+1} of ${queue.length}</div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
@@ -2246,7 +2255,7 @@ function renderView(){
   }else if(v.type==='now'){
     const s=cur();if(!s){body.innerHTML='<div class="list"><div class="empty"><b>Nothing Playing</b></div></div>';return}
     body.innerHTML=`<div class="np lyrics-np${hasNowLyrics(s)?' lyrics-on':''}" id="np" style="--np-art:url(&quot;${esc(nowPlayingArt(s))}&quot;)">${nowPlayingNeighbors()}<div class="cnt">${qi+1} of ${queue.length}</div>
-      <div class="top"><div class="artcol vinyl-jacket"><div class="art${showOfflineMark(s)?' offline-cover':''}" style="background-image:url(&quot;${esc(nowPlayingArt(s))}&quot;)"></div></div>
+      <div class="top"><div class="artcol vinyl-jacket">${vinylDisc(s)}<div class="art${showOfflineMark(s)?' offline-cover':''}" style="background-image:url(&quot;${esc(nowPlayingArt(s))}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div></div>
       <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}${s.album?`<span class="alx"> — ${esc(s.album)}</span>`:''}</div><div class="al">${esc(s.album)}</div></div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
@@ -2809,11 +2818,21 @@ function animateNowCover(selector,direction,glide,mode='flip'){
     {translate:`${direction*34}px 0`,opacity:0},{translate:'0 0',opacity:getComputedStyle(el).opacity}
   ],{duration:420,delay:60+i*40,easing:NP_EASE,fill:'backwards'}));
 }
+function vinylDisc(song){
+  const title=Array.from(song.title||'').slice(0,19).join('');
+  const label=esc(title?title.toUpperCase():'♪');
+  return `<div class="vinyl-disc" aria-hidden="true"><div class="vinyl-record"><svg viewBox="0 0 100 100">
+    <defs><path id="record-title-path" d="M50 7a43 43 0 1 1 0 86a43 43 0 1 1 0-86"/></defs>
+    <text><textPath href="#record-title-path">${label} ◆</textPath></text>
+    <text><textPath href="#record-title-path" startOffset="33%">${label} ◆</textPath></text>
+    <text><textPath href="#record-title-path" startOffset="66%">${label} ◆</textPath></text>
+  </svg></div></div>`;
+}
 function renderNowFlow(direction=0){
   const reduced=direction&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const s=cur(),from=!reduced&&flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
   const lo=Math.max(0,qi-5),hi=Math.min(queue.length-1,qi+5);let cards='';
-  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${showOfflineMark(queue[i])?' offline-cover':''}${i===qi?' vinyl-jacket':''}" data-q="${i}"><div class="cv-motion" style="background-image:url(&quot;${esc(nowPlayingArt(queue[i]))}&quot;)"></div></div>`;
+  for(let i=lo;i<=hi;i++)cards+=`<div class="cv${showOfflineMark(queue[i])?' offline-cover':''}${i===qi?' vinyl-jacket':''}" data-q="${i}">${i===qi?vinylDisc(s):''}<div class="cv-motion" style="background-image:url(&quot;${esc(nowPlayingArt(queue[i]))}&quot;)"></div></div>`;
   body.innerHTML=`<div class="fnp instant${hasNowLyrics(s)?' lyrics-flow':''}" id="np" style="--np-art:url(&quot;${esc(nowPlayingArt(s))}&quot;)">${nowPlayingNeighbors()}<span class="tag l">${qi>0?'Previous':''}</span><span class="tag r">${qi<queue.length-1?'Up Next':''}</span>
     <div class="stage">${cards}</div>
     <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
