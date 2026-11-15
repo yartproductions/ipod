@@ -698,7 +698,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -1432,25 +1432,57 @@ function renderCovers(v){
 function list(title,items,extra={}){return {type:'list',title,items,sel:0,scroll:0,...extra}}
 const go=v=>()=>push(typeof v==='function'?v():v);
 function mainMenu(){
+  // Short top level; everything else lives one step down.
   return list('iPod',()=>[
-    {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
-    {label:'Offline Music',icon:'library',action:go(musicMenu),chev:1},
-    {label:'Album Flow',icon:'album',action:()=>openFlow(),chev:1},
-    {label:'Playlist Flow',icon:'playlist',action:()=>window.ipodPlaylistImport?.library(),chev:1},
-    {label:'Song Flow',icon:'music',action:()=>openSongFlow(),chev:1},
-    {label:'Listening History',icon:'clock',action:go(listeningHistoryMenu),chev:1},
-    {label:'Recommendation Flow',icon:'sparkle',action:()=>openRecommendationFlow(),chev:1},
-    {label:'Friends',icon:'people',action:()=>window.ipodFriends?window.ipodFriends.open():push(msgView('Friends Unavailable','Please reload the iPod to load Friends.')),chev:1},
-
-    {label:'YouTube → Save MP3',icon:'play',action:go(youtubeMenu),chev:1},
-    {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
-    {label:'Downloads',icon:'download',action:go(downloadsMenu),chev:1},
+    {label:'Music',icon:'music',action:go(musicRootMenu),chev:1},
     ...(qi>=0?[{label:'Now Playing',icon:'play',action:()=>push(nowView()),chev:1}]:[]),
-    {label:'Add Music',icon:'plus',action:()=>$('#file').click(),chev:1},
+    {label:'Flows',icon:'album',action:go(flowsMenu),chev:1},
+    {label:'Friends',icon:'people',action:()=>window.ipodFriends?window.ipodFriends.open():push(msgView('Friends Unavailable','Please reload the iPod to load Friends.')),chev:1},
+    {label:'Library',icon:'library',action:go(libraryMenu),chev:1},
+    {label:'YouTube → Save MP3',icon:'play',action:go(youtubeMenu),chev:1},
+    {label:'Games',icon:'apps',action:go(extrasMenu),chev:1},
     {label:'Settings',icon:'settings',action:go(settingsMenu),chev:1},
-    {label:'Extras',icon:'apps',action:go(extrasMenu),chev:1},
-    {label:'About',icon:'info',action:go(aboutView),chev:1},
   ],{split:true});
+}
+function musicRootMenu(){return list('Music',()=>[
+  {label:'Search',icon:'search',val:settings.searchOnline?'Online':'Offline',chev:1,action:go(searchView)},
+  {label:'Search In',val:settings.searchOnline?'Online':'Offline Only',action:()=>{settings.searchOnline=!settings.searchOnline;saveSettings();render()}},
+  {label:'Offline Music',icon:'library',action:go(musicMenu),chev:1},
+  {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
+  {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
+])}
+function flowsMenu(){return list('Flows',[
+  {label:'Album Flow',icon:'album',action:()=>openFlow(),chev:1},
+  {label:'Song Flow',icon:'music',action:()=>openSongFlow(),chev:1},
+  {label:'Playlist Flow',icon:'playlist',action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.library():push(msgView('Importer Unavailable','Reload and try again.')),chev:1},
+  {label:'Recommendation Flow',icon:'sparkle',action:()=>openRecommendationFlow(),chev:1},
+])}
+function libraryMenu(){return list('Library',()=>[
+  {label:'Add Music',icon:'plus',action:()=>$('#file').click(),chev:1},
+  {label:'Import Playlist',icon:'download',chev:1,action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.open():push(msgView('Importer Unavailable','Reload and try again.'))},
+  {label:'Downloads',icon:'download',action:go(downloadsMenu),chev:1,val:downloadJobs.size?String([...downloadJobs.values()].filter(j=>j.state!=='Done'&&j.state!=='Failed').length||''):''},
+  {label:'Listening History',icon:'clock',action:go(listeningHistoryMenu),chev:1},
+])}
+/* Search: offline (your library, instant) or online (YouTube search), switchable in Music ▸ Search In. */
+function searchLocal(q){
+  const n=x=>String(x||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase();
+  const words=n(q).split(/\s+/).filter(Boolean);if(!words.length)return [];
+  return songs.filter(s=>!s.deleted).map(s=>{
+    const t=n(s.title),a=n(s.artist),al=n(s.album),all=t+' '+a+' '+al;
+    if(!words.every(w=>all.includes(w)))return null;
+    const score=(t.startsWith(words[0])?4:0)+(t.includes(n(q))?3:0)+(a.includes(n(q))?2:0)+(al.includes(n(q))?1:0);
+    return {s,score};
+  }).filter(Boolean).sort((x,y)=>y.score-x.score||x.s.title.localeCompare(y.s.title)).map(x=>x.s);
+}
+function searchView(){
+  const online=!!settings.searchOnline;
+  return inputView(online?'Search Online':'Search Offline',online?'Songs, artists on YouTube…':'Songs, artists, albums…',q=>{
+    q=String(q||'').trim();if(!q)return pop();
+    if(online){replaceTop(loadingView('Searching…'));doSearch(q,null,null,'list');return}
+    const hits=searchLocal(q),v=songsMenu(hits,'“'+q+'”');
+    v.emptyText='No offline songs match. Switch Music ▸ Search In to Online to look it up.';
+    replaceTop(v);
+  });
 }
 function downloadsMenu(){return list('Downloads',()=>{
  const jobs=[...downloadJobs.values()].reverse();
@@ -1631,6 +1663,8 @@ function settingsMenu(){
       {label:'Cancel',action:()=>pop()},
       {label:'Erase All Songs',action:async()=>{latestPlayRequest++;importedPlayback=null;audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
     {label:'Clear YouTube History',action:go(()=>{history=[];ls.set('ipod.history',[]);return msgView('Cleared','Recently Played is empty.')})},
+    {label:'Clock',icon:'clock',chev:1,action:go({type:'clock',title:'Clock'})},
+    {label:'About',icon:'info',chev:1,action:go(aboutView)},
   ])}
 function aboutView(){return list('About',[
   {label:'What’s New',chev:1,action:()=>showWhatsNew(null)},
@@ -1640,8 +1674,7 @@ function aboutView(){return list('About',[
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
   {label:'Version',val:'3.13'}])}
-function extrasMenu(){return list('Extras',[
-  {label:'Clock',chev:1,action:go({type:'clock',title:'Clock'})},
+function extrasMenu(){return list('Games',[
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))},
   {label:'Bubbles',chev:1,action:go(()=>({type:'bubbles',title:'Bubbles',g:null}))}])}
 
@@ -2188,7 +2221,7 @@ function renderView(){
     renderFlowMenu(v);
   }else if(v.type==='list'){
     const it=itemsOf(v);
-    if(!it.length){body.innerHTML=`<div class="list"><div class="empty"><b>Empty</b>${esc(v.emptyText||'Go to Add Music on the main menu to load songs.')}</div></div>`;return}
+    if(!it.length){body.innerHTML=`<div class="list"><div class="empty"><b>Empty</b>${esc(v.emptyText||'Go to Library ▸ Add Music to load songs.')}</div></div>`;return}
     v.sel=Math.max(0,Math.min(v.sel,it.length-1));
     if(v.sel<v.scroll)v.scroll=v.sel;if(v.sel>=v.scroll+VIS)v.scroll=v.sel-VIS+1;
     const playing=cur(),sbw=it.length>VIS;let h='<div class="list">';

@@ -55,7 +55,17 @@ sel = lambda pg: pg.eval_on_selector('#body .row.sel', LABEL_JS)
 def key(pg, k, n=1, wait=40):
     for _ in range(n): pg.keyboard.press(k); pg.wait_for_timeout(wait)
 def selpos(pg): return pg.evaluate('(()=>{const r=[...document.querySelectorAll("#body .row")];const t=document.querySelector("#body .sb i");return r.findIndex(e=>e.classList.contains("sel"))+"|"+(t?t.style.top:"")+"|"+r.map(e=>e.textContent).join("/")})()')
+# Items that moved off the main menu when it was decluttered: label -> parent on the main menu.
+MOVED = {'Offline Music': 'Music', 'Music Home': 'Music', 'Shuffle Songs': 'Music',
+         'Album Flow': 'Flows', 'Song Flow': 'Flows', 'Playlist Flow': 'Flows', 'Recommendation Flow': 'Flows',
+         'Add Music': 'Library', 'Downloads': 'Library', 'Listening History': 'Library',
+         'About': 'Settings', 'Clock': 'Settings', 'Extras': 'Games'}
 def choose(pg, label):
+    if pg.text_content('#htitle') == 'iPod' and label in MOVED and label not in pg.inner_text('#body'):
+        parent = MOVED[label]; _choose(pg, parent)
+        if label == 'Extras': return
+    _choose(pg, label)
+def _choose(pg, label):
     for _ in range(3):
         for _ in range(200):
             if sel(pg) == label: key(pg, 'Enter', wait=250); return
@@ -66,8 +76,9 @@ def choose(pg, label):
 def music_label(pg):
     for _ in range(15): pg.keyboard.press('ArrowUp')
     txt = pg.inner_text('#body')
-    for l in ('Ad-Free Local Music', 'Offline Music', 'Music'):
+    for l in ('Ad-Free Local Music', 'Offline Music'):
         if l in txt: return l
+    if 'Music' in txt: return 'Offline Music'   # reached through Music ▸ Offline Music
     raise AssertionError('music entry not found; title=%r body=%r' % (pg.text_content('#htitle'), txt))
 def wait_sync(pg, timeout=20000):
     pg.wait_for_function('!document.querySelector(".hdr").classList.contains("busy") || document.querySelector(".hdr").classList.contains("done")', timeout=timeout)
@@ -116,7 +127,7 @@ def main():
         key(pg, 'ArrowDown'); key(pg, 'Enter', wait=150)
         check('Hold blocks the wheel and buttons', sel(pg) == before and pg.text_content('#htitle') == 'iPod')
         check('Hold shows the lock message + header lock', 'on' in pg.get_attribute('#lockpop', 'class') and 'on' in pg.get_attribute('#lk', 'class'))
-        pg.click('#hold'); pg.wait_for_timeout(100); key(pg, 'ArrowDown')
+        pg.click('#hold'); pg.wait_for_timeout(100); key(pg, 'ArrowUp')   # Settings is now the last item
         check('releasing Hold restores control', sel(pg) != before)
 
         # ---- backlight ----
@@ -160,14 +171,14 @@ def main():
         gen = pg.evaluate('(()=>{const c=document.createElement("canvas");return typeof c.getContext("2d").fillText})()')
 
         # ---- Clock ----
-        home(pg); choose(pg, 'Extras'); choose(pg, 'Clock'); pg.wait_for_timeout(300)
+        home(pg); choose(pg, 'Settings'); choose(pg, 'Clock'); pg.wait_for_timeout(300)
         check('Clock shows an analogue face and the time', pg.evaluate('!!document.querySelector(".clock svg")') and (':' in pg.text_content('.clock .dig')))
         t1 = pg.inner_html('.clock svg'); pg.wait_for_timeout(2100)
         check('Clock ticks every second', pg.inner_html('.clock svg') != t1)
         key(pg, 'Escape', wait=150)
 
         # ---- Brick ----
-        choose(pg, 'Brick'); pg.wait_for_timeout(300)
+        home(pg); choose(pg, 'Games'); choose(pg, 'Brick'); pg.wait_for_timeout(300)
         check('Brick canvas mounts', pg.evaluate('!!document.getElementById("game")'))
         key(pg, 'ArrowDown', n=4, wait=30)
         key(pg, 'Enter', wait=100)                 # launch
@@ -178,7 +189,7 @@ def main():
         a1 = pg.evaluate('document.getElementById("game").toDataURL()'); pg.wait_for_timeout(400)
         check('Play/Pause freezes the game', pg.evaluate('document.getElementById("game").toDataURL()') == a1)
         key(pg, 'Escape', wait=200)
-        check('MENU leaves the game', pg.text_content('#htitle') == 'Extras')
+        check('MENU leaves the game', pg.text_content('#htitle') == 'Games')
 
         # ---- Modern style ----
         home(pg); choose(pg, 'Settings'); choose(pg, 'Style')
@@ -383,7 +394,7 @@ def main():
         check('shelf reopens on the card you last used', pg.text_content('#fal') == 'Settings', pg.text_content('#fal'))
         for _ in range(12): key(pg, 'ArrowUp', wait=40)
         c0 = pg.text_content('#fal')
-        check('caption shows the selected item', c0 == 'Music Home', c0)
+        check('caption shows the selected item', c0 == 'Music', c0)
         tfs = pg.evaluate('[...document.querySelectorAll("#flow .cv")].slice(0,2).map(e=>e.style.transform)')
         check('front card faces you, next card is angled', 'rotateY(0deg)' in tfs[0] and '-62deg' in tfs[1], tfs)
         for _ in range(12):
@@ -396,11 +407,11 @@ def main():
         check('MENU returns to the shelf on the same card', pg.evaluate('!!document.querySelector("#flow .cv.card")') and pg.text_content('#fal') == 'Settings')
         for _ in range(12): key(pg, 'ArrowUp', wait=40)
         for _ in range(12):
-            if pg.text_content('#fal') == 'Album Flow': break
+            if pg.text_content('#fal') == 'Flows': break
             key(pg, 'ArrowDown', wait=100)
-        key(pg, 'Enter', wait=500)
-        check('Album Flow still opens from the Flow menu', pg.text_content('#htitle') == 'Album Flow' and pg.evaluate('!!document.querySelector("#flow .cv:not(.card)")'))
-        key(pg, 'Escape', wait=300)
+        key(pg, 'Enter', wait=400); _choose(pg, 'Album Flow'); pg.wait_for_timeout(300)
+        check('Album Flow still opens from the Flow menu (Flows card)', pg.text_content('#htitle') == 'Album Flow' and pg.evaluate('!!document.querySelector("#flow .cv:not(.card)")'))
+        home(pg); pg.wait_for_timeout(300)   # Album Flow sits inside Flows now: two MENU presses back to the shelf
         for _ in range(12): key(pg, 'ArrowDown', wait=40)
         for _ in range(12):
             if pg.text_content('#fal') == 'Settings': break

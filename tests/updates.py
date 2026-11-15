@@ -71,11 +71,11 @@ def main():
         pg.evaluate("1")
         for _ in range(15): pg.keyboard.press('ArrowUp')
         def choose(label):
-            for _ in range(30):
+            for _ in range(90):
                 if pg.eval_on_selector('#body .row.sel', 'e=>(e.querySelector(".lt")||e).textContent.trim()') == label: key('Enter', w=400); return
                 pg.keyboard.press('ArrowDown'); pg.wait_for_timeout(20)
             raise AssertionError(label)
-        choose('About'); choose('Check for Updates'); pg.wait_for_timeout(1200)
+        choose('Settings'); choose('About'); choose('Check for Updates'); pg.wait_for_timeout(1200)
         check('About ▸ Check for Updates shows the frame again', sheet_on())
         with pg.expect_navigation(timeout=10000):
             pg.click('#sheetBtns .bt:first-child')
@@ -87,7 +87,7 @@ def main():
         check('center closes What’s New', not sheet_on())
         pg.reload(); pg.wait_for_timeout(2500)
         check('What’s New is shown only once per update', not sheet_on())
-        choose('About'); choose('What’s New'); pg.wait_for_timeout(800)
+        choose('Settings'); choose('About'); choose('What’s New'); pg.wait_for_timeout(800)
         check('About ▸ What’s New shows the full changelog anytime', sheet_on() and 'Older feature' in pg.inner_text('#sheetIn'), (sheet_on(), pg.text_content('#sheetT'), pg.inner_text('#sheetIn')[:200], pg.text_content('#htitle')))
         key('Escape', w=300)
         choose('Check for Updates'); pg.wait_for_timeout(1000)
