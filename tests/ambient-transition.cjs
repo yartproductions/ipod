@@ -1,0 +1,26 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const html=fs.readFileSync(require.resolve('../index.html'),'utf8');
+for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(match[1]);
+const layer=()=>({style:{},classList:{values:new Set(),add(x){this.values.add(x)},remove(x){this.values.delete(x)},contains(x){return this.values.has(x)}},animate(frames,options){this.animation={frames,options,cancel(){}};return this.animation}});
+const layers=[layer(),layer()],images=[],media={matches:false,addEventListener(){},removeEventListener(){}};
+let song={art:'a'};
+const panel={classList:{toggle(){}},querySelectorAll:()=>layers};
+const context={document:{hidden:false},window:{matchMedia:()=>media},$:()=>panel,cur:()=>song,isPlaying:()=>true,nowPlayingArt:s=>s.art,
+ ambientParticles:{setPlaying(){},setArtwork(){}},Image:function(){images.push(this)}};
+vm.createContext(context);
+vm.runInContext(html.slice(html.indexOf('let ambientCover='),html.indexOf('const ambientParticles='))+html.slice(html.indexOf('function updateAmbientArtwork(){'),html.indexOf('\n{\n  const canvas=',html.indexOf('function updateAmbientArtwork(){'))),context);
+const update=()=>vm.runInContext('updateAmbientArtwork()',context);
+update();images[0].onload();assert.equal(layers[1].animation.options.duration,1800);
+assert.deepEqual(Array.from(layers[1].animation.frames,x=>x.opacity),[0,1]);
+layers[1].animation.onfinish();assert(layers[1].classList.contains('visible'));
+song={art:'b'};update();images[1].onload();assert(layers[1].classList.contains('visible'),'old cover stays visible throughout fade');
+song={art:'c'};update();images[2].onload();song={art:'d'};update();images[3].onload();
+assert.equal(layers[0].style.backgroundImage,'url("b")','active layer must not be overwritten mid-fade');
+layers[0].animation.onfinish();assert.equal(layers[1].style.backgroundImage,'url("d")','only latest queued artwork is shown');
+layers[1].animation.onfinish();assert(!layers[0].classList.contains('visible'));
+song={art:'bad'};update();images[4].onerror();assert(layers[1].classList.contains('visible'),'failed image retains previous artwork');
+media.matches=true;song={art:'reduced'};update();images[5].onload();assert.equal(vm.runInContext('finishAmbientDissolve',context),null);
+media.matches=false;song={art:'hidden'};update();images[6].onload();context.document.hidden=true;update();assert.equal(vm.runInContext('finishAmbientDissolve',context),null);
+song=null;update();assert(layers.every(l=>!l.classList.contains('visible')));
+console.log('PASS smooth blend, no black dip, rapid skips, image failures, reduced motion, hidden page and cleared playback');
