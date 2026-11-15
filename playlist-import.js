@@ -176,16 +176,53 @@ function choosePlaylistCover(pl){
   action:()=>{saveCoverSettings(pl,{coverSongId:song.id,useSharedCover:true});replaceTop(msgView('Playlist Cover Set',song.album||song.title))}
  }))));
 }
+function linkTrack(pl,index){
+ const track=pl.tracks[index];
+ push(list('Unmatched Track',[
+  {label:track.title,val:track.artist},
+  {label:'Paste YouTube Song Link',icon:'link',action:()=>push(inputView('YouTube Song Link','Paste the link for this song',value=>{
+   let id;
+   try{
+    const url=new URL(value.trim());
+    if(url.protocol==='https:'||url.protocol==='http:'){
+     if(url.hostname==='youtu.be')id=url.pathname.split('/')[1];
+     if(['youtube.com','www.youtube.com','m.youtube.com','music.youtube.com'].includes(url.hostname)){
+      id=url.pathname==='/watch'?url.searchParams.get('v'):
+       url.pathname.match(/^\/(?:shorts|live|embed)\/([^/]+)\/?$/)?.[1];
+     }
+    }
+   }catch{}
+   if(!trackVideo({youtubeId:id})){
+    push(msgView('Invalid Song Link','Paste a YouTube link for one song.'));
+    return;
+   }
+   if(matchingPlaylists.has(pl.id)){
+    push(msgView('Matching in Progress','Try again once the current batch finishes.'));
+    return;
+   }
+   try{
+    const all=read(),saved=all.find(row=>row.id===pl.id);
+    if(!saved?.tracks[index])throw Error('This playlist track could not be found.');
+    const updated={...saved.tracks[index],youtubeId:id,status:'matched'};
+    delete updated.choices;
+    delete updated.checked;
+    saved.tracks[index]=updated;
+    write(all);
+    Object.assign(track,updated);
+    delete track.choices;
+    delete track.checked;
+    replaceTop(msgView('Song Linked','You can now play this track or use Queue Downloads.'));
+   }catch(error){push(msgView('Could Not Save Link',error.message))}
+  }))}
+ ]));
+}
 function playTrack(pl,index){
  const tracks=pl.tracks.map(track=>({
   song:available(track),
   video:trackVideo(track)
  }));
  if(tracks[index].song||tracks[index].video)b.playImported(tracks,index,()=>sharedPlaylistCover(pl));
- else{
-  const track=pl.tracks[index];
-  push(msgView('Unmatched Track',track.artist+' — '+track.title+'. Use Playlist Options to match it.'));
- }
+ else linkTrack(pl,index);
 }
 function playlistTracks(pl){
  const albums=pl.tracks.map((track,index)=>({
