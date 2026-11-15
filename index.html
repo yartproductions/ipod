@@ -50,11 +50,11 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .modern .bezel{border-radius:20px;background:#08090b;padding:5px;box-shadow:0 0 0 1px rgba(255,255,255,.06),inset 0 0 0 1px #000}
 .modern .screen{border-radius:15px;background:#0d1520}
 .modern .screen::after{display:none}
-.modern .hdr{background:transparent;border:0;justify-content:flex-start;padding:0 40px 0 12px;color:#9aa8bb;font-weight:600;font-size:11px;height:22px}
-.modern .hdr #hclock{display:inline;color:#f2f5f9;font-weight:700;margin-right:6px}
-.hdr #hclock{display:none}
+.modern .hdr{background:transparent;border:0;justify-content:flex-start;padding-left:12px;color:#9aa8bb;font-weight:600;font-size:11px;height:22px}
+.modern .hdr #hclock{color:#f2f5f9}
 .modern .hdr .pi,.modern .hdr .lk{display:none}
-.modern .hdr .bat{top:6px;right:10px;border-color:#cfd6df;background:transparent;border-radius:3px}
+.modern .hdr .status{right:10px}
+.modern .hdr .bat{border-color:#cfd6df;background:transparent;border-radius:3px}
 .modern .hdr .bat::after{background:#cfd6df}
 .modern .hdr .bat i{background:#f2f5f9}
 .modern .list{top:22px;background:transparent}
@@ -298,7 +298,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .modern:not(.lightui) .music-home .home-card.sel{background:linear-gradient(#69b5f5,#217cdb 60%,#135ca7);border-color:#84cafa;color:#fff}
 .modern:not(.lightui) .music-home .home-head,.modern:not(.lightui) .music-home .home-hint{color:#a7b5c8}
 /* ================= header status (iTunes-style sync bar) ================= */
-.hdr .task{position:absolute;left:34px;right:36px;top:2px;bottom:2px;display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none}
+.hdr .task{position:absolute;left:var(--status-space);right:var(--status-space);top:2px;bottom:2px;display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;pointer-events:none}
 .hdr.busy #htitle{display:none}
 .hdr.busy .task{display:flex}
 .hdr .task .tl{font-size:10px;font-weight:700;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
@@ -307,7 +307,7 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
   background:repeating-linear-gradient(-45deg,#5aa9f5 0 5px,#2f80d9 5px 10px);background-size:14px 14px;animation:barber .6s linear infinite}
 .hdr.done .task .tb i{background:#3ca62b;animation:none}
 @keyframes barber{to{background-position:14px 0}}
-.modern .hdr .task{left:auto;right:42px;width:46%;align-items:flex-end}
+.modern .hdr .task{left:12px;right:var(--status-space);align-items:flex-start}
 .modern .hdr .task .tl{color:inherit}
 .modern .hdr .task .tb{background:rgba(255,255,255,.18);box-shadow:none}
 .modern.lightui .hdr .task .tb{background:rgba(17,24,39,.12)}
@@ -514,11 +514,13 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .screen.video{background:#000}
 .screen.video::after{display:none}
 
-.hdr{height:20px;display:flex;align-items:center;justify-content:center;position:relative;padding:0 34px;
+.hdr{--status-space:83px;height:20px;display:flex;align-items:center;justify-content:center;position:relative;padding:0 var(--status-space);
   background:linear-gradient(#fdfdfd,#d6d9de);border-bottom:1px solid #8e939a;font-size:12px;font-weight:700;color:#222;white-space:nowrap;overflow:hidden}
 .hdr #htitle{overflow:hidden;text-overflow:ellipsis}
 .hdr .pi{position:absolute;left:6px;top:4px;width:12px;height:12px}
-.hdr .bat{position:absolute;right:6px;top:5px;width:22px;height:10px;border:1px solid #555;border-radius:2px;background:#fff;padding:1px}
+.hdr .status{position:absolute;right:6px;top:0;bottom:0;display:flex;align-items:center;gap:5px}
+.hdr #hclock{font-size:9px;font-weight:700;font-variant-numeric:tabular-nums}
+.hdr .bat{position:relative;width:22px;height:10px;border:1px solid #555;border-radius:2px;background:#fff;padding:1px}
 .hdr .bat::after{content:"";position:absolute;right:-3px;top:2px;width:2px;height:4px;background:#555;border-radius:0 1px 1px 0}
 .hdr .bat i{display:block;height:100%;width:0;background:linear-gradient(#8fe07a,#3ca62b);border-radius:1px}
 .screen.video .hdr{display:none}
@@ -618,7 +620,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
   <div class="ipod" id="ipod">
     <div class="hold" id="hold" title="Hold"></div>
     <div class="bezel"><div class="screen" id="screen">
-      <div class="hdr"><span id="hclock"></span><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="bat" role="img"><i id="batlvl"></i></span></div>
+      <div class="hdr"><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="status"><span id="hclock"></span><span class="bat" role="img"><i id="batlvl"></i></span></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
       <div id="body"></div><div class="sheet" id="sheet"><div class="card"><div class="st" id="sheetT"></div><div class="sbody" id="sheetB"><div class="in" id="sheetIn"></div></div><div class="btns" id="sheetBtns"></div></div></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div><div class="np" id="splitnp"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
