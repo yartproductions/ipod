@@ -127,5 +127,13 @@ assert.equal(qobuz[0].album,'Trilogy');
  assert.equal(checkpoint[0].youtubeId,'AAAAAAAAAAA');
  assert.equal(checkpoint[1].checked,undefined);
  assert.equal(screens.at(-1).rows.find(row=>row.label==='Remaining').val,'2');
+ importer.saveListeningHistory('Listening History Test',[
+  {id:'local-1',title:'Local Track',artist:'Artist',album:'Album'},
+  {id:'local-2',sourceId:'AAAAAAAAAAA',title:'Video Track',artist:'Artist'}
+ ]);
+ assert.equal(screens.at(-1).title,'Listening History Test');
+ const historyPlaylist=JSON.parse(localStorage.getItem(key))[0];
+ assert.deepEqual(historyPlaylist.tracks.map(track=>track.localSongId),['local-1','local-2']);
+ assert.equal(historyPlaylist.tracks[1].youtubeId,'AAAAAAAAAAA');
  console.log('PASS Qobuz links, exported metadata, CSV, YouTube playlists, exact matching and menu isolation');
 })().catch(e=>{console.error(e);process.exitCode=1});

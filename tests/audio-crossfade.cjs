@@ -33,7 +33,10 @@ const test=new Function('assert',code+`
     await maybeCrossfade();
     const during=[qi,audio===spareDeck,mainDeck.paused];
     spareDeck.currentTime=2;
-    spareDeck.src='blob:second';
+    assert.equal(backgroundDeck.src,'blob:second');
+    document.hidden=true;
+    useDirectAudio();
+    document.hidden=false;
     setCarPlayRoute(true);
     assert.equal(crossfadeEnabled(),false);
     assert.equal(document.hidden,false);
@@ -44,5 +47,5 @@ const test=new Function('assert',code+`
 `);
 test(assert).then(result=>{
   assert.deepEqual(result,{before:0,during:[1,true,false],ramps:[[0,14],[1,14]],stopped:true,playing:true,position:2});
-  console.log('PASS crossfade starts inside the selected window and keeps the current position when CarPlay connects');
+  console.log('PASS crossfade starts inside the selected window and preserves position when the screen locks');
 }).catch(error=>{console.error(error);process.exitCode=1});

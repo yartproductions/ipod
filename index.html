@@ -614,6 +614,8 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
   background:linear-gradient(#e9ebee,#cdd0d5);box-shadow:inset 0 1px 1px rgba(255,255,255,.9),0 0 0 1px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.15)}
 .black .center{background:linear-gradient(#36373b,#232427);box-shadow:inset 0 1px 1px rgba(255,255,255,.1),0 0 0 1px #000}
 .center.down{filter:brightness(.9)}
+#center.favorite-confirmed{display:grid;place-items:center;color:#fff4c2;background:radial-gradient(circle at 45% 32%,#ffe69a,#ba7212);box-shadow:0 0 18px #ffcc63,inset 0 1px 3px #fff5b8;filter:none;font-size:32px;text-shadow:0 1px 3px #85500c}
+#center.favorite-confirmed::after{content:"★"}
 </style>
 </head>
 <body>
@@ -669,6 +671,8 @@ if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com'
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
 let saved=ls.get('ipod.saved',[]), history=ls.get('ipod.history',[]);
+let listened=ls.get('ipod.listeningHistory',[]);
+if(!Array.isArray(listened))listened=[];
 
 /* ---------- layout ---------- */
 function fit(){const s=Math.min(innerWidth/335,innerHeight/555,1.7);$('#stage').style.transform=`scale(${s})`}
@@ -853,7 +857,10 @@ function getVol(){return audio.volume}
 function setVol(v){backgroundDeck.volume=mainDeck.volume=spareDeck.volume=Math.max(0,Math.min(1,v));return audio.volume}
 /* iOS/CarPlay-connected audio: one persistent media element and hardware media controls.
    This is web media playback, not a native CarPlay app entitlement. */
-function resumeAudio(){prepareCrossfade();return audio.play().catch(e=>{
+function resumeAudio(){
+  try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch{}
+  prepareCrossfade();
+  return audio.play().catch(e=>{
   // iOS may block autoplay after a navigation/interrupt; user can tap Play again.
   if(e&&e.name!=='AbortError')console.warn('iPod playback needs user interaction:',e);
 })}
@@ -866,6 +873,7 @@ function load(play){
   }
   if(audio.src!==t.url)audio.src=t.url;
   audio.preload='auto';
+  stageDirectAudio();
   setSession();
   if(play)resumeAudio();
   render();
@@ -953,19 +961,27 @@ async function maybeCrossfade(){
   deckGain.get(outgoing).linearRampToValueAtTime(0,end);
   deckGain.get(incoming).linearRampToValueAtTime(1,end);
   transition.timer=setTimeout(()=>{if(fade===transition)cancelCrossfade()},duration*1000);
+  stageDirectAudio();
   setSession();syncMediaPlaybackState();syncMediaPosition();render();
+}
+function stageDirectAudio(){
+  if(audio!==backgroundDeck&&audio.src&&backgroundDeck.src!==audio.src){
+    backgroundDeck.preload='metadata';
+    backgroundDeck.src=audio.src;
+  }
 }
 function useDirectAudio(){
   cancelCrossfade();
   if(audio===backgroundDeck||!deckGain.has(audio)||!audio.src)return;
   const old=audio,playing=!old.paused,position=old.currentTime;
-  backgroundDeck.src=old.src;
+  stageDirectAudio();
+  backgroundDeck.preload='auto';
   backgroundDeck.currentTime=position;
   backgroundDeck.playbackRate=old.playbackRate;
   audio=backgroundDeck;
   notePlayback('Switched audio player');
-  old.pause();
   if(playing)resumeAudio();
+  old.pause();
   syncMediaPlaybackState();
   syncMediaPosition();
 }
@@ -1300,6 +1316,26 @@ function prefetchImported(){
 }
 onActiveAudio('timeupdate',prefetchImported);
 
+onActiveAudio('playing',()=>{
+  const song=cur();
+  if(!song?.id||audio.src!==song.url||listened[0]===song.id)return;
+  listened=[song.id,...listened.filter(id=>id!==song.id)].slice(0,100);
+  ls.set('ipod.listeningHistory',listened);
+});
+
+function listeningHistoryMenu(){
+  const library=new Map(songs.map(song=>[song.id,song]));
+  const recent=listened.map(id=>library.get(id)).filter(Boolean);
+  if(!recent.length)return msgView('Listening History','Songs appear here after you play them.');
+  return list('Listening History',[
+    {label:'Browse History',icon:'album',chev:1,action:()=>push(songFlowView('Listening History',recent))},
+    {label:'Save as Playlist',icon:'plus',action:()=>{
+      const name='Listening History · '+new Date().toLocaleDateString();
+      window.ipodPlaylistImport?.saveListeningHistory(name,recent);
+    }}
+  ]);
+}
+
 function addHistory(it){
   const e=it.kind==='ytlist'?{type:'playlist',list:it.list,title:it.title}:{type:'video',id:it.id,title:it.title||'',artist:it.artist||''};
   history=[e,...history.filter(h=>!(h.type===e.type&&(h.id||h.list)===(e.id||e.list)))].slice(0,50);ls.set('ipod.history',history);
@@ -1341,6 +1377,7 @@ function mainMenu(){
     {label:'Album Flow',icon:'album',action:()=>openFlow(),chev:1},
     {label:'Playlist Flow',icon:'playlist',action:()=>window.ipodPlaylistImport?.library(),chev:1},
     {label:'Song Flow',icon:'music',action:()=>openSongFlow(),chev:1},
+    {label:'Listening History',icon:'clock',action:go(listeningHistoryMenu),chev:1},
     {label:'Recommendation Flow',icon:'sparkle',action:()=>openRecommendationFlow(),chev:1},
     {label:'Friends',icon:'people',action:()=>window.ipodFriends?window.ipodFriends.open():push(msgView('Friends Unavailable','Please reload the iPod to load Friends.')),chev:1},
 
@@ -3379,25 +3416,55 @@ function openQueueRing(track){
       icon:ic('<path d="M7 5.5v9l7-4.5z" fill="currentColor"/><circle cx="10" cy="10" r="8"/>')}
   ]);
 }
-let centerPress=null;
+let centerPress=null,favoriteGlowTimer=null;
+async function favoriteHighlighted(track){
+  try{
+    const song=importedTrackSong(track)||(track.video?await enqueueYT(track.video):null);
+    if(!song||song.deleted)throw Error('This song is no longer available.');
+    if(!song.favorite){
+      await dbPut(songRecord({...song,favorite:true}));
+      song.favorite=true;
+      queue.forEach(entry=>{if(entry.id===song.id)entry.favorite=true});
+    }
+    triggerHaptic('confirm');
+    center.classList.add('favorite-confirmed');
+    clearTimeout(favoriteGlowTimer);
+    favoriteGlowTimer=setTimeout(()=>center.classList.remove('favorite-confirmed'),1400);
+    setHdrTask('Added to Favorites',1,true);
+    if(top().type==='now')render();
+  }catch(e){push(msgView('Could Not Favorite',e.message))}
+}
 function clearCenterPress(){
-  if(centerPress)clearTimeout(centerPress.timer);
+  if(centerPress){
+    clearTimeout(centerPress.timer);
+    clearTimeout(centerPress.favoriteTimer);
+  }
   centerPress=null;
   center.classList.remove('down');
 }
 center.addEventListener('pointerdown',e=>{
   if(!e.isPrimary||e.button!==0)return;
   e.preventDefault();e.stopPropagation();
-  const view=top(),track=highlightedTrack(view),selected=view.sel;
+  const view=top(),track=view.type==='now'?{song:cur()}:highlightedTrack(view),selected=view.sel;
+  const canFavorite=!!(track?.song||track?.video);
   center.classList.add('down');
   center.setPointerCapture(e.pointerId);
-  const pressState={id:e.pointerId,long:false,timer:null,x:e.clientX,y:e.clientY};
+  const pressState={track,view,stillSelected:null,id:e.pointerId,long:false,favorited:false,timer:null,favoriteTimer:null,x:e.clientX,y:e.clientY};
+  const stillSelected=()=>centerPress===pressState&&!holdOn&&!sheet&&top()===view&&view.sel===selected&&
+    (view.type!=='now'||cur()===track?.song);
+  pressState.stillSelected=stillSelected;
   centerPress=pressState;
-  if(cur()&&!holdOn&&!sheet&&view.type!=='input'){
+  if((cur()||canFavorite)&&!holdOn&&!sheet&&view.type!=='input'){
     pressState.timer=setTimeout(()=>{
       pressState.long=true;
-      if(!holdOn&&!sheet&&cur()&&top()===view&&view.sel===selected)openQueueRing(track);
+      if(stillSelected()&&canFavorite)triggerHaptic('confirm');
     },550);
+    if(canFavorite)pressState.favoriteTimer=setTimeout(()=>{
+      if(!stillSelected())return;
+      pressState.favorited=true;
+      if(track.video&&!importedTrackSong(track))setHdrTask('Saving for Favorites…',.05);
+      favoriteHighlighted(track);
+    },1250);
   }
 });
 center.addEventListener('pointermove',e=>{
@@ -3406,9 +3473,11 @@ center.addEventListener('pointermove',e=>{
 center.addEventListener('pointerup',e=>{
   e.stopPropagation();
   if(centerPress?.id!==e.pointerId)return;
-  const short=!centerPress.long;
+  const state=centerPress;
+  const showRing=state.long&&!state.favorited&&cur()&&state.stillSelected();
   clearCenterPress();
-  if(short)press('select');
+  if(showRing)openQueueRing(state.view.type==='now'?null:state.track);
+  else if(!state.long)press('select');
 });
 center.addEventListener('pointercancel',clearCenterPress);
 center.addEventListener('lostpointercapture',clearCenterPress);

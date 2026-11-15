@@ -128,7 +128,8 @@ function matchKey(t){
  return JSON.stringify([text(t.isrc).toUpperCase().replace(/-/g,''),text(t.artist).toLowerCase(),
   text(t.title).toLowerCase(),text(t.album).toLowerCase(),t.duration||0]);
 }
-function available(t){return getSongs().find(s=>s.sourceId&&s.sourceId===t.youtubeId)||
+function available(t){return getSongs().find(s=>t.localSongId&&s.id===t.localSongId)||
+ getSongs().find(s=>s.sourceId&&s.sourceId===t.youtubeId)||
  getSongs().find(s=>(matcher()?.exactCandidate?.(t,s)||
  (!matcher()&&normalize(s.title)===normalize(t.title)&&normalize(s.artist)===normalize(t.artist)))&&
  (!t.duration||!s.duration||Math.abs(t.duration-s.duration)<=Math.max(5,t.duration*.03)));}
@@ -449,6 +450,15 @@ function importView(){return list('Import Playlist',[
  {label:'Saved Playlists',icon:'playlist',action:flow},
  {label:'How It Works',icon:'info',action:()=>push(msgView('Import Music','A playlist stores song metadata and verified YouTube references. It never automatically downloads audio. Match unresolved tracks before playback.'))}
 ]);}
+function saveListeningHistory(name,songs){
+ try{
+  const tracks=songs.map(song=>({
+   localSongId:song.id,title:song.title,artist:song.artist,album:song.album,
+   duration:song.duration||0,youtubeId:song.sourceId||'',status:song.sourceId?'matched':'local'
+  }));
+  push(playlistTracks(save({name,tracks,provider:'Listening History'})));
+ }catch(e){push(msgView('Could Not Save Playlist',e.message))}
+}
 function open(){push(importView());}
-window.ipodPlaylistImport={open,library:flow,parseFile,detect,duration,youtubeTracks,youtubeMatch};
+window.ipodPlaylistImport={open,saveListeningHistory,library:flow,parseFile,detect,duration,youtubeTracks,youtubeMatch};
 })();
