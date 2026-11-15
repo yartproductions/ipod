@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import UIKit
 import CoreHaptics
+import AVFoundation
 
 // Root view of the native wrapper. Loads the hosted iPod page in a WKWebView and turns
 // `window.webkit.messageHandlers.ipodHaptics.postMessage(...)` calls into Taptic Engine feedback.
@@ -19,6 +20,7 @@ struct IPodWebView: UIViewRepresentable {
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: Coordinator.handlerName)
         controller.add(context.coordinator, name: Coordinator.batteryHandlerName)
+        controller.add(context.coordinator, name: Coordinator.audioRouteHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -36,7 +38,7 @@ struct IPodWebView: UIViewRepresentable {
         #if DEBUG
         if #available(iOS 16.4, *) { webView.isInspectable = true }   // Safari ▸ Develop for on-device debugging
         #endif
-        context.coordinator.monitorBattery(in: webView)
+        context.coordinator.monitorDevice(in: webView)
         webView.load(URLRequest(url: hostedURL, cachePolicy: .reloadRevalidatingCacheData))   // always pick up the latest site
         return webView
     }
@@ -46,13 +48,15 @@ struct IPodWebView: UIViewRepresentable {
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.handlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.batteryHandlerName)
-        coordinator.stopMonitoringBattery()
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.audioRouteHandlerName)
+        coordinator.stopMonitoringDevice()
     }
 
     final class Coordinator: NSObject, WKScriptMessageHandler {
         static let handlerName = "ipodHaptics"
         static let batteryHandlerName = "ipodBattery"
-        private weak var batteryWebView: WKWebView?
+        static let audioRouteHandlerName = "ipodAudioRoute"
+        private weak var deviceWebView: WKWebView?
         private var previousBatteryMonitoring = false
 
         private let trustedScheme: String
@@ -66,8 +70,8 @@ struct IPodWebView: UIViewRepresentable {
             trustedPort = trustedURL.port ?? (trustedScheme == "https" ? 443 : 80)
         }
 
-        func monitorBattery(in webView: WKWebView) {
-            batteryWebView = webView
+        func monitorDevice(in webView: WKWebView) {
+            deviceWebView = webView
             previousBatteryMonitoring = UIDevice.current.isBatteryMonitoringEnabled
             UIDevice.current.isBatteryMonitoringEnabled = true
             for name in [UIDevice.batteryLevelDidChangeNotification,
@@ -76,12 +80,16 @@ struct IPodWebView: UIViewRepresentable {
                 NotificationCenter.default.addObserver(self, selector: #selector(batteryChanged(_:)),
                                                        name: name, object: nil)
             }
+            for name in [AVAudioSession.routeChangeNotification, UIApplication.didBecomeActiveNotification] {
+                NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
+                                                       name: name, object: nil)
+            }
         }
 
-        func stopMonitoringBattery() {
+        func stopMonitoringDevice() {
             NotificationCenter.default.removeObserver(self)
             UIDevice.current.isBatteryMonitoringEnabled = previousBatteryMonitoring
-            batteryWebView = nil
+            deviceWebView = nil
         }
 
         @objc private func batteryChanged(_ notification: Notification) {
@@ -98,8 +106,28 @@ struct IPodWebView: UIViewRepresentable {
                     window.ipodSetBattery?.(level, charging);
                 }
                 """
-            batteryWebView?.callAsyncJavaScript(script, arguments: [
+            deviceWebView?.callAsyncJavaScript(script, arguments: [
                 "level": Double(level), "charging": charging, "scheme": trustedScheme,
+                "host": trustedHost, "expectedPort": String(trustedPort)
+            ], in: nil, in: .page, completionHandler: nil)
+        }
+
+        @objc private func audioRouteChanged(_ notification: Notification) {
+            DispatchQueue.main.async { [weak self] in self?.sendAudioRoute() }
+        }
+
+        private func sendAudioRoute() {
+            let isCarPlay = AVAudioSession.sharedInstance().currentRoute.outputs.contains {
+                $0.portType == .carAudio
+            }
+            let script = """
+                const port = location.port || (location.protocol === 'https:' ? '443' : '80');
+                if (location.protocol === scheme + ':' && location.hostname === host && port === expectedPort) {
+                    window.ipodSetCarPlayRoute?.(isCarPlay);
+                }
+                """
+            deviceWebView?.callAsyncJavaScript(script, arguments: [
+                "isCarPlay": isCarPlay, "scheme": trustedScheme,
                 "host": trustedHost, "expectedPort": String(trustedPort)
             ], in: nil, in: .page, completionHandler: nil)
         }
@@ -119,6 +147,10 @@ struct IPodWebView: UIViewRepresentable {
             guard isTrusted(message) else { return }
             if message.name == Self.batteryHandlerName {
                 sendBattery()
+                return
+            }
+            if message.name == Self.audioRouteHandlerName {
+                sendAudioRoute()
                 return
             }
             guard message.name == Self.handlerName else { return }

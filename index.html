@@ -716,7 +716,7 @@ function triggerHaptic(kind='selection'){
 /* ---------- click + haptics ---------- */
 let actx=null, clickBuf=null;
 function click(){
-  if(settings.clicker&&!settings.carPlayMode){try{
+  if(settings.clicker&&!directCarPlayAudio()){try{
     actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();
     if(!clickBuf){clickBuf=actx.createBuffer(1,Math.floor(actx.sampleRate*.006),actx.sampleRate);
       const d=clickBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.exp(-i/(d.length/6));}
@@ -876,7 +876,16 @@ function next(manual){if(!cur())return;
 function prev(){if(!cur())return;if(curTime()>3){seekTo(0);return}if(importedPlayback?.queue===queue)return advanceImported(-1,true);if(qi>0){qi--;load(true)}else seekTo(0)}
 function playPause(){if(!cur()){shuffleAll();return}audio.paused?resumeAudio():audio.pause()}
 const CROSSFADE_OPTIONS=[0,2,4,6,8,12];
-function crossfadeEnabled(){return !settings.carPlayMode&&settings.crossfade>0}
+let nativeCarPlayRoute=false;
+function directCarPlayAudio(){return settings.carPlayMode||nativeCarPlayRoute}
+function crossfadeEnabled(){return !directCarPlayAudio()&&settings.crossfade>0}
+function setCarPlayRoute(connected){
+  if(typeof connected!=='boolean'||nativeCarPlayRoute===connected)return;
+  nativeCarPlayRoute=connected;
+  notePlayback(connected?'CarPlay connected':'CarPlay disconnected');
+  if(connected)useDirectAudio();
+  if(top()?.title==='Settings')render();
+}
 let fadeContext=null,fade=null;
 const deckGain=new Map();
 function prepareCrossfade(){
@@ -1485,7 +1494,8 @@ function settingsMenu(){
       if(crossfadeEnabled())prepareCrossfade();else useDirectAudio();
       saveSettings();render();
     }},
-    {label:'CarPlay Mode',val:settings.carPlayMode?'On':'Off',action:()=>{
+    {label:'CarPlay Mode',val:nativeCarPlayRoute?'Auto':settings.carPlayMode?'On':'Off',action:()=>{
+      if(nativeCarPlayRoute)return;
       settings.carPlayMode=!settings.carPlayMode;
       if(settings.carPlayMode)useDirectAudio();
       saveSettings();render();
@@ -3325,6 +3335,8 @@ function setBatteryIndicator(level,charging){
 }
 window.ipodSetBattery=setBatteryIndicator;
 setBatteryIndicator(null,false);
+window.ipodSetCarPlayRoute=setCarPlayRoute;
+window.webkit?.messageHandlers?.ipodAudioRoute?.postMessage('ready');
 const nativeBattery=window.webkit?.messageHandlers?.ipodBattery;
 if(nativeBattery)nativeBattery.postMessage('ready');
 else if(navigator.getBattery)navigator.getBattery().then(b=>{

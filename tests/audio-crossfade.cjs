@@ -13,6 +13,7 @@ const test=new Function('assert',code+`
   const queue=[{url:'blob:first'},{url:'blob:second'}],settings={crossfade:4,repeat:'Off'};
   function onActiveAudio(){}
   function notePlayback(){}
+  const top=()=>null;
   const setSession=()=>{},syncMediaPlaybackState=()=>{},syncMediaPosition=()=>{},render=()=>{};
   const setTimeout=()=>1,clearTimeout=()=>{};
   fadeContext={state:'running',currentTime:10};
@@ -32,8 +33,10 @@ const test=new Function('assert',code+`
     await maybeCrossfade();
     const during=[qi,audio===spareDeck,mainDeck.paused];
     spareDeck.currentTime=2;
-    document.hidden=true;
-    useDirectAudio();
+    spareDeck.src='blob:second';
+    setCarPlayRoute(true);
+    assert.equal(crossfadeEnabled(),false);
+    assert.equal(document.hidden,false);
     await maybeCrossfade();
     return {before,during,ramps,stopped:mainDeck.paused&&spareDeck.paused,
       playing:audio===backgroundDeck&&!backgroundDeck.paused,position:audio.currentTime};
@@ -41,5 +44,5 @@ const test=new Function('assert',code+`
 `);
 test(assert).then(result=>{
   assert.deepEqual(result,{before:0,during:[1,true,false],ramps:[[0,14],[1,14]],stopped:true,playing:true,position:2});
-  console.log('PASS crossfade starts inside the selected window and hands playback off when hidden');
+  console.log('PASS crossfade starts inside the selected window and keeps the current position when CarPlay connects');
 }).catch(error=>{console.error(error);process.exitCode=1});
