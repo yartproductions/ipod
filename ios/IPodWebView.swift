@@ -53,6 +53,7 @@ struct IPodWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: Coordinator.audioRouteHandlerName)
         controller.add(context.coordinator, name: Coordinator.alarmHandlerName)
         controller.add(context.coordinator, name: Coordinator.volumeHandlerName)
+        controller.add(context.coordinator, name: Coordinator.shareFileHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -85,6 +86,7 @@ struct IPodWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.audioRouteHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.alarmHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.volumeHandlerName)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.shareFileHandlerName)
         coordinator.stopMonitoringDevice()
     }
 
@@ -94,6 +96,7 @@ struct IPodWebView: UIViewRepresentable {
         static let audioRouteHandlerName = "ipodAudioRoute"
         static let alarmHandlerName = "ipodAlarm"
         static let volumeHandlerName = "ipodVolume"
+        static let shareFileHandlerName = "ipodShareFile"
         /// A nearly invisible system volume view: lets the click wheel set the real iPhone volume
         /// and hides the iOS volume pop-up, so the iPod's own volume bar shows instead.
         private let volumeView = MPVolumeView(frame: CGRect(x: -2000, y: -2000, width: 10, height: 10))
@@ -137,6 +140,22 @@ struct IPodWebView: UIViewRepresentable {
         }
 
         @objc private func wakeRequested(_ note: Notification) { deliverWake(attempt: 0) }
+
+        /// Backup & Restore: hand the backup file to the share sheet (Save to Files, AirDrop, …).
+        private func shareFile(named name: String, contents: String) {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+            do { try contents.data(using: .utf8)?.write(to: url, options: .atomic) } catch { return }
+            DispatchQueue.main.async {
+                guard let webView = self.deviceWebView,
+                      let root = webView.window?.rootViewController else { return }
+                var top = root
+                while let presented = top.presentedViewController { top = presented }
+                let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                sheet.popoverPresentationController?.sourceView = webView
+                sheet.popoverPresentationController?.sourceRect = CGRect(x: webView.bounds.midX, y: webView.bounds.midY, width: 1, height: 1)
+                top.present(sheet, animated: true)
+            }
+        }
 
         private func sendVolume(_ value: Float) {
             deviceWebView?.evaluateJavaScript("window.ipodSystemVolume && window.ipodSystemVolume(\(value))", completionHandler: nil)
@@ -239,6 +258,13 @@ struct IPodWebView: UIViewRepresentable {
             }
             if message.name == Self.audioRouteHandlerName {
                 sendAudioRoute()
+                return
+            }
+            if message.name == Self.shareFileHandlerName {
+                guard let d = message.body as? [String: Any], let text = d["text"] as? String else { return }
+                let raw = (d["name"] as? String) ?? "iPod Backup.json"
+                let name = raw.replacingOccurrences(of: "/", with: "-")
+                shareFile(named: name, contents: text)
                 return
             }
             if message.name == Self.volumeHandlerName {

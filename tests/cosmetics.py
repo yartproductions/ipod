@@ -453,7 +453,7 @@ def main():
         key(pg, 'Enter', wait=450)
         check('a second single press turns scrubbing off (no menu)', pg.text_content('#htitle') == 'Now Playing' and 'scrub' not in pg.get_attribute('.fnp .bar', 'class'))
         key(pg, 'Enter', wait=80); key(pg, 'Enter', wait=400)
-        check('double-tap center opens the song menu with Repair Artwork', pg.text_content('#htitle') == 'Song' and 'Repair Artwork' in pg.inner_text('#body'), pg.inner_text('#body'))
+        check('double-tap center opens the song menu with Repair Artwork', pg.text_content('#htitle') == 'Song' and 'Repair Artwork' in all_rows(pg), pg.inner_text('#body'))
         key(pg, 'Escape', wait=200)
 
         # ---- Get Artwork (pick a candidate) ----
@@ -471,7 +471,7 @@ def main():
             key(pg, 'ArrowDown', wait=25)
         key(pg, 'Enter', wait=600); key(pg, ' ', wait=150)
         key(pg, 'Enter', wait=150); key(pg, 'Enter', wait=300)
-        check('song without art offers Repair Artwork', 'Repair Artwork' in ' '.join(rows(pg)), rows(pg))
+        check('song without art offers Repair Artwork', 'Repair Artwork' in all_rows(pg), all_rows(pg))
         choose(pg, 'Repair Artwork'); pg.wait_for_timeout(300)
         check('Repair Artwork offers automatic and manual options', 'Find Best Match' in rows(pg) and 'Choose Album Cover' in rows(pg), rows(pg))
         choose(pg, 'Choose Album Cover'); pg.wait_for_timeout(2500)

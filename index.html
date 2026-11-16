@@ -810,6 +810,42 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .nbanner span{display:block;font-size:11px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #nbell{display:none;width:6px;height:6px;border-radius:50%;background:#e8473a;margin-left:4px;vertical-align:middle;box-shadow:0 0 0 1px rgba(255,255,255,.6)}
 #nbell.on{display:inline-block}
+.meta .stars,.mnp .meta .stars{font-size:10px;letter-spacing:1px;color:#e2a12b;margin-top:2px;line-height:1}
+.meta .stars span{color:rgba(128,128,128,.35)}
+.rate{position:relative;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#111;text-align:center;padding:0 12px}
+.rate b{font-size:14px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rate span{font-size:11px;color:#666}
+.rate .big{font-size:30px;letter-spacing:4px;margin:8px 0 4px;color:#cfcfd4}
+.rate .big i{font-style:normal;display:inline-block;transition:color .15s,transform .2s cubic-bezier(.2,1.6,.4,1)}
+.rate .big i.on{color:#f0a91f;transform:scale(1.12)}
+.rate small{font-size:10.5px;color:#777}
+.wrapped{position:absolute;inset:0;color:#fff;padding:14px 16px;display:flex;flex-direction:column;overflow:hidden}
+.wrapped.dark{color:#2a1a00}
+.wrapped.in .wc{animation:wIn .45s cubic-bezier(.2,1,.3,1)}
+.wrapped.in.back .wc{animation:wBack .45s cubic-bezier(.2,1,.3,1)}
+@keyframes wIn{from{opacity:0;transform:translateX(26px) scale(.97)}}
+@keyframes wBack{from{opacity:0;transform:translateX(-26px) scale(.97)}}
+.wrapped .wdots{display:flex;gap:3px;margin-bottom:8px}
+.wrapped .wdots i{flex:1;height:2.5px;border-radius:2px;background:rgba(255,255,255,.3)}
+.wrapped.dark .wdots i{background:rgba(0,0,0,.18)}
+.wrapped .wdots i.on,.wrapped .wdots i.done{background:currentColor}
+.wrapped .wc{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0}
+.wrapped small{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.8}
+.wrapped h1{font-size:38px;line-height:1.05;margin:4px 0;font-weight:800;letter-spacing:-.02em}
+.wrapped h2{font-size:21px;line-height:1.1;margin:4px 0 2px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrapped p{font-size:12px;margin:2px 0;opacity:.9;line-height:1.35}
+.wrapped .wart{width:78px;height:78px;border-radius:4px;background:#0003 center/cover;margin:8px 0 4px;box-shadow:0 8px 20px rgba(0,0,0,.35)}
+.wrapped ol{margin:6px 0 0;padding:0;list-style:none;counter-reset:w}
+.wrapped ol li{counter-increment:w;display:grid;grid-template-columns:16px 1fr auto;column-gap:6px;align-items:baseline;padding:2.5px 0;font-size:11.5px}
+.wrapped ol li::before{content:counter(w);font-weight:800;opacity:.7}
+.wrapped ol li b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrapped ol li span{grid-column:2;font-size:10px;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrapped ol li em{grid-column:3;grid-row:1;font-style:normal;opacity:.8;font-size:10.5px}
+.wrapped ol.mini li{padding:1px 0;font-size:10.5px}
+.wrapped .sum{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;margin-top:8px}
+.wrapped .sum em{display:block;font-style:normal;font-size:9.5px;opacity:.7;text-transform:uppercase;letter-spacing:.08em}
+.wrapped .sum b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wrapped .end{margin-top:10px;font-size:10px;opacity:.6}
 </style>
 </head>
 <body>
@@ -1651,6 +1687,7 @@ function recordListening(){
   listened=[{id:song.id,at:Date.now()},...listened].slice(0,500);
   ls.set('ipod.listeningHistory',listened);
   try{achPlay(song)}catch(e){}
+  try{seedStats();statPlay(song.id,song,Date.now(),Math.round(song.duration||audio.duration||210));ls.set(STATS_KEY,statsM)}catch(e){}
 }
 onActiveAudio('playing',recordListening);
 onActiveAudio('timeupdate',recordListening);
@@ -1750,6 +1787,7 @@ function musicRootMenu(){return list('Music',()=>[
   {label:'Shared Playlists',icon:'people',chev:1,action:()=>window.ipodShared?window.ipodShared.open():push(msgView('Shared Playlists Unavailable','Reload the iPod to load Shared Playlists.'))},
   {label:'Listen Together',icon:'people',val:window.ipodListen?.role==='host'?'Hosting':window.ipodListen?.role==='guest'?'Joined':'',chev:1,action:()=>window.ipodListen?window.ipodListen.open():push(msgView('Listen Together Unavailable','Reload the iPod to load Listen Together.'))},
   {label:'Smart Playlists',icon:'music',chev:1,action:go(smartMenu)},
+  {label:'iPod Wrapped',icon:'album',chev:1,action:go(wrappedMenu)},
   {label:'Sessions',icon:'clock',chev:1,action:go(sessionsMenu)},
   {label:'Sleep Timer',icon:'clock',val:sleepLeft(),chev:1,action:go(sleepMenu)},
   {label:'Wake-Up Alarm',icon:'clock',val:alarm.on?alarmTime():'Off',chev:1,action:go(alarmMenu)},
@@ -1975,6 +2013,7 @@ function settingsMenu(){
       settings.brightScreen={Off:'On',On:'Max',Max:'Off'}[settings.brightScreen]||'On';saveSettings();applyHDR();render()}},
     {label:'Landscape',val:settings.landscape,action:()=>{settings.landscape=settings.landscape==='Off'?'Auto':'Off';saveSettings();fit();render()}},
     {label:'Clock',icon:'clock',chev:1,action:go({type:'clock',title:'Clock'})},
+    {label:'Backup & Restore',icon:'download',chev:1,action:go(backupMenu)},
     {label:'About',icon:'info',chev:1,action:go(aboutView)},
   ])}
 function aboutView(){return list('About',[
@@ -2502,6 +2541,8 @@ function smartLists(){
     {name:'After Dark',icon:'clock',hint:'what you play 10 PM – 4 AM',songs:byCount(night).slice(0,50)},
     {name:'Forgotten Favorites',icon:'heart',hint:'loved, not played in a month',songs:all.filter(x=>x.favorite&&now-(last.get(x.id)||0)>30*DAY)},
     {name:'Never Played',icon:'library',songs:all.filter(x=>!last.has(x.id))},
+    {name:'Top Rated',icon:'heart',hint:'4 and 5 stars',songs:all.filter(x=>ratingOf(x)>=4).sort((a,b)=>ratingOf(b)-ratingOf(a))},
+    {name:'5 Stars',icon:'heart',songs:all.filter(x=>ratingOf(x)===5)},
   ].filter(l=>l.songs.length);
 }
 function smartMenu(){return list('Smart Playlists',()=>{const ls_=smartLists();
@@ -2708,6 +2749,9 @@ const ACHIEVEMENTS=[
   ['join','Plus One','Join a friend’s Listen Together',()=>[ev('join'),1]],
   ['shared','Mixtape','Create a shared playlist',()=>[ev('sharedCreate'),1]],
   ['shared10','Contributor','Add 10 songs to shared playlists',()=>[ev('sharedAdd'),10]],
+  ['rate1','Critic','Rate a song',()=>[songs.filter(x=>ratingOf(x)).length,1]],
+  ['rate50','Tastemaker','Rate 50 songs',()=>[songs.filter(x=>ratingOf(x)).length,50]],
+  ['wrapped','Year in Review','Open iPod Wrapped',()=>[ev('wrapped'),1]],
   ['memory','Memory Lane','Pin a memory to a song',()=>[ev('memory'),1]],
   ['memory10','Scrapbook','Pin 10 memories',()=>[Object.values(ls.get('ipod.memories',{})).filter(m=>m.text).length,10]],
   ['edition','Limited Edition','Try a special-edition body',()=>[ev('edition'),1]],
@@ -2748,6 +2792,151 @@ function achievementsMenu(){return list('Achievements',()=>{
   ];
 })}
 setTimeout(()=>checkAchievements(true),1500);   // quietly credit what you'd already done
+/* ---------- Star ratings (1–5) with the wheel, like the classic iPod ---------- */
+const ratingOf=s=>{const lib=s&&songs.find(x=>x.id===s.id);return +(lib?.rating||s?.rating||0)};
+const starsHTML=s=>{const n=ratingOf(s);return n?`<div class="stars" aria-label="${n} stars">${'★'.repeat(n)}<span>${'★'.repeat(5-n)}</span></div>`:''};
+async function setRating(s,n){
+  n=Math.max(0,Math.min(5,n|0));const lib=songs.find(x=>x.id===s.id)||s;s.rating=lib.rating=n;
+  if(lib.blob)try{await dbPut(songRecord(lib))}catch(e){}
+  if(n)window.ipodAchievements?.event('rate');
+}
+function ratingView(s){
+  const v={type:'custom',title:'Rate',n:ratingOf(s),
+    render(body){body.innerHTML=`<div class="rate"><b>${esc(s.title)}</b><span>${esc(s.artist||'')}</span>
+      <div class="big">${[1,2,3,4,5].map(i=>`<i class="${i<=v.n?'on':''}">★</i>`).join('')}</div>
+      <small>${v.n?v.n+(v.n===1?' star':' stars'):'No rating'} · Spin to rate · Center to save</small></div>`},
+    input(btn,dir){if(dir){const n=Math.max(0,Math.min(5,v.n+dir));if(n!==v.n){v.n=n;click();render()}return}
+      if(btn==='select'){setRating(s,v.n).then(()=>{triggerHaptic('success');pop();if(top().title==='Song')pop();render();npToast?.(v.n?'Rated '+'★'.repeat(v.n):'Rating cleared')})}}};
+  return v;
+}
+/* ---------- Backup & Restore: everything except the audio, in one file ---------- */
+const BACKUP_APP='ipod-classic-web';
+function backupData(){
+  const store={};
+  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('ipod.')&&k!=='ipod.backup.last')store[k]=localStorage.getItem(k)}
+  const library=songs.filter(x=>!x.deleted).map(x=>({id:x.id,title:x.title||'',artist:x.artist||'',album:x.album||'',
+    ...(x.favorite?{favorite:true}:{}),...(x.rating?{rating:x.rating}:{}),...(x.artworkUrl&&/^https:/.test(x.artworkUrl)?{artworkUrl:x.artworkUrl}:{})}));
+  return {app:BACKUP_APP,version:1,createdAt:new Date().toISOString(),store,library};
+}
+async function backUpNow(){
+  const data=backupData(),day=new Date().toISOString().slice(0,10);
+  const file=new File([JSON.stringify(data)],`iPod Backup ${day}.json`,{type:'application/json'});
+  let shared=false;
+  const nativeShare=window.webkit?.messageHandlers?.ipodShareFile;   // iPhone app: native share sheet (Save to Files, AirDrop…)
+  if(nativeShare){nativeShare.postMessage({name:file.name,text:JSON.stringify(data)});shared=true}
+  if(!shared)try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'iPod Backup'});shared=true}}
+  catch(e){if(e&&e.name==='AbortError')return push(msgView('Backup Cancelled','Nothing was saved.'))}
+  if(!shared){const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=file.name;document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000)}
+  ls.set('ipod.backup.last',Date.now());triggerHaptic('success');
+  push(msgView('Backup Saved',`${data.library.length} songs’ favorites and ratings, your settings, playlists, memories, achievements, alarm and history.\n\nThe music files themselves aren’t included; keep them where you added them from. Save the file to iCloud Drive or Files to restore it later.`));
+}
+function pickBackup(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='application/json,.json';
+  inp.onchange=async()=>{const f=inp.files&&inp.files[0];if(!f)return;
+    let data=null;try{data=JSON.parse(await f.text())}catch(e){}
+    if(!data||data.app!==BACKUP_APP||typeof data.store!=='object')return push(msgView('Not an iPod Backup','That file isn’t a backup made by this iPod.'));
+    const when=new Date(data.createdAt).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
+    push(list('Restore Backup?',[
+      {label:'From',val:when},
+      {label:'Songs',val:String((data.library||[]).length)},
+      {label:'Restore Everything',action:()=>restoreBackup(data)},
+      {label:'Cancel',action:()=>pop()},
+    ]));
+  };
+  inp.click();
+}
+async function restoreBackup(data){
+  push(loadingView('Restoring…'));
+  for(const [k,v] of Object.entries(data.store||{}))if(k.startsWith('ipod.')&&typeof v==='string')try{localStorage.setItem(k,v)}catch(e){}
+  const norm=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(),byId=new Map(songs.map(x=>[x.id,x])),byName=new Map(songs.map(x=>[norm(x.title)+'|'+norm(x.artist),x]));
+  let fav=0,rated=0,missing=0;
+  for(const m of data.library||[]){
+    const x=byId.get(m.id)||byName.get(norm(m.title)+'|'+norm(m.artist));if(!x){if(m.favorite||m.rating)missing++;continue}
+    let changed=false;
+    if(m.favorite&&!x.favorite){x.favorite=true;changed=true;fav++}
+    if(m.rating&&x.rating!==m.rating){x.rating=m.rating;changed=true;rated++}
+    if(changed&&x.blob)try{await dbPut(songRecord(x))}catch(e){}
+  }
+  replaceTop(msgView('Restored',`Settings, playlists, memories, achievements and history are back.${fav?`\n${fav} favorites`:''}${rated?`\n${rated} ratings`:''}${missing?`\n\n${missing} rated or favorite songs aren’t in this library yet; add them and restore again.`:''}\n\nReloading…`));
+  setTimeout(()=>location.reload(),2200);
+}
+function backupMenu(){return list('Backup & Restore',()=>{const last=ls.get('ipod.backup.last',0);return [
+  {label:'Back Up Now',icon:'download',val:last?new Date(last).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'Never',action:backUpNow},
+  {label:'Restore from Backup',icon:'library',chev:1,action:pickBackup},
+  {label:'What’s Included',chev:1,action:go(msgView('Backup','Everything on this iPod except the music files: settings and colors, favorites and star ratings, playlists and shared playlist codes, song memories, achievements, alarm, listening history and stats.\n\nYour Friends account is anonymous and stays with this browser or app.'))},
+]})}
+/* ---------- iPod Wrapped: monthly and yearly recaps built from what you played ---------- */
+const STATS_KEY='ipod.stats.months';
+const statsM=ls.get(STATS_KEY,{});
+const ymOf=t=>{const d=new Date(t);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')};
+function statPlay(id,meta,t,secs){
+  const m=statsM[ymOf(t)]||(statsM[ymOf(t)]={p:0,s:0,songs:{},artists:{},albums:{},hours:Array(24).fill(0),days:{},meta:{}});
+  m.p++;m.s+=secs;m.songs[id]=(m.songs[id]||0)+1;m.hours[new Date(t).getHours()]++;m.days[new Date(t).getDate()]=1;
+  if(meta){m.meta[id]=[meta.title||'',meta.artist||'',meta.album||''];
+    if(meta.artist)m.artists[meta.artist]=(m.artists[meta.artist]||0)+1;
+    if(meta.album)m.albums[meta.album+'\u0000'+(meta.artist||'')]=(m.albums[meta.album+'\u0000'+(meta.artist||'')]||0)+1}
+}
+// Start from the history you already have (once the library has loaded, so names are known).
+function seedStats(){
+  if(ls.get('ipod.stats.seeded',false)||!songs.length)return;
+  const by=new Map(songs.map(x=>[x.id,x]));
+  for(const e of [...listened].reverse()){const x=by.get(e.id);statPlay(e.id,x,e.at,Math.round(x?.duration||210))}
+  ls.set(STATS_KEY,statsM);ls.set('ipod.stats.seeded',true);
+}
+function statsFor(keys){
+  const out={p:0,s:0,songs:{},artists:{},albums:{},hours:Array(24).fill(0),days:0,meta:{}};
+  for(const k of keys){const m=statsM[k];if(!m)continue;out.p+=m.p;out.s+=m.s;out.days+=Object.keys(m.days).length;
+    for(const [a,b] of [['songs',m.songs],['artists',m.artists],['albums',m.albums]])for(const x in b)out[a][x]=(out[a][x]||0)+b[x];
+    m.hours.forEach((n,i)=>out.hours[i]+=n);Object.assign(out.meta,m.meta)}
+  return out;
+}
+const topN=(o,n)=>Object.entries(o).sort((a,b)=>b[1]-a[1]).slice(0,n);
+function songInfo(st,id){const x=songs.find(y=>y.id===id);const m=st.meta[id]||[];return {title:x?.title||m[0]||'A song',artist:x?.artist||m[1]||'',art:x?artFor(x):genArt(m[2]||m[0],m[1])}}
+function persona(h){const part=[0,0,0,0];h.forEach((n,i)=>part[i<5?3:i<12?0:i<17?1:i<22?2:3]+=n);const i=part.indexOf(Math.max(...part));
+  return [['Early Bird','Mornings are when you press play.'],['Daydreamer','Afternoons sound best to you.'],['Golden Hour','Evenings are your listening time.'],['Night Owl','Your best listening happens after dark.']][i]}
+function wrappedCards(label,st){
+  const mins=Math.round(st.s/60),ts=topN(st.songs,5),ta=topN(st.artists,5),tal=topN(st.albums,1),top=ts[0]&&songInfo(st,ts[0][0]),pz=persona(st.hours);
+  const peak=st.hours.indexOf(Math.max(...st.hours)),hr=h=>(h%12||12)+(h<12?' AM':' PM');
+  const cards=[
+    {bg:'#1d2b64,#f8cdda',html:`<small>iPod Wrapped</small><h1>${esc(label)}</h1><p>Here’s how it sounded.</p>`},
+    {bg:'#11998e,#38ef7d',html:`<small>You listened for</small><h1>${mins.toLocaleString()}</h1><p>minutes · ${st.p.toLocaleString()} plays · ${st.days} days</p>`},
+  ];
+  if(top)cards.push({bg:'#c94b4b,#4b134f',html:`<small>Your top song</small><div class="wart" style="background-image:url(&quot;${esc(top.art)}&quot;)"></div><h2>${esc(top.title)}</h2><p>${esc(top.artist)} · ${ts[0][1]} plays</p>`});
+  if(ts.length>1)cards.push({bg:'#ee0979,#ff6a00',html:`<small>Top songs</small><ol>${ts.map(([id,n])=>{const x=songInfo(st,id);return `<li><b>${esc(x.title)}</b><span>${esc(x.artist)}</span><em>${n}</em></li>`}).join('')}</ol>`});
+  if(ta.length)cards.push({bg:'#4776e6,#8e54e9',html:`<small>Top artist</small><h2>${esc(ta[0][0])}</h2><p>${ta[0][1]} plays</p>${ta.length>1?`<ol class="mini">${ta.slice(1).map(([a,n])=>`<li><b>${esc(a)}</b><em>${n}</em></li>`).join('')}</ol>`:''}`});
+  if(tal.length){const [al,ar]=tal[0][0].split('\u0000');const x=songs.find(y=>y.album===al&&y.artist===ar);
+    cards.push({bg:'#f7971e,#ffd200',dark:1,html:`<small>Album on repeat</small><div class="wart" style="background-image:url(&quot;${esc(x?artFor(x):genArt(al,ar))}&quot;)"></div><h2>${esc(al)}</h2><p>${esc(ar)}</p>`})}
+  cards.push({bg:'#0f2027,#2c5364',html:`<small>Your listening personality</small><h2>${pz[0]}</h2><p>${pz[1]}<br>Busiest hour: ${hr(peak)}</p>`});
+  const got=Object.entries(ach.unlocked).filter(([,t])=>label.includes(String(new Date(t).getFullYear()))&&(label.length<=4||ymOf(t)===wrappedKey)).map(([id])=>ACHIEVEMENTS.find(a=>a[0]===id)?.[1]).filter(Boolean);
+  if(got.length)cards.push({bg:'#da4453,#89216b',html:`<small>Achievements unlocked</small><h1>${got.length}</h1><p>${got.slice(0,4).map(esc).join(' · ')}${got.length>4?' …':''}</p>`});
+  cards.push({bg:'#232526,#414345',html:`<small>${esc(label)} in short</small><div class="sum"><div><em>Minutes</em><b>${mins.toLocaleString()}</b></div><div><em>Top song</em><b>${esc(top?.title||'—')}</b></div><div><em>Top artist</em><b>${esc(ta[0]?.[0]||'—')}</b></div><div><em>You are</em><b>${pz[0]}</b></div></div><p class="end">Center to replay · MENU to exit</p>`});
+  return cards;
+}
+let wrappedKey='';
+function wrappedView(label,keys){
+  const st=statsFor(keys);wrappedKey=keys.length===1?keys[0]:'';
+  if(!st.p)return msgView('iPod Wrapped','Nothing played in '+label+' yet. Come back after some listening.');
+  const cards=wrappedCards(label,st);window.ipodAchievements?.event('wrapped');
+  const v={type:'custom',title:'iPod Wrapped',i:0,dir:1,
+    render(body){const c=cards[v.i];body.innerHTML=`<div class="wrapped${c.dark?' dark':''} in${v.dir<0?' back':''}" style="background:linear-gradient(150deg,${c.bg})">
+      <div class="wdots">${cards.map((_,k)=>`<i class="${k===v.i?'on':k<v.i?'done':''}"></i>`).join('')}</div><div class="wc">${c.html}</div></div>`},
+    input(btn,dir){if(dir){const n=Math.max(0,Math.min(cards.length-1,v.i+dir));if(n!==v.i){v.dir=dir;v.i=n;click();render()}return}
+      if(btn==='select'){v.dir=1;v.i=v.i<cards.length-1?v.i+1:0;click();render()}}};
+  return v;
+}
+function wrappedMenu(){seedStats();return list('iPod Wrapped',()=>{
+  const now=new Date(),thisM=ymOf(+now),lm=new Date(now.getFullYear(),now.getMonth()-1,1),lastM=ymOf(+lm),y=String(now.getFullYear());
+  const name=k=>new Date(+k.slice(0,4),+k.slice(5)-1,1).toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  const months=Object.keys(statsM).filter(k=>statsM[k].p).sort().reverse();
+  const yearKeys=months.filter(k=>k.startsWith(y));
+  return [
+    {label:'This Month',val:name(thisM),chev:1,action:()=>push(wrappedView(name(thisM),[thisM]))},
+    ...(statsM[lastM]?.p?[{label:'Last Month',val:name(lastM),chev:1,action:()=>push(wrappedView(name(lastM),[lastM]))}]:[]),
+    {label:'This Year',val:y,chev:1,action:()=>push(wrappedView(y,yearKeys))},
+    ...months.filter(k=>k!==thisM&&k!==lastM).map(k=>({label:name(k),chev:1,action:()=>push(wrappedView(name(k),[k]))})),
+  ];
+})}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -3088,7 +3277,7 @@ function renderView(){
       <div class="modern-jacket vinyl-jacket" aria-hidden="true">${vinylDisc(s)}<div class="sleeve" style="background-image:url(&quot;${esc(art)}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
       <div class="cnt">${qi+1} of ${queue.length}</div>
-      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
+      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div>${starsHTML(s)}</div>
       <div class="row2"><span class="fmt"><svg viewBox="0 0 13 10"><rect x=".5" y=".5" width="12" height="9" rx="2" fill="none" stroke="currentColor"/><path d="M3 3v4M5.5 2v6M8 3.5v3M10.5 4.5v1" stroke="currentColor" stroke-linecap="round"/></svg>${fmtOf(s)}</span>
         <span class="sp"></span>
         <svg class="ic${s.favorite?' on':''}" data-act="fav" viewBox="0 0 20 20"><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14.3l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z"/></svg>
@@ -3111,7 +3300,7 @@ function renderView(){
     body.innerHTML=`<div class="np lyrics-np${hasNowLyrics(s)?' lyrics-on':''}" id="np" style="--np-art:url(&quot;${esc(nowPlayingArt(s))}&quot;)">${nowPlayingNeighbors()}<div class="cnt">${qi+1} of ${queue.length}</div>
       <div class="top"><div class="artcol vinyl-jacket">${vinylDisc(s)}<div class="art${showOfflineMark(s)?' offline-cover':''}" style="background-image:url(&quot;${esc(nowPlayingArt(s))}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div></div>
-      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}${s.album?`<span class="alx"> — ${esc(s.album)}</span>`:''}</div><div class="al">${esc(s.album)}</div></div>
+      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}${s.album?`<span class="alx"> — ${esc(s.album)}</span>`:''}</div><div class="al">${esc(s.album)}</div>${starsHTML(s)}</div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
       <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
       <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/></svg><div class="vb"><i id="vbi"></i></div>
@@ -4175,6 +4364,7 @@ function songOptions(s){return list('Song',()=>[
   {label:'Play Next',action:()=>{queue.splice(qi+1,0,{...s});pop();render();npToast('Playing next')}},
   {label:'Add to Up Next',action:()=>{queue.push({...s});pop();render();npToast('Added to Up Next')}},
   {label:s.favorite?'Remove from Favorites':'Add to Favorites',action:async()=>{await toggleFavorite(s);pop()}},
+  {label:'Rating',val:ratingOf(s)?'★'.repeat(ratingOf(s)):'None',chev:1,action:()=>push(ratingView(s))},
   {label:memoOf(s)?'Edit Memory':'Add Memory',val:memoOf(s)?.text||'',chev:1,action:()=>push(memoEditor(s))},
   ...(memoOf(s)?[{label:'Delete Memory',action:()=>{setMemo(s,'');pop();npToast?.('Memory deleted')}}]:[]),
   {label:'Go to Album',chev:1,action:go(()=>songsMenu(albumSort(songs.filter(x=>x.album===s.album)),s.album))},
