@@ -1727,6 +1727,7 @@ function musicRootMenu(){return list('Music',()=>[
   {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
   {label:'DJ Mode',icon:'shuffle',chev:1,action:go(djMenu)},
   {label:'Song Memories',icon:'heart',chev:1,action:go(memoriesMenu)},
+  {label:'Shared Playlists',icon:'people',chev:1,action:()=>window.ipodShared?window.ipodShared.open():push(msgView('Shared Playlists Unavailable','Reload the iPod to load Shared Playlists.'))},
   {label:'Listen Together',icon:'people',val:window.ipodListen?.role==='host'?'Hosting':window.ipodListen?.role==='guest'?'Joined':'',chev:1,action:()=>window.ipodListen?window.ipodListen.open():push(msgView('Listen Together Unavailable','Reload the iPod to load Listen Together.'))},
   {label:'Smart Playlists',icon:'music',chev:1,action:go(smartMenu)},
   {label:'Sessions',icon:'clock',chev:1,action:go(sessionsMenu)},
@@ -2379,6 +2380,7 @@ function savedPlaylists(){try{const p=JSON.parse(localStorage.getItem('ipod.impo
 function alarmSourceLabel(){const x=alarm.source||'favorites';
   if(x.startsWith('smart:'))return x.slice(6);
   if(x.startsWith('playlist:'))return savedPlaylists().find(p=>p.id===x.slice(9))?.name||'Playlist';
+  if(x.startsWith('shared:'))return window.ipodShared?.nameOf(x.slice(7))||'Shared Playlist';
   return {favorites:'Favorites',shuffle:'Shuffle All',recent:'Recently Played',session:'Last Session'}[x]||'Favorites'}
 // The local songs of a saved/imported playlist (by id, or by title + artist).
 function playlistSongs(pl){
@@ -2390,6 +2392,7 @@ function alarmSongs(){
   const live=songs.filter(s=>!s.deleted),src=alarm.source||'';
   if(src.startsWith('smart:')){const l=smartLists().find(x=>x.name===src.slice(6));if(l&&l.songs.length)return l.songs.slice()}
   if(src.startsWith('playlist:')){const l=playlistSongs(savedPlaylists().find(p=>p.id===src.slice(9)));if(l.length)return l}
+  if(src.startsWith('shared:')){const l=window.ipodShared?.songsOf(src.slice(7))||[];if(l.length)return l}
   if(src==='session'){const x=listeningSessions()[0];if(x&&x.songs.length)return x.songs.slice()}
   if(alarm.source==='favorites'){const f=live.filter(s=>s.favorite);if(f.length)return shuffled(f)}
   if(alarm.source==='recent'){const by=new Map(live.map(s=>[s.id,s])),seen=new Set(),r=[];
@@ -2437,6 +2440,7 @@ function alarmSourceMenu(){
     {label:'Last Session',icon:'clock',val:tick('session'),action:pick('session')},
     ...smartLists().map(l=>({label:l.name,icon:l.icon,val:tick('smart:'+l.name)||String(l.songs.length),action:pick('smart:'+l.name)})),
     ...savedPlaylists().filter(p=>playlistSongs(p).length).map(p=>({label:p.name,icon:'playlist',val:tick('playlist:'+p.id)||String(playlistSongs(p).length),action:pick('playlist:'+p.id)})),
+    ...(window.ipodShared?.codes()||[]).filter(c=>window.ipodShared.songsOf(c).length).map(c=>({label:window.ipodShared.nameOf(c),icon:'people',val:tick('shared:'+c)||String(window.ipodShared.songsOf(c).length),action:pick('shared:'+c)})),
   ]);
 }
 function renderTimePick(v){
@@ -2506,6 +2510,7 @@ function sessionsMenu(){return list('Sessions',()=>{const ss=listeningSessions()
 const djOff=()=>new Set(ls.get('ipod.dj.off',[]));
 function djSources(){
   const off=djOff(),src=savedPlaylists().map(p=>({id:'playlist:'+p.id,name:p.name,songs:playlistSongs(p)}));
+  for(const c of window.ipodShared?.codes()||[])src.push({id:'shared:'+c,name:window.ipodShared.nameOf(c),songs:window.ipodShared.songsOf(c)});
   // with fewer than two playlists, the smart lists join in so there's still something to mix
   if(src.filter(x=>x.songs.length).length<2)smartLists().forEach(l=>src.push({id:'smart:'+l.name,name:l.name,songs:l.songs}));
   return src.filter(x=>x.songs.length).map(x=>({...x,on:!off.has(x.id)}));
@@ -4724,6 +4729,8 @@ window.ipodListenBridge=Object.freeze({songs:()=>songs,cur,time:curTime,duration
   list,go,push,pop,replaceTop,msgView,inputView,loadingView,toast:t=>setHdrTask(t,1,true),
   refresh:()=>{if(top()?.title==='Listen Together'||top()?.type==='custom')render()},openNow:()=>push(nowView()),
   top,render,lyrics:populateLyrics,genArt,esc});
+window.ipodSharedBridge=Object.freeze({songs:()=>songs,cur,playList,shuffled,push,pop,list,msgView,inputView,loadingView,replaceTop,render,
+  toast:t=>setHdrTask(t,1,true),nowView});
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
 window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,enqueueYT,render,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
 })();
@@ -4732,6 +4739,7 @@ window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,
 <script src="./friends.js" defer></script>
 <script src="./mac-link.js" defer></script>
 <script src="./listen-together.js" defer></script>
+<script src="./shared-playlists.js" defer></script>
 <script src="./track-match.js" defer></script>
 <script src="./playlist-import.js" defer></script>
 </body>

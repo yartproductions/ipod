@@ -23,6 +23,8 @@ function docRef(path){
 function collRef(path){
   const list=()=>Object.keys(localStorage).filter(k=>k.startsWith(K(path)+'/')&&k.slice(K(path).length+1).indexOf('/')<0).map(k=>k.slice(7));
   return {doc:id=>docRef(path+'/'+id),
+    async add(data){const r=docRef(path+'/'+Math.random().toString(36).slice(2,12));await r.set(data);return r},
+    async get(){const docs=list().map(p=>snap(p,p.split('/').pop()));return {docs,size:docs.length,empty:!docs.length}},
     onSnapshot(cb){let seen=new Map(),first=true;const emit=()=>{const changes=[],now=list();
         for(const p of now){const raw=localStorage.getItem(K(p));if(seen.get(p)!==raw){seen.set(p,raw);changes.push({type:'modified',doc:snap(p,p.split('/').pop())})}}
         for(const p of [...seen.keys()])if(!now.includes(p)){seen.delete(p);changes.push({type:'removed',doc:snap(p,p.split('/').pop())})}
