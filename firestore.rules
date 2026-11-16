@@ -173,6 +173,33 @@ service cloud.firestore {
         allow delete: if inPair(code);
       }
     }
+    // Listen Together: a host shares a 6-character code; guests who know it can read what's playing.
+    function roomDoc(code) { return /databases/$(database)/documents/rooms/$(code); }
+    match /rooms/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && code.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && request.resource.data.keys().hasOnly(['host', 'hostName', 'createdAt', 'state', 'updatedAt'])
+        && request.resource.data.host == request.auth.uid
+        && request.resource.data.hostName is string && request.resource.data.hostName.size() <= 32
+        && request.resource.data.state is map
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if signedIn() && resource.data.host == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt'])
+        && request.resource.data.state is map
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if signedIn() && resource.data.host == request.auth.uid;
+      match /guests/{guest} {
+        allow create, update: if signedIn() && request.auth.uid == guest && exists(roomDoc(code))
+          && request.resource.data.keys().hasOnly(['name', 'joinedAt'])
+          && request.resource.data.name is string && request.resource.data.name.size() <= 32
+          && request.resource.data.joinedAt == request.time;
+        allow get: if signedIn() && (request.auth.uid == guest || get(roomDoc(code)).data.host == request.auth.uid);
+        allow list: if signedIn() && get(roomDoc(code)).data.host == request.auth.uid;
+        allow delete: if signedIn() && (request.auth.uid == guest || get(roomDoc(code)).data.host == request.auth.uid);
+      }
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }

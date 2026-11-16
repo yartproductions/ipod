@@ -1705,6 +1705,7 @@ function musicRootMenu(){return list('Music',()=>[
   {label:'Offline Music',icon:'library',action:go(musicMenu),chev:1},
   {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
   {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
+  {label:'Listen Together',icon:'people',val:window.ipodListen?.role==='host'?'Hosting':window.ipodListen?.role==='guest'?'Joined':'',chev:1,action:()=>window.ipodListen?window.ipodListen.open():push(msgView('Listen Together Unavailable','Reload the iPod to load Listen Together.'))},
   {label:'Smart Playlists',icon:'music',chev:1,action:go(smartMenu)},
   {label:'Sessions',icon:'clock',chev:1,action:go(sessionsMenu)},
   {label:'Sleep Timer',icon:'clock',val:sleepLeft(),chev:1,action:go(sleepMenu)},
@@ -4613,6 +4614,11 @@ window.ipodFriendsBridge=Object.freeze({audio:{get paused(){return audio.paused}
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
 window.ipodMacBridge=Object.freeze({top,cur,queue:()=>queue,qi:()=>qi,time:curTime,duration:()=>audio.duration,paused:()=>audio.paused,
   artFor,nowPlayingArt,lyrics:populateLyrics,push,pop,list,go,msgView,inputView,loadingView,replaceTop,render,toast:t=>setHdrTask(t,1,true)});
+window.ipodListenBridge=Object.freeze({songs:()=>songs,cur,time:curTime,duration:()=>audio.duration,paused:()=>audio.paused,
+  play:resumeAudio,pause:()=>audio.pause(),seek:t=>seekTo(t),art:nowPlayingArt,
+  playSong:s=>{latestPlayRequest++;importedPlayback=null;queue=[s];qi=0;load(true)},
+  list,go,push,pop,replaceTop,msgView,inputView,loadingView,toast:t=>setHdrTask(t,1,true),
+  refresh:()=>{if(top()?.title==='Listen Together')render()},openNow:()=>push(nowView())});
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
 window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,enqueueYT,render,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
 })();
@@ -4620,6 +4626,7 @@ window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,
 <script src="./stremio.js" defer></script>
 <script src="./friends.js" defer></script>
 <script src="./mac-link.js" defer></script>
+<script src="./listen-together.js" defer></script>
 <script src="./track-match.js" defer></script>
 <script src="./playlist-import.js" defer></script>
 </body>

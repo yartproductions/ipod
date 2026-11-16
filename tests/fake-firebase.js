@@ -23,8 +23,10 @@ function docRef(path){
 function collRef(path){
   const list=()=>Object.keys(localStorage).filter(k=>k.startsWith(K(path)+'/')&&k.slice(K(path).length+1).indexOf('/')<0).map(k=>k.slice(7));
   return {doc:id=>docRef(path+'/'+id),
-    onSnapshot(cb){let seen=new Map();const emit=()=>{const changes=[];for(const p of list()){const raw=localStorage.getItem(K(p));if(seen.get(p)!==raw){seen.set(p,raw);changes.push({type:'modified',doc:snap(p,p.split('/').pop())})}}
-        if(changes.length)cb({docChanges:()=>changes})};
+    onSnapshot(cb){let seen=new Map(),first=true;const emit=()=>{const changes=[],now=list();
+        for(const p of now){const raw=localStorage.getItem(K(p));if(seen.get(p)!==raw){seen.set(p,raw);changes.push({type:'modified',doc:snap(p,p.split('/').pop())})}}
+        for(const p of [...seen.keys()])if(!now.includes(p)){seen.delete(p);changes.push({type:'removed',doc:snap(p,p.split('/').pop())})}
+        if(changes.length||first){first=false;cb({docChanges:()=>changes,size:now.length,docs:now.map(p=>snap(p,p.split('/').pop()))})}};
       const fn=p=>{if(p.startsWith(path+'/'))emit()};local.add(fn);setTimeout(emit,0);return ()=>local.delete(fn)}};
 }
 let n=0;
