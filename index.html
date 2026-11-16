@@ -865,6 +865,9 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .flow .fpanel div.on{background:linear-gradient(#5aa9f5,#2d7fd8)}
 .flow .fpanel small{display:block;padding:3px 7px 5px;opacity:.55;font-size:8.5px}
 html.landscape .flow.withpanel .stage{left:32%}
+.flow .fpanel .ft{display:block;padding:1px 7px 4px;white-space:normal}
+.flow .fpanel .ft b{display:block;font-size:11px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.flow .fpanel .ft span{display:block;opacity:.6;font-size:9px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -3841,16 +3844,33 @@ function flowPanel(v){
   const f=$('#flow');if(!f||v.type!=='flow'||settings.flowTracks==='Off')return;
   let p=f.querySelector('.fpanel');if(!p){p=document.createElement('div');p.className='fpanel';f.appendChild(p)}
   f.classList.remove('withpanel');clearTimeout(flowPanel.t);
-  const a=v.albums[v.sel],list_=(a.songs||[]).filter(x=>!x.deleted);
-  if(list_.length<2)return;
+  const a=v.albums[v.sel];if(!a)return;
   flowPanel.t=setTimeout(()=>{
     if(top()!==v||v.albums[v.sel]!==a||!document.body.contains(f))return;
-    const total=list_.reduce((n,x)=>n+(x.duration||0),0),playing=cur()?.id,max=7;
-    p.innerHTML=`<h4>${list_.length} songs${total?' · '+Math.round(total/60)+' min':''}</h4>`+
+    const html=flowPanelHTML(v,a);if(!html)return;
+    p.innerHTML=html;f.classList.add('withpanel');
+  },420);
+}
+// Several songs: the track list. One song: its details. A streamed suggestion: what it is.
+function flowPanelHTML(v,a){
+  const list_=(a.songs||[]).filter(x=>!x.deleted),playing=cur()?.id;
+  if(list_.length>=2){
+    const total=list_.reduce((n,x)=>n+(x.duration||0),0),max=7;
+    return `<h4>${list_.length} songs${total?' · '+Math.round(total/60)+' min':''}</h4>`+
       list_.slice(0,max).map((x,i)=>`<div class="${x.id===playing?'on':''}"><i>${i+1}</i><span>${esc(x.title)}</span>${x.duration?`<em>${fmt(x.duration)}</em>`:''}</div>`).join('')+
       (list_.length>max?`<small>+${list_.length-max} more · Center to open</small>`:'');
-    f.classList.add('withpanel');
-  },420);
+  }
+  if(list_.length===1){
+    const x=list_[0],plays=listened.filter(e=>e.id===x.id).length,stars=typeof ratingOf==='function'?ratingOf(x):0,memo=typeof memoOf==='function'?memoOf(x):null;
+    const row=(k,val)=>val?`<div><span>${k}</span><em>${val}</em></div>`:'';
+    return `<h4>${x.id===playing?'Now playing':'Song'}</h4><div class="ft"><b>${esc(x.title)}</b>${x.album&&x.album!==x.title?`<span>${esc(x.album)}</span>`:''}</div>`+
+      row('Length',x.duration?fmt(x.duration):'')+row('Plays',plays?String(plays):'')+row('Rating',stars?'★'.repeat(stars):'')+
+      row('Favorite',x.favorite?'♥':'')+(memo?`<small>✎ ${esc(memo.text)}</small>`:'');
+  }
+  const it=v.recommendItems?.[v.sel];
+  if(it&&it.title)return `<h4>Suggestion</h4><div class="ft"><b>${esc(it.title)}</b>${it.author||it.channel?`<span>${esc(it.author||it.channel)}</span>`:''}</div>`+
+    (it.duration||it.lengthSeconds?`<div><span>Length</span><em>${typeof it.duration==='string'?esc(it.duration):fmt(it.duration||it.lengthSeconds)}</em></div>`:'');
+  return '';
 }
 
 /* ---------- Flow Now Playing: previous ← current → upcoming on a 3D shelf ---------- */
