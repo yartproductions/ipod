@@ -48,7 +48,7 @@ async function pair(raw){
     if(e.code==='permission-denied')throw Error('That code has expired or is already in use. Your Mac will show a fresh one.');
     throw e;
   }
-  start(c);
+  start(c);window.ipodAchievements?.event('mac');
 }
 function start(c){
   stop(false);code=c;pairRef=db.collection('pairs').doc(c);status='on';sentArt.clear();sentLyrics.clear();lastSig='';

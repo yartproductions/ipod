@@ -56,7 +56,7 @@ async function host(){
     catch(e){if(e.code==='permission-denied')throw Error('Listen Together needs the updated Firestore rules. Deploy them with: firebase deploy --only firestore:rules');if(i===4)throw e}
   }
   role='host';hostName=myName()||'You';listeners=0;lastSig='';remember();
-  unsubs.push(room.collection('guests').onSnapshot(q=>{const n=q.size!=null?q.size:q.docs?.length||0;if(n>listeners){B.toast('Someone joined · '+n+' listening');window.ipodNotify?.({id:'lt:'+code+':'+n+':'+Date.now(),kind:'listen',title:'Listen Together',body:'Someone joined · '+n+' listening'})}listeners=n;B.refresh()},()=>{}));
+  unsubs.push(room.collection('guests').onSnapshot(q=>{const n=q.size!=null?q.size:q.docs?.length||0;if(n>listeners){window.ipodAchievements?.event('host');B.toast('Someone joined · '+n+' listening');window.ipodNotify?.({id:'lt:'+code+':'+n+':'+Date.now(),kind:'listen',title:'Listen Together',body:'Someone joined · '+n+' listening'})}listeners=n;B.refresh()},()=>{}));
   timer=setInterval(hostTick,300);hostTick(true);
 }
 function hostTick(force){
@@ -82,6 +82,7 @@ async function join(raw){
   const me=ref.collection('guests').doc(uid),t0=Date.now();
   await me.set({name:myName()||'Guest',joinedAt:now()});
   try{const back=await me.get(),t1=Date.now(),ts=back.data()?.joinedAt;if(ts&&ts.toMillis)offset=ts.toMillis()-(t0+t1)/2}catch(e){}
+  window.ipodAchievements?.event('join');
   role='guest';code=c;room=ref;hostName=d.data().hostName||'Host';missing=null;lastApplied=null;remember();
   unsubs.push(ref.onSnapshot(x=>{
     if(!x.exists){B.toast(hostName+' ended Listen Together');return end(true)}
