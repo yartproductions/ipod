@@ -152,3 +152,15 @@ Open **YouTube → Import Playlist → Paste Playlist Link**.
   existing export directly. Sign in to Spotify in the exporter for private
   playlists. Save the preview and choose **Match Unresolved** to find tracks
   in your local library or on YouTube.
+
+## Stremio videos (first version)
+
+Open **Videos** for public Cinemeta movie/show catalogs, poster browsing, search, seasons and episodes. **Settings → Connect Stremio** (also available inside Videos) accepts your Stremio email and password and retrieves your installed Torrentio add-ons, including an existing Real-Debrid configuration. No RD key needs to be entered again. An Apple/Google-only account needs a Stremio password for this sign-in flow.
+
+Credentials go directly to Stremio over HTTPS. The password is not saved; the session key and configured add-on URLs remain in memory until reloading or disconnecting. They are never included in progress records or sent through the audio relay. Reconnect after reloading the app. Disconnect attempts Stremio logout and clears the local connection even if offline.
+
+Choose an episode/movie, select a source, then **Play**. Video opens in a full-window player with standard controls and a **Fullscreen** button. Music pauses, and remains paused when the player closes. **Continue Watching** stores up to 50 local positions on this device; it does not sync watched status with Stremio. Completed titles leave that list.
+
+This version supports direct HTTPS streams that the browser/iPhone can decode. It does not include torrent processing, transcoding, custom request headers, external subtitle add-ons, automatic next episode, or account-synced watchlists. RD links can still fail because a file is not ready or its format is unsupported; choose another source. Browser-managed controls may expose embedded captions when available.
+
+Validation: `node tests/stremio.cjs` checks sign-in/add-on retrieval, catalog redirects, seasons, HTTPS filtering, playback controls, saved positions, completion, safe errors and disconnect using simulated API responses. Real public catalog/season browsing was checked separately. Authenticated Torrentio/RD playback still requires testing in the user's account, especially on a physical iPhone.
