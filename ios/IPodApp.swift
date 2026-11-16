@@ -16,11 +16,8 @@ struct IPodApp: App {
 
     var body: some Scene {
         WindowGroup {
-            GeometryReader { window in
-                IPodWebView(hostedURL: Self.hostedURL)
-                    .frame(width: window.size.width, height: window.size.height)
-            }
-            .ignoresSafeArea()
+            IPodWebView(hostedURL: Self.hostedURL)
+                .ignoresSafeArea()   // the container pins the web view edge to edge; the page handles safe areas
             .background(Color.black)
             .preferredColorScheme(.dark)
             .statusBarHidden(true)

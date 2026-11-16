@@ -18,7 +18,8 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 html,body{height:100%;overflow:hidden;background:#000;font-family:-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;touch-action:none}
-body{display:flex;align-items:center;justify-content:center;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+/* body is pinned to the viewport edges (not a % height), so a stale height during rotation can't clip the iPod */
+body{position:fixed;inset:0;margin:0;display:flex;align-items:center;justify-content:center;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 #ambient{position:fixed;inset:0;overflow:hidden;pointer-events:none;isolation:isolate;background:#000}
 #ambient .ambient-art{position:absolute;inset:-15%;background-position:center;background-size:cover;opacity:0;animation:ambientDrift 26s ease-in-out infinite alternate}
 #ambient .ambient-art.visible{opacity:1}
@@ -801,9 +802,15 @@ HDR_MQ.addEventListener?.('change',applyHDR);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)applyHDR()});
 let VIS=7;
 const LANDSCAPE_MQ=matchMedia('(orientation: landscape) and (max-height: 640px)');
-const isLandscape=()=>settings.landscape!=='Off'&&LANDSCAPE_MQ.matches;
+// Measure the real viewport (iOS can report stale sizes for a moment after rotating).
+function viewSize(){
+  const vv=window.visualViewport,w=Math.round(vv?.width||innerWidth||document.documentElement.clientWidth),h=Math.round(vv?.height||innerHeight||document.documentElement.clientHeight);
+  return {w,h};
+}
+const isLandscape=()=>{const {w,h}=viewSize();return settings.landscape!=='Off'&&w>h&&h<=640};
 let wasLandscape=null;
 function fit(){
+  {const {w,h}=viewSize();if(w<120||h<120)return setTimeout(fit,150)}   // bogus mid-rotation size: measure again shortly
   const land=isLandscape();
   if(land!==wasLandscape){
     const first=wasLandscape===null;wasLandscape=land;
@@ -813,11 +820,19 @@ function fit(){
       if(typeof render==='function'&&stack.length)render();
     }
   }
-  const s=land?Math.min(innerWidth/700,innerHeight/318,1.9):Math.min(innerWidth/335,innerHeight/555,1.7);
+  const {w,h}=viewSize();
+  const s=land?Math.min(w/700,h/318,1.9):Math.min(w/335,h/555,1.7);
   $('#stage').style.transform=`scale(${s})`;
 }
-LANDSCAPE_MQ.addEventListener?.('change',fit);
-addEventListener('resize',fit);fit();applyHDR();
+// Re-fit now and again after the rotation settles (the native app also calls this when its size changes).
+let refitTimers=[];
+window.ipodRefit=()=>{fit();refitTimers.forEach(clearTimeout);refitTimers=[120,400,900].map(t=>setTimeout(fit,t))};
+LANDSCAPE_MQ.addEventListener?.('change',window.ipodRefit);
+addEventListener('resize',window.ipodRefit);
+addEventListener('orientationchange',window.ipodRefit);
+window.visualViewport?.addEventListener('resize',window.ipodRefit);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)window.ipodRefit()});
+fit();applyHDR();
 // iOS can refuse autoplay (e.g. Low Power Mode): start the brightness layer on the first touch instead.
 addEventListener('pointerdown',()=>{if(document.documentElement.classList.contains('hdr'))document.getElementById('hdrboost')?.play?.().catch(()=>{})},{once:true,capture:true});
 const COLORS=['Silver','Black','Graphite','Red','Blue','Green','Pink','Gold'];
