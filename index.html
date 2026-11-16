@@ -16,6 +16,8 @@
 <link rel="icon" href="icon-192.png" sizes="192x192">
 <title>iPod</title>
 <style>
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 html,body{height:100%;overflow:hidden;background:#000;font-family:-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;touch-action:none}
 /* body is pinned to the viewport edges (not a % height), so a stale height during rotation can't clip the iPod */
@@ -607,7 +609,12 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .row .spk svg{fill:#2b7fde}.row.sel .spk svg{fill:#fff}
 .sb{position:absolute;right:0;top:0;bottom:0;width:6px;background:#e9eaec;border-left:1px solid #c9ccd0}
 .sb i{position:absolute;left:0;right:0;background:linear-gradient(90deg,#8bb7e8,#4f8fd8);border-radius:2px}
-.empty{padding:34px 16px;text-align:center;color:#555;font-size:13px;line-height:1.5}
+.empty{padding:34px 16px;text-align:center;color:#555;font-size:13px;line-height:1.5;box-sizing:border-box;width:100%;max-width:100%;
+  white-space:normal;overflow-wrap:break-word;word-wrap:break-word;-webkit-text-size-adjust:100%}
+/* messages: the text always wraps to the screen, and long ones scroll with the wheel */
+.empty.msgv{position:absolute;inset:0;padding:22px 16px 14px;overflow:hidden}
+.empty .mtxt{display:block;white-space:pre-line;overflow-wrap:break-word;word-wrap:break-word;max-width:100%}
+.empty .min{transition:transform .15s}
 .empty b{display:block;font-size:15px;color:#222;margin-bottom:4px}
 .spin{width:22px;height:22px;margin:0 auto 10px;border:3px solid #cfd3d8;border-top-color:#2b7fde;border-radius:50%;animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
@@ -2940,7 +2947,7 @@ function renderView(){
   }else if(v.type==='covers'){
     renderCovers(v);
   }else if(v.type==='msg'){
-    body.innerHTML=`<div class="list"><div class="empty"><b>${esc(v.title)}</b>${esc(v.msg)}</div></div>`;
+    body.innerHTML=`<div class="list"><div class="empty msgv"><div class="min" style="transform:translateY(${-(v.off||0)}px)"><b>${esc(v.title)}</b><span class="mtxt">${esc(v.msg)}</span></div></div></div>`;
   }else if(v.type==='loading'){
     body.innerHTML=`<div class="list"><div class="empty"><div class="spin"></div>${esc(v.title)}</div></div>`;
   }else if(v.type==='input'){
@@ -4310,6 +4317,9 @@ function scroll(dir){
   if(v.type==='quiz'){quizInput(v,null,dir);return}
   if(v.type==='timepick'){timePickInput(v,null,dir);return}
   if(v.type==='custom'){v.input?.(null,dir);return}
+  if(v.type==='msg'){const box=document.querySelector('#body .msgv'),t=box?.querySelector('.min');if(!t)return;
+    const max=Math.max(0,t.offsetHeight-box.clientHeight+36),no=Math.max(0,Math.min(max,(v.off||0)+dir*22));
+    if(no!==(v.off||0)){v.off=no;click();t.style.transform=`translateY(${-no}px)`}return}
   if(v.type==='music-home'){const ns=Math.max(0,Math.min(3,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();renderMusicHome(v)}return}
   if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v);updateFavoriteStar()}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
