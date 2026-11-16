@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>iPod · Mac Display</title>
+<link rel="icon" href="icon.svg">
+<style>
+:root{--ink:#f4f4f6;--dim:rgba(244,244,246,.42);--card:min(34vh,30vw)}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:#050506;color:var(--ink);font:15px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",Helvetica,Arial,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased;cursor:default}
+body.idle{cursor:none}
+/* background: the playing cover, huge and blurred, crossfading */
+#bg{position:fixed;inset:0;z-index:0}
+#bg i{position:absolute;inset:-12%;background:#111 center/cover;filter:blur(70px) saturate(1.5) brightness(.55);opacity:0;transition:opacity 1.4s ease;transform:scale(1.1);animation:drift 40s ease-in-out infinite alternate}
+#bg i.on{opacity:1}
+@keyframes drift{to{transform:scale(1.22) translate(2%,-2%)}}
+#bg::after{content:"";position:absolute;inset:0;background:radial-gradient(120% 90% at 35% 45%,transparent 30%,rgba(0,0,0,.65)),
+  url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 .5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");mix-blend-mode:normal;opacity:.9}
+main{position:relative;z-index:1;height:100%;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:2vw;padding:5vh 4vw}
+/* Cover Flow */
+#flow{position:relative;perspective:1600px;perspective-origin:50% 42%;display:flex;flex-direction:column;overflow:hidden;
+  -webkit-mask:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);mask:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent)}
+#ctx{left:7%!important}
+#shelf{position:relative;flex:1;transform-style:preserve-3d}
+.cv{position:absolute;left:50%;top:44%;width:var(--card);height:var(--card);margin:calc(var(--card)/-2) 0 0 calc(var(--card)/-2);
+  background:#1b1b1f center/cover;border-radius:4px;transition:transform .6s cubic-bezier(.2,.8,.25,1),opacity .6s,filter .6s;
+  box-shadow:0 30px 60px rgba(0,0,0,.55);-webkit-box-reflect:below 2px linear-gradient(transparent 62%,rgba(255,255,255,.22));backface-visibility:hidden}
+.cv.ph{display:grid;place-items:center;color:var(--dim);font-size:calc(var(--card)/6);font-weight:700}
+#cap{text-align:center;padding-bottom:2vh;min-height:4.6em;transition:opacity .3s}
+#cap b{display:block;font-size:clamp(18px,2.2vw,30px);font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#cap span{font-size:clamp(13px,1.3vw,18px);color:var(--dim)}
+#ctx{position:absolute;top:0;left:0;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+/* Now playing + lyrics */
+#side{display:flex;flex-direction:column;min-height:0}
+#np{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center;padding-bottom:3vh}
+#np .mini{width:64px;height:64px;border-radius:4px;background:#222 center/cover;box-shadow:0 8px 20px rgba(0,0,0,.5)}
+#np b{display:block;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#np span{display:block;color:var(--dim);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar{grid-column:1/-1;display:flex;align-items:center;gap:10px;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+#bar .t{flex:1;height:3px;background:rgba(255,255,255,.16);border-radius:2px;overflow:hidden}
+#bar .t i{display:block;height:100%;width:0;background:rgba(255,255,255,.85)}
+#pp{width:9px;height:10px;display:inline-block}
+#lyr{position:relative;flex:1;overflow:hidden;-webkit-mask:linear-gradient(transparent,#000 14%,#000 70%,transparent);mask:linear-gradient(transparent,#000 14%,#000 70%,transparent)}
+#lines{position:absolute;left:0;right:0;top:0;transition:transform .7s cubic-bezier(.2,.8,.25,1);will-change:transform}
+.ln{font-size:clamp(20px,2.3vw,34px);font-weight:700;line-height:1.25;letter-spacing:-.01em;padding:.32em 0;color:rgba(255,255,255,.28);
+  transform-origin:left center;transition:color .45s,transform .45s,filter .45s;filter:blur(.6px)}
+.ln.on{color:#fff;transform:scale(1.04);filter:none}
+.ln.past{color:rgba(255,255,255,.18)}
+#lyr.plain .ln{font-size:clamp(16px,1.6vw,22px);font-weight:600;color:rgba(255,255,255,.7);filter:none;padding:.18em 0}
+#lyr .none{position:absolute;top:30%;color:var(--dim);font-size:18px}
+/* pairing */
+#pair{position:fixed;inset:0;z-index:5;display:grid;place-items:center;text-align:center;background:radial-gradient(circle at 50% 40%,#1c1d22,#060607 70%);transition:opacity .6s}
+#pair.gone{opacity:0;pointer-events:none}
+#pair h1{font-size:15px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);margin-bottom:28px}
+#code{display:flex;gap:12px;justify-content:center;margin-bottom:30px}
+#code i{font-style:normal;width:76px;height:96px;display:grid;place-items:center;font:700 52px/1 ui-monospace,"SF Mono",Menlo,monospace;
+  background:linear-gradient(#26272c,#1a1b1f);border-radius:14px;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 10px 30px rgba(0,0,0,.5)}
+#pair p{color:var(--dim);font-size:15px;max-width:520px;line-height:1.6}
+#pair p b{color:var(--ink);font-weight:600}
+#pair .err{color:#ff8a80;margin-top:14px;min-height:1.4em}
+.icn{width:64px;height:64px;margin:0 auto 26px;border-radius:15px;background:url(icon-192.png) center/cover;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+#hint{position:fixed;right:18px;bottom:14px;z-index:3;font-size:12px;color:var(--dim);transition:opacity .6s}
+body.idle #hint{opacity:0}
+#hint button{all:unset;cursor:pointer;margin-left:12px;color:var(--ink);opacity:.7}
+@media (max-aspect-ratio:1/1){main{grid-template-columns:1fr;grid-template-rows:1.2fr 1fr}:root{--card:min(30vh,50vw)}}
+</style>
+</head>
+<body>
+<div id="bg"><i></i><i></i></div>
+<main>
+  <section id="flow"><div id="ctx"></div><div id="shelf"></div><div id="cap"><b></b><span></span></div></section>
+  <section id="side">
+    <div id="np"><div class="mini"></div><div><b></b><span></span></div>
+      <div id="bar"><svg id="pp" viewBox="0 0 9 10"></svg><span id="tc">0:00</span><div class="t"><i></i></div><span id="td">0:00</span></div></div>
+    <div id="lyr"><div id="lines"></div></div>
+  </section>
+</main>
+<div id="pair"><div><div class="icn"></div><h1>Mac Display</h1><div id="code"></div>
+  <p>On your iPod, open <b>Settings ▸ Mac Display</b> and type this code.<br>Your phone keeps playing; this screen shows Cover Flow and the lyrics.</p><p class="err" id="err"></p></div></div>
+<div id="hint">Spin a Flow on your iPod to browse here<button id="fs">Full Screen ⌃⌘F</button><button id="end">Disconnect</button></div>
+<script>
+(()=>{
+'use strict';
+const CONFIG={apiKey:"AIzaSyDSMe2R6QTVd3htWfP7-ScKMZyWd5dePNU",authDomain:"ipod-friends.firebaseapp.com",projectId:"ipod-friends",
+  storageBucket:"ipod-friends.firebasestorage.app",messagingSenderId:"222255543131",appId:"1:222255543131:web:135687a1679707d515e07e"};
+const SDK='13.3.0',ABC='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',KEY='ipod.macdisplay.code';
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let db,uid,ref=null,code=null,unsubs=[],refresh=null;
+const art=new Map(),lyrics=new Map();let state=null,stateAt=0;
+
+/* ---------- Firebase + pairing ---------- */
+const load=f=>new Promise((ok,no)=>{const s=document.createElement('script');s.src=`https://www.gstatic.com/firebasejs/${SDK}/${f}`;s.onload=ok;s.onerror=()=>no(Error('Could not load '+f));document.head.appendChild(s)});
+async function connect(){
+  if(!(window.firebase&&firebase.initializeApp))await load('firebase-app-compat.js');
+  if(!firebase.auth)await load('firebase-auth-compat.js');
+  if(!firebase.firestore)await load('firebase-firestore-compat.js');
+  const app=firebase.initializeApp(CONFIG,'ipod-mac-display');db=app.firestore();
+  const webkit=/AppleWebKit/.test(navigator.userAgent)&&!/Chrome|Chromium/.test(navigator.userAgent);
+  try{db.settings(webkit?{experimentalForceLongPolling:true,merge:true}:{experimentalAutoDetectLongPolling:true,merge:true})}catch(e){}
+  const auth=app.auth();const u=await new Promise(r=>{const x=auth.onAuthStateChanged(v=>{x();r(v)},()=>r(null))});
+  uid=(u||(await auth.signInAnonymously()).user).uid;
+}
+function newCode(){const a=new Uint32Array(6);crypto.getRandomValues(a);return [...a].map(n=>ABC[n%ABC.length]).join('')}
+function showCode(c){$('#code').innerHTML=c?[...c].map(x=>`<i>${x}</i>`).join(''):'<i>·</i><i>·</i><i>·</i><i>·</i><i>·</i><i>·</i>'}
+function clearSubs(){unsubs.forEach(u=>{try{u()}catch(e){}});unsubs=[]}
+let offering=null;
+function offerCode(){return offering||(offering=makeCode().finally(()=>{offering=null}))}
+async function makeCode(){
+  clearSubs();clearTimeout(refresh);$('#pair').classList.remove('gone');$('#err').textContent='';
+  if(ref&&code)try{await ref.delete()}catch(e){}
+  for(let i=0;i<4;i++){
+    code=newCode();ref=db.collection('pairs').doc(code);
+    try{await ref.set({mac:uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});break}
+    catch(e){code=null;if(i===3){$('#err').textContent='Couldn’t reach the server. Retrying…';setTimeout(offerCode,5000);return}}
+  }
+  try{localStorage.setItem(KEY,code)}catch(e){}
+  showCode(code);watch();
+  refresh=setTimeout(()=>{if(!state)offerCode()},9*60*1000);   // codes expire after 10 minutes
+}
+function watch(){
+  clearSubs();
+  unsubs.push(ref.onSnapshot(d=>{
+    if(d.id!==code||offering)return;   // a stale notice for an old code
+    if(!d.exists){reset();return offerCode()}
+    const x=d.data();
+    if(x.phone){$('#pair').classList.add('gone');clearTimeout(refresh)}
+    if(x.state){state=x.state;stateAt=performance.now();draw()}
+  },e=>{$('#err').textContent='Connection lost. Retrying…';setTimeout(watch,3000)}));
+  unsubs.push(ref.collection('art').onSnapshot(q=>{q.docChanges().forEach(c=>{const v=c.doc.data();art.set(c.doc.id,v.data||v.url)});paintArt()},()=>{}));
+  unsubs.push(ref.collection('lyrics').onSnapshot(q=>{q.docChanges().forEach(c=>lyrics.set(c.doc.id,c.doc.data()));drawLyrics(true)},()=>{}));
+}
+function reset(){state=null;art.clear();lyrics.clear();$('#shelf').innerHTML='';$('#lines').innerHTML='';lyrKey=null}
+async function resume(){
+  let c=null;try{c=localStorage.getItem(KEY)}catch(e){}
+  if(c)try{const r=db.collection('pairs').doc(c),d=await r.get();if(d.exists&&d.data().mac===uid){code=c;ref=r;showCode(c);
+    if(d.data().phone)$('#pair').classList.add('gone');else refresh=setTimeout(offerCode,Math.max(1000,9*60*1000-(Date.now()-(d.data().createdAt?.toMillis?.()||0))));
+    return watch()}}catch(e){}
+  offerCode();
+}
+
+/* ---------- Cover Flow ---------- */
+const cards=new Map();
+function coverStyle(k){const u=k&&art.get(k);return u?`url("${u.replace(/"/g,'%22')}")`:''}
+function place(el,d){
+  const a=Math.abs(d),s=Math.sign(d),W=el.offsetWidth||300;
+  const x=d===0?0:s*(W*.62+Math.min(a-1,5)*W*.19+Math.max(0,a-6)*W*.06),z=d===0?120:-W*.55,rot=d===0?0:-s*68;
+  el.style.transform=`translate3d(${x}px,0,${z}px) rotateY(${rot}deg)`;
+  el.style.zIndex=String(100-a);el.style.opacity=a>7?'0':'1';el.style.filter=d===0?'none':`brightness(${Math.max(.35,.85-a*.07)})`;
+}
+function draw(){
+  if(!state)return;
+  const items=state.items||[],sel=state.sel||0,shelf=$('#shelf'),keep=new Set();
+  $('#ctx').textContent=state.mode==='flow'?(state.title||'Flow'):state.mode==='now'?'Up Next':'';
+  items.forEach((it,i)=>{
+    keep.add(it.id);let el=cards.get(it.id);
+    if(!el){el=document.createElement('div');el.className='cv';cards.set(it.id,el);el.dataset.k=it.k||'';
+      const d0=i-sel;place(el,d0+Math.sign(d0||1)*2);el.style.opacity='0';shelf.appendChild(el);void el.offsetWidth}
+    el.dataset.k=it.k||'';const bg=coverStyle(it.k);
+    if(bg){el.style.backgroundImage=bg;el.classList.remove('ph');el.textContent=''}else{el.classList.add('ph');el.textContent=(it.t||'?').trim().charAt(0).toUpperCase()}
+    place(el,i-sel);
+  });
+  for(const [id,el] of cards)if(!keep.has(id)){cards.delete(id);el.style.opacity='0';setTimeout(()=>el.remove(),600)}
+  const c=items[sel]||{};$('#cap b').textContent=c.t||'';$('#cap span').textContent=c.a||'';
+  const np=state.np;
+  $('#np .mini').style.backgroundImage=np?coverStyle(np.k):'';
+  $('#np b').textContent=np?np.t:'Nothing playing';$('#np span').textContent=np?[np.a,np.al].filter(Boolean).join(' — '):'';
+  $('#pp').innerHTML=np&&np.playing?'<rect width="3" height="10" fill="#fff"/><rect x="6" width="3" height="10" fill="#fff"/>':'<path d="M0 0L9 5L0 10z" fill="#fff"/>';
+  setBg(np?coverStyle(np.k):'');drawLyrics();
+}
+function paintArt(){for(const el of cards.values()){const bg=coverStyle(el.dataset.k);if(bg){el.style.backgroundImage=bg;el.classList.remove('ph');el.textContent=''}}
+  if(state&&state.np){$('#np .mini').style.backgroundImage=coverStyle(state.np.k);setBg(coverStyle(state.np.k))}}
+let bgCur='',bgL=0;
+function setBg(u){if(u===bgCur)return;bgCur=u;const ls=document.querySelectorAll('#bg i');bgL=1-bgL;ls[bgL].style.backgroundImage=u;ls[bgL].classList.add('on');ls[1-bgL].classList.remove('on')}
+
+/* ---------- lyrics ---------- */
+let lyrKey=null,lyrIdx=-2,lrclibTried=new Set();
+const pos=()=>{const np=state&&state.np;if(!np)return 0;return np.pos+(np.playing?(performance.now()-stateAt)/1000+.25:0)};
+function drawLyrics(force){
+  const np=state&&state.np,box=$('#lyr'),el=$('#lines');
+  if(!np){el.innerHTML='';lyrKey=null;return}
+  const L=lyrics.get(np.sk);
+  if(!L){if(lyrKey!==np.sk){lyrKey=np.sk;el.innerHTML='';el.style.transform='none';fallback(np)}return}
+  if(lyrKey!==np.sk+'#'||force){
+    lyrKey=np.sk+'#';lyrIdx=-2;box.classList.toggle('plain',!L.lines.length);el.style.transform='none';
+    el.innerHTML=L.lines.length?L.lines.map((x,i)=>`<div class="ln" data-i="${i}">${esc(x.t)}</div>`).join('')
+      :L.text?L.text.split('\n').map(t=>`<div class="ln">${esc(t)||'&nbsp;'}</div>`).join(''):'<div class="none">No lyrics for this song</div>';
+  }
+}
+// If the phone has no lyrics yet, look the song up on LRCLIB ourselves.
+async function fallback(np){
+  if(lrclibTried.has(np.sk))return;lrclibTried.add(np.sk);
+  await new Promise(r=>setTimeout(r,3500));if(lyrics.has(np.sk)||!state||state.np?.sk!==np.sk)return;
+  try{const q=new URLSearchParams({track_name:np.t,artist_name:np.a,...(np.al?{album_name:np.al}:{}),...(np.dur?{duration:Math.round(np.dur)}:{})});
+    const r=await fetch('https://lrclib.net/api/get?'+q);if(!r.ok)throw 0;const j=await r.json();
+    const lines=String(j.syncedLyrics||'').split(/\r?\n/).map(l=>{const m=l.match(/^\[(\d+):(\d+(?:\.\d+)?)\](.*)$/);return m&&m[3].trim()?{at:+m[1]*60+ +m[2],t:m[3].trim()}:null}).filter(Boolean);
+    if(!lyrics.has(np.sk))lyrics.set(np.sk,{lines,text:lines.length?'':j.plainLyrics||'',source:'LRCLIB'});
+  }catch(e){if(!lyrics.has(np.sk))lyrics.set(np.sk,{lines:[],text:'',source:''})}
+  drawLyrics(true);
+}
+function fmt(t){t=Math.max(0,t|0);return (t/60|0)+':'+String(t%60).padStart(2,'0')}
+function frame(){
+  requestAnimationFrame(frame);
+  const np=state&&state.np;if(!np)return;
+  const t=Math.min(pos(),np.dur||1e9);$('#tc').textContent=fmt(t);$('#td').textContent=np.dur?'-'+fmt(np.dur-t):'';
+  $('#bar .t i').style.width=np.dur?(t/np.dur*100)+'%':'0';
+  const L=lyrics.get(np.sk);if(!L||!L.lines.length)return;
+  let i=-1;for(let k=0;k<L.lines.length;k++){if(L.lines[k].at<=t+.15)i=k;else break}
+  if(i===lyrIdx)return;lyrIdx=i;
+  const els=$('#lines').children;
+  for(let k=0;k<els.length;k++){els[k].classList.toggle('on',k===i);els[k].classList.toggle('past',k<i)}
+  const on=els[Math.max(0,i)];if(on){const h=$('#lyr').clientHeight;$('#lines').style.transform=`translateY(${Math.round(h*.36-on.offsetTop-on.offsetHeight/2)}px)`}
+}
+
+/* ---------- chrome ---------- */
+let idleT;addEventListener('mousemove',()=>{document.body.classList.remove('idle');clearTimeout(idleT);idleT=setTimeout(()=>document.body.classList.add('idle'),2500)});
+$('#fs').onclick=()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen?.();
+addEventListener('keydown',e=>{if(e.key==='f'&&!e.metaKey)$('#fs').click()});
+$('#end').onclick=async()=>{reset();try{await ref.delete()}catch(e){}};
+addEventListener('resize',()=>draw());
+showCode(null);requestAnimationFrame(frame);
+connect().then(resume).catch(e=>{$('#err').textContent='Couldn’t load the connection: '+e.message});
+window.__macDisplay={get state(){return state},get code(){return code}};
+})();
+</script>
+</body>
+</html>

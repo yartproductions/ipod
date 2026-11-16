@@ -121,6 +121,58 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
       allow delete: if me(uid);
     }
+    // Mac Display: the Mac creates a short-lived pairing code, the phone claims it and then streams
+    // what's playing (phone → Mac only). Codes can't be listed, and expire 10 minutes after creation.
+    function pairDoc(code) { return /databases/$(database)/documents/pairs/$(code); }
+    function inPair(code) {
+      return signedIn() && (get(pairDoc(code)).data.mac == request.auth.uid
+        || get(pairDoc(code)).data.get('phone', '') == request.auth.uid);
+    }
+    match /pairs/{code} {
+      allow get: if signedIn() && (resource.data.mac == request.auth.uid
+        || resource.data.get('phone', '') == request.auth.uid);
+      allow list: if false;
+      allow create: if signedIn() && code.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && request.resource.data.keys().hasOnly(['mac', 'createdAt'])
+        && request.resource.data.mac == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn() && (
+        (!('phone' in resource.data)
+          && request.time < resource.data.createdAt + duration.value(10, 'm')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['phone', 'pairedAt'])
+          && request.resource.data.phone == request.auth.uid
+          && request.resource.data.phone != resource.data.mac
+          && request.resource.data.pairedAt == request.time)
+        || (resource.data.get('phone', '') == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt'])
+          && request.resource.data.state is map
+          && request.resource.data.updatedAt == request.time)
+      );
+      allow delete: if signedIn() && (resource.data.mac == request.auth.uid
+        || resource.data.get('phone', '') == request.auth.uid);
+      match /art/{key} {
+        allow read: if inPair(code);
+        allow create, update: if signedIn() && get(pairDoc(code)).data.get('phone', '') == request.auth.uid
+          && key.size() <= 16
+          && request.resource.data.keys().hasOnly(['data', 'url'])
+          && (!('data' in request.resource.data) || (request.resource.data.data is string
+              && request.resource.data.data.size() <= 60000
+              && request.resource.data.data.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$')))
+          && (!('url' in request.resource.data) || (request.resource.data.url is string
+              && request.resource.data.url.size() <= 500 && request.resource.data.url.matches('^https://.*')));
+        allow delete: if inPair(code);
+      }
+      match /lyrics/{key} {
+        allow read: if inPair(code);
+        allow create, update: if signedIn() && get(pairDoc(code)).data.get('phone', '') == request.auth.uid
+          && key.size() <= 16
+          && request.resource.data.keys().hasOnly(['lines', 'text', 'source'])
+          && request.resource.data.lines is list && request.resource.data.lines.size() <= 400
+          && request.resource.data.text is string && request.resource.data.text.size() <= 12000
+          && request.resource.data.source is string && request.resource.data.source.size() <= 20;
+        allow delete: if inPair(code);
+      }
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }

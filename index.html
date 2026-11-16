@@ -518,9 +518,10 @@ html.landscape .fnp.lyrics-flow .stage{left:24%}
   background-size:60% 100%,100% 100%;background-repeat:no-repeat;animation:batSweep 1.6s linear infinite}
 @keyframes batSweep{from{background-position:-120% 0,0 0}to{background-position:220% 0,0 0}}
 @media (prefers-reduced-motion: reduce){.plug,.plug.on{transition:opacity .2s}.portglow.flash{animation:none}.hdr .bat.charging i{animation:none}}
-.hold{position:absolute;top:-7px;right:44px;width:34px;height:10px;border-radius:5px 5px 0 0;background:linear-gradient(#cfd2d7,#9ea3aa);box-shadow:inset 0 1px 0 #fff8,0 0 0 1px #0002;cursor:pointer;z-index:2}
-.hold::before{content:"";position:absolute;top:2px;left:3px;width:14px;height:6px;border-radius:3px;background:linear-gradient(#fafafa,#c9ccd1);box-shadow:0 0 0 1px #0003;transition:left .18s}
-.hold::after{content:"";position:absolute;top:3px;right:4px;width:8px;height:4px;border-radius:2px;background:#e8873a;opacity:0;transition:opacity .18s}
+/* Hold sits on the bottom edge beside the dock port, where a thumb reaches it */
+.hold{position:absolute;bottom:-7px;right:44px;width:34px;height:10px;border-radius:0 0 5px 5px;background:linear-gradient(#9ea3aa,#cfd2d7);box-shadow:inset 0 1px 0 #fff8,0 0 0 1px #0002;cursor:pointer;z-index:2}
+.hold::before{content:"";position:absolute;bottom:2px;left:3px;width:14px;height:6px;border-radius:3px;background:linear-gradient(#fafafa,#c9ccd1);box-shadow:0 0 0 1px #0003;transition:left .18s}
+.hold::after{content:"";position:absolute;bottom:3px;right:4px;width:8px;height:4px;border-radius:2px;background:#e8873a;opacity:0;transition:opacity .18s}
 .hold.on::before{left:17px}.hold.on::after{opacity:1;right:auto;left:4px}
 .lockpop{position:absolute;inset:20px 0 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:rgba(255,255,255,.92);z-index:7;opacity:0;pointer-events:none;transition:opacity .2s;font-size:12px;font-weight:700;color:#333}
 .lockpop.on{opacity:1}.lockpop svg{width:34px;height:34px}
@@ -942,7 +943,7 @@ function drawInternals(){
   L(`<path d='M44 ${f(gy+11)} H56 M${f(W/2+58)} ${f(gy+11)} H${f(W-70)}'/>`);
   // dock connector pins, headphone jack, hold switch, screws, antenna line
   L(`<rect x='${f(W/2-36)}' y='${f(H-10)}' width='72' height='7' rx='2'/>`);for(let i=0;i<15;i++)L(`<path d='M${f(W/2-31+i*4.4)} ${f(H-9)} v5'/>`);
-  L(`<circle cx='${f(W-40)}' cy='9' r='5'/><circle cx='${f(W-40)}' cy='9' r='2'/>`,`<rect x='${f(W-86)}' y='4' width='22' height='8' rx='2'/>`);
+  L(`<circle cx='${f(W-40)}' cy='9' r='5'/><circle cx='${f(W-40)}' cy='9' r='2'/>`,`<rect x='${f(W-74)}' y='${f(H-12)}' width='22' height='8' rx='2'/>`);
   for(const [x,y] of [[10,10],[W-10,H-10],[10,H-10],[W-10,10]])L(`<circle cx='${f(x)}' cy='${f(y)}' r='3'/><path d='M${f(x-2)} ${f(y)} h4'/>`);
   L(`<path d='M8 ${f(H*.2)} V${f(H*.75)}' stroke-dasharray='6 3 1 3'/>`);
   const svg=`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${W} ${H}'><g fill='none' stroke='%23000' stroke-width='1' stroke-linecap='round' opacity='.6'>${o.join('')}</g></svg>`;
@@ -1906,6 +1907,7 @@ function settingsMenu(){
       {label:'Cancel',action:()=>pop()},
       {label:'Erase All Songs',action:async()=>{latestPlayRequest++;importedPlayback=null;audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
     {label:'Clear YouTube History',action:go(()=>{history=[];ls.set('ipod.history',[]);return msgView('Cleared','Recently Played is empty.')})},
+    {label:'Mac Display',val:window.ipodMac?.status==='on'?'Connected':'',chev:1,action:()=>window.ipodMac?window.ipodMac.open():push(msgView('Mac Display Unavailable','Reload the iPod to load Mac Display.'))},
     {label:'Shake to Shuffle',val:settings.shakeShuffle,action:()=>toggleShakeShuffle()},
     {label:'Bright Screen (HDR)',val:hdrCapable()?settings.brightScreen:'Not Supported',action:()=>{
       if(!hdrCapable())return push(msgView('Bright Screen','This display or browser doesn’t show HDR brightness.'));
@@ -4495,12 +4497,15 @@ window.ipodVideoBridge=Object.freeze({list,push,pop,replaceTop,top,msgView,loadi
 });
 window.ipodFriendsBridge=Object.freeze({audio:{get paused(){return audio.paused},get currentTime(){return audio.currentTime},addEventListener:onActiveAudio},cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
+window.ipodMacBridge=Object.freeze({top,cur,queue:()=>queue,qi:()=>qi,time:curTime,duration:()=>audio.duration,paused:()=>audio.paused,
+  artFor,nowPlayingArt,lyrics:populateLyrics,push,pop,list,go,msgView,inputView,loadingView,replaceTop,render,toast:t=>setHdrTask(t,1,true)});
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
 window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,enqueueYT,render,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
 })();
 </script>
 <script src="./stremio.js" defer></script>
 <script src="./friends.js" defer></script>
+<script src="./mac-link.js" defer></script>
 <script src="./track-match.js" defer></script>
 <script src="./playlist-import.js" defer></script>
 </body>
