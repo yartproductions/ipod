@@ -24,7 +24,7 @@ def main():
         multi = None
         for _ in range(12):
             pg.wait_for_timeout(650)
-            if pg.evaluate("document.getElementById('flow').classList.contains('withpanel')"): multi = pg.text_content('#fal'); break
+            if pg.evaluate("document.getElementById('flow').classList.contains('withpanel')&&/songs/i.test(document.querySelector('.fpanel h4').textContent)"): multi = pg.text_content('#fal'); break
             C.key(pg, 'ArrowDown', wait=60)
         check('settling on a multi-song album slides its track list in', multi is not None)
         rows = pg.eval_on_selector_all('.fpanel div span', 'e=>e.map(x=>x.textContent)')
@@ -36,7 +36,10 @@ def main():
         pg.screenshot(path='/tmp/shots/flow-panel-out.png', clip=pg.locator('#screen').bounding_box())
         single = pg.text_content('#fal'); pg.wait_for_timeout(700)
         album_size = pg.evaluate("(()=>{const t=document.getElementById('fal').textContent;const ar=document.getElementById('far').textContent;return ipodListenBridge.songs().filter(s=>s.album===t&&s.artist===ar).length})()")
-        check('single-song albums keep the full shelf', pg.evaluate("document.getElementById('flow').classList.contains('withpanel')") == (album_size >= 2), (single, album_size))
+        check('every cover gets a panel (single songs show their details)', pg.evaluate("document.getElementById('flow').classList.contains('withpanel')"), (single, album_size))
+        if album_size == 1:
+            check('a single song shows its title and details', single and pg.inner_text('.fpanel .ft b') != '' and 'song' in pg.inner_text('.fpanel h4').lower(), pg.inner_text('.fpanel'))
+            pg.screenshot(path='/tmp/shots/flow-panel-song.png', clip=pg.locator('#screen').bounding_box())
         C.key(pg, 'ArrowDown', wait=80); pg.wait_for_timeout(700)
         check('settling again brings it back', pg.evaluate("document.getElementById('flow').classList.contains('withpanel')"))
         C.home(pg); C.choose(pg, 'Settings'); C.choose(pg, 'Flow Track List')
