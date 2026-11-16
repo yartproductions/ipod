@@ -16,11 +16,14 @@ struct IPodApp: App {
 
     var body: some Scene {
         WindowGroup {
-            IPodWebView(hostedURL: Self.hostedURL)
-                .ignoresSafeArea()
-                .background(Color.black)
-                .preferredColorScheme(.dark)
-                .statusBarHidden(true)
+            GeometryReader { window in
+                IPodWebView(hostedURL: Self.hostedURL)
+                    .frame(width: window.size.width, height: window.size.height)
+            }
+            .ignoresSafeArea()
+            .background(Color.black)
+            .preferredColorScheme(.dark)
+            .statusBarHidden(true)
         }
     }
 }
