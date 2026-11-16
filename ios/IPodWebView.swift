@@ -68,6 +68,7 @@ struct IPodWebView: UIViewRepresentable {
         #if DEBUG
         if #available(iOS 16.4, *) { webView.isInspectable = true }   // Safari ▸ Develop for on-device debugging
         #endif
+        webView.uiDelegate = context.coordinator
         context.coordinator.monitorDevice(in: webView)
         webView.load(URLRequest(url: hostedURL, cachePolicy: .reloadRevalidatingCacheData))   // always pick up the latest site
         return WebContainer(webView: webView)
@@ -84,7 +85,7 @@ struct IPodWebView: UIViewRepresentable {
         coordinator.stopMonitoringDevice()
     }
 
-    final class Coordinator: NSObject, WKScriptMessageHandler {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKUIDelegate {
         static let handlerName = "ipodHaptics"
         static let batteryHandlerName = "ipodBattery"
         static let audioRouteHandlerName = "ipodAudioRoute"
@@ -186,7 +187,17 @@ struct IPodWebView: UIViewRepresentable {
         /// True only for the main frame of the hosted page's own origin.
         func isTrusted(_ message: WKScriptMessage) -> Bool {
             guard message.frameInfo.isMainFrame else { return false }
-            let origin = message.frameInfo.securityOrigin
+            return isTrusted(origin: message.frameInfo.securityOrigin)
+        }
+
+        // Shake to Shuffle: let the iPod page read the motion sensors without a web prompt
+        // (WKWebView otherwise denies DeviceMotionEvent.requestPermission()).
+        func webView(_ webView: WKWebView, requestDeviceOrientationAndMotionPermissionFor origin: WKSecurityOrigin,
+                     initiatedByFrame frame: WKFrameInfo, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+            decisionHandler(isTrusted(origin: origin) ? .grant : .deny)
+        }
+
+        func isTrusted(origin: WKSecurityOrigin) -> Bool {
             let port = origin.port == 0 ? (origin.protocol == "https" ? 443 : 80) : origin.port
             return origin.protocol.lowercased() == trustedScheme
                 && origin.host.lowercased() == trustedHost
