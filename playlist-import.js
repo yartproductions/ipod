@@ -437,7 +437,9 @@ function flow(){
    }
    return b.genArt(pl.name,pl.provider);
   };
-  return {album:pl.name,artist:pl.tracks.length+' tracks',getArt,
+  // for the Flow panel: the playlist's tracks, marking the ones in your library
+  const tracks=()=>((read().find(p=>p.id===pl.id)||pl).tracks||[]).map(t=>({title:t.title||'',artist:t.artist||'',have:!!available(t)}));
+  return {album:pl.name,artist:pl.tracks.length+' tracks',getArt,tracks,
    action:()=>playlistTracks(read().find(p=>p.id===pl.id)||pl)};
  });
  cards.push({album:'Import Playlist',artist:'Add another playlist',art:b.genArt('Import Playlist',''),action:importView});

@@ -871,6 +871,9 @@ html.landscape .flow.withpanel .stage{left:32%}
 .flow .fpanel{transition:transform .45s cubic-bezier(.2,.9,.3,1),opacity .3s}
 .flow .fpanel.inside>*{animation:fpIn .28s ease-out}
 @keyframes fpIn{from{opacity:0;transform:translateY(4px)}}
+.flow .fpanel div.dim{opacity:.45}
+#screen .flow.menu.withpanel .stage{left:28%}
+#screen .flow.menu.withpanel .cap{right:44%}
 </style>
 </head>
 <body>
@@ -3427,7 +3430,8 @@ function renderFlowMenu(v){
   flowMenuUpdate(v);requestAnimationFrame(()=>{const f=$('#flow');if(f)f.classList.remove('instant')});
 }
 function flowMenuUpdate(v){
-  flowUpdate({...v,albums:itemsOf(v).map(x=>({album:x.label,artist:x.val!=null?String(x.val):''}))});
+  const shelf={...v,albums:itemsOf(v).map(x=>({album:x.label,artist:x.val!=null?String(x.val):''}))};
+  flowUpdate(shelf);try{flowPanel(shelf,v)}catch(e){}
   const x=itemsOf(v)[v.sel];$('#far').textContent=x&&x.val!=null?String(x.val):'';
 }
 /* ---------- Album Flow: 3D shelf of your albums ---------- */
@@ -3843,29 +3847,35 @@ function flowUpdate(v){
 }
 /* Flow track list: when you settle on an album, its songs slide in on the right and the shelf
    moves over; as soon as you spin again it slides away so the covers have the whole screen. */
-function flowPanel(v){
-  const f=$('#flow');if(!f||v.type!=='flow'||settings.flowTracks==='Off')return;
+function flowPanel(v,real=v){
+  const f=$('#flow');if(!f||settings.flowTracks==='Off')return;
+  if(real.type!=='flow'&&!f.classList.contains('menu'))return;   // Flow shelves and the Flows menu shelf
   let p=f.querySelector('.fpanel');if(!p){p=document.createElement('div');p.className='fpanel';f.appendChild(p)}
   clearTimeout(flowPanel.t);
-  const a=v.albums[v.sel];if(!a)return;
+  const a=v.albums[v.sel],at=real.sel;if(!a)return;
   // while you spin: the whole Flow as a list, your spot highlighted
-  p.innerHTML=flowListHTML(v);p.classList.remove('inside');f.classList.add('withpanel');
+  p.innerHTML=flowListHTML(v,real.title);p.classList.remove('inside');f.classList.add('withpanel');
   // when you stop: what's inside that cover
   flowPanel.t=setTimeout(()=>{
-    if(top()!==v||v.albums[v.sel]!==a||!document.body.contains(f))return;
+    if(top()!==real||real.sel!==at||!document.body.contains(f))return;
     const html=flowPanelHTML(v,a);if(!html)return;
     p.innerHTML=html;p.classList.add('inside');
   },650);
 }
-function flowListHTML(v){
+function flowListHTML(v,title){
   const n=v.albums.length,show=7,from=Math.max(0,Math.min(n-show,v.sel-3)),to=Math.min(n,from+show);
   let rows='';for(let i=from;i<to;i++){const x=v.albums[i];
     rows+=`<div class="${i===v.sel?'on':''}"><i>${i+1}</i><span>${esc(x.album||x.title||'')}</span></div>`}
-  return `<h4>${esc(v.title||'Flow')} · ${n}</h4>${rows}`;
+  return `<h4>${esc(title||v.title||'Flow')} · ${n}</h4>${rows}`;
 }
 // Several songs: the track list. One song: its details. A streamed suggestion: what it is.
 function flowPanelHTML(v,a){
   const list_=(a.songs||[]).filter(x=>!x.deleted),playing=cur()?.id;
+  if(typeof a.tracks==='function'){   // a playlist card: its tracks, the ones you don't have dimmed
+    const tr=a.tracks(),max=7;if(!tr.length)return `<h4>Playlist</h4><small>No tracks yet</small>`;
+    return `<h4>${tr.length} tracks</h4>`+tr.slice(0,max).map((t,i)=>`<div class="${t.have?'':'dim'}"><i>${i+1}</i><span>${esc(t.title)}</span></div>`).join('')+
+      (tr.length>max?`<small>+${tr.length-max} more · Center to open</small>`:'');
+  }
   if(list_.length>=2){
     const total=list_.reduce((n,x)=>n+(x.duration||0),0),max=7;
     return `<h4>${list_.length} songs${total?' · '+Math.round(total/60)+' min':''}</h4>`+

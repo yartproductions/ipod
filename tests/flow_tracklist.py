@@ -41,6 +41,33 @@ def main():
         check('…with its songs', len(rows) >= 2, rows)
         C.key(pg, 'ArrowUp', wait=100)
         check('spinning again goes back to the Flow list', not panel(pg)['inside'] and panel(pg)['shown'])
+        # Song Flow
+        C.home(pg); C.choose(pg, 'Flows'); C.choose(pg, 'Song Flow'); C.key(pg, 'ArrowDown', wait=120)
+        check('Song Flow lists its songs while spinning', panel(pg)['shown'] and 'Song Flow' in panel(pg)['head'], panel(pg))
+        pg.wait_for_timeout(900)
+        check('…and shows the song’s details when you stop', panel(pg)['inside'])
+        # Playlist Flow
+        ids = pg.evaluate("ipodListenBridge.songs().slice(0,3).map(s=>({id:s.id,t:s.title,a:s.artist}))")
+        pls = [{'id': 'p1', 'name': 'Gym Mix', 'provider': 'Qobuz', 'tracks': [{'title': x['t'], 'artist': x['a'], 'localSongId': x['id'], 'status': 'matched'} for x in ids] + [{'title': 'Song I Lack', 'artist': 'Nobody'}]},
+               {'id': 'p2', 'name': 'Chill', 'provider': 'Qobuz', 'tracks': [{'title': ids[0]['t'], 'artist': ids[0]['a'], 'localSongId': ids[0]['id'], 'status': 'matched'}]}]
+        pg.evaluate("p=>localStorage.setItem('ipod.importedPlaylists.v1',JSON.stringify(p))", pls)
+        C.home(pg); C.choose(pg, 'Flows'); C.choose(pg, 'Playlist Flow'); C.key(pg, 'ArrowUp', wait=120)
+        x = panel(pg)
+        check('Playlist Flow lists the playlists while spinning', x['shown'] and 'Playlist Flow' in x['head'] and x['on'] == pg.text_content('#fal'), x)
+        pg.wait_for_timeout(900)
+        rows = pg.eval_on_selector_all('.fpanel div span', 'e=>e.map(x=>x.textContent)')
+        check('…and shows the playlist’s tracks when you stop', panel(pg)['inside'] and 'tracks' in panel(pg)['head'].lower() and len(rows) >= 1, (panel(pg), rows))
+        pg.screenshot(path='/tmp/shots/flow-playlist.png', clip=pg.locator('#screen').bounding_box())
+        if 'Gym Mix' == pg.text_content('#fal'):
+            check('tracks you don’t have are dimmed', pg.locator('.fpanel div.dim').count() == 1)
+        # the Flows menu shelf (Menu Style: Flow)
+        pg.evaluate("(()=>{const s=JSON.parse(localStorage.getItem('ipod.settings'));s.menuStyle='Flow';localStorage.setItem('ipod.settings',JSON.stringify(s))})()")
+        pg.reload(); pg.wait_for_timeout(1500); C.home(pg); C.key(pg, 'ArrowDown', wait=150)
+        x = panel(pg)
+        check('the Flow-style menu shelf lists its entries too', x['shown'] and x['on'] == pg.text_content('#fal'), x)
+        pg.screenshot(path='/tmp/shots/flow-menu.png', clip=pg.locator('#screen').bounding_box())
+        pg.evaluate("(()=>{const s=JSON.parse(localStorage.getItem('ipod.settings'));delete s.menuStyle;localStorage.setItem('ipod.settings',JSON.stringify(s))})()")
+        pg.reload(); pg.wait_for_timeout(1500)
         C.home(pg); C.choose(pg, 'Settings'); C.choose(pg, 'Flow Track List')
         C.home(pg); C.choose(pg, 'Flows'); C.choose(pg, 'Album Flow'); C.key(pg, 'ArrowDown', wait=900)
         check('it can be turned off in Settings', not panel(pg)['shown'])
