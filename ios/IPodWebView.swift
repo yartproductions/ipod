@@ -3,6 +3,7 @@ import WebKit
 import UIKit
 import CoreHaptics
 import AVFoundation
+import MediaPlayer
 
 // Root view of the native wrapper. Loads the hosted iPod page in a WKWebView and turns
 // `window.webkit.messageHandlers.ipodHaptics.postMessage(...)` calls into Taptic Engine feedback.
@@ -51,6 +52,7 @@ struct IPodWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: Coordinator.batteryHandlerName)
         controller.add(context.coordinator, name: Coordinator.audioRouteHandlerName)
         controller.add(context.coordinator, name: Coordinator.alarmHandlerName)
+        controller.add(context.coordinator, name: Coordinator.volumeHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -82,6 +84,7 @@ struct IPodWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.batteryHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.audioRouteHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.alarmHandlerName)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.volumeHandlerName)
         coordinator.stopMonitoringDevice()
     }
 
@@ -90,6 +93,11 @@ struct IPodWebView: UIViewRepresentable {
         static let batteryHandlerName = "ipodBattery"
         static let audioRouteHandlerName = "ipodAudioRoute"
         static let alarmHandlerName = "ipodAlarm"
+        static let volumeHandlerName = "ipodVolume"
+        /// A nearly invisible system volume view: lets the click wheel set the real iPhone volume
+        /// and hides the iOS volume pop-up, so the iPod's own volume bar shows instead.
+        private let volumeView = MPVolumeView(frame: CGRect(x: -2000, y: -2000, width: 10, height: 10))
+        private var volumeObservation: NSKeyValueObservation?
         private weak var deviceWebView: WKWebView?
         private var previousBatteryMonitoring = false
 
@@ -114,6 +122,12 @@ struct IPodWebView: UIViewRepresentable {
                 NotificationCenter.default.addObserver(self, selector: #selector(batteryChanged(_:)),
                                                        name: name, object: nil)
             }
+            volumeView.alpha = 0.01
+            volumeView.isUserInteractionEnabled = false
+            webView.addSubview(volumeView)
+            volumeObservation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { [weak self] session, _ in
+                DispatchQueue.main.async { self?.sendVolume(session.outputVolume) }
+            }
             NotificationCenter.default.addObserver(self, selector: #selector(wakeRequested(_:)), name: .ipodWakeUp, object: nil)
             if IPodAlarm.shared.pendingWake { deliverWake(attempt: 0) }   // launched by tapping the alarm
             for name in [AVAudioSession.routeChangeNotification, UIApplication.didBecomeActiveNotification] {
@@ -123,6 +137,16 @@ struct IPodWebView: UIViewRepresentable {
         }
 
         @objc private func wakeRequested(_ note: Notification) { deliverWake(attempt: 0) }
+
+        private func sendVolume(_ value: Float) {
+            deviceWebView?.evaluateJavaScript("window.ipodSystemVolume && window.ipodSystemVolume(\(value))", completionHandler: nil)
+        }
+
+        private func setSystemVolume(_ value: Float) {
+            let v = min(max(value, 0), 1)
+            guard let slider = volumeView.subviews.compactMap({ $0 as? UISlider }).first else { return }
+            DispatchQueue.main.async { slider.setValue(v, animated: false); slider.sendActions(for: .valueChanged) }
+        }
 
         /// Calls the page's `ipodWakeUp()`, retrying while the page is still loading.
         private func deliverWake(attempt: Int) {
@@ -134,6 +158,8 @@ struct IPodWebView: UIViewRepresentable {
         }
 
         func stopMonitoringDevice() {
+            volumeObservation?.invalidate(); volumeObservation = nil
+            volumeView.removeFromSuperview()
             NotificationCenter.default.removeObserver(self)
             UIDevice.current.isBatteryMonitoringEnabled = previousBatteryMonitoring
             deviceWebView = nil
@@ -213,6 +239,12 @@ struct IPodWebView: UIViewRepresentable {
             }
             if message.name == Self.audioRouteHandlerName {
                 sendAudioRoute()
+                return
+            }
+            if message.name == Self.volumeHandlerName {
+                let d = message.body as? [String: Any] ?? [:]
+                if let v = (d["set"] as? NSNumber)?.floatValue { setSystemVolume(v) }
+                else { sendVolume(AVAudioSession.sharedInstance().outputVolume) }
                 return
             }
             if message.name == Self.alarmHandlerName {
