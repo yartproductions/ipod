@@ -1,7 +1,7 @@
 /* iPod ▸ Listen Together — one person hosts, friends join with a 6-character code and hear the same
    song at the same moment, each from their own library. The host's iPod streams what it's playing
    (song, position, play/pause) through the Friends Firebase project; guests follow it.
-   Nothing is downloaded: a guest who doesn't have a song sees it and picks up again on the next one they do. */
+   Guests use their library first and download missing tracks through the existing audio queue. */
 (function(){
 'use strict';
 const B=window.ipodListenBridge;
@@ -11,6 +11,9 @@ const CONFIG={apiKey:"AIzaSyDSMe2R6QTVd3htWfP7-ScKMZyWd5dePNU",authDomain:"ipod-
 const SDK='13.3.0',ABC='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',CODE_RE=/^[A-HJ-NP-Z2-9]{6}$/,KEY='ipod.listen.session';
 let db=null,uid=null,role=null,code=null,room=null,unsubs=[],timer=null,lastSig='',lastNp=null,lastNpAt=0;
 let hostName='',listeners=0,state=null,offset=0,missing=null,lastApplied=null;
+let missingStatus='';
+const validVideoId=id=>typeof id==='string'&&/^[A-Za-z0-9_-]{11}$/.test(id);
+const trackKey=np=>JSON.stringify([np.videoId||'',np.t,np.a,np.al||'']);
 const now=()=>firebase.firestore.FieldValue.serverTimestamp();
 const myName=()=>{try{return (JSON.parse(localStorage.getItem('ipod.friends.profile')||'null')?.displayName||'').slice(0,32)}catch(e){return ''}};
 
@@ -40,7 +43,14 @@ function remember(){try{role?localStorage.setItem(KEY,JSON.stringify({role,code}
 const norm=x=>String(x||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,'')
   .replace(/\s*[\(\[][^)\]]*(remaster|live|version|edit|mono|stereo|feat|ft\.)[^)\]]*[\)\]]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
 function findLocal(np){
-  const live=B.songs().filter(s=>!s.deleted),t=norm(np.t),a=norm(np.a);
+  let live=B.songs().filter(s=>!s.deleted&&s.blob);
+  if(validVideoId(np.videoId)){
+    const exact=live.find(s=>s.sourceId===np.videoId);
+    if(exact)return exact;
+    live=live.filter(s=>!s.sourceId);
+  }
+  const t=norm(np.t),a=norm(np.a);
+  if(!t)return null;
   return live.find(s=>norm(s.title)===t&&norm(s.artist)===a)
     ||live.find(s=>norm(s.title)===t&&(norm(s.artist).includes(a)||a.includes(norm(s.artist)))&&a)
     ||live.find(s=>norm(s.title)===t&&np.al&&norm(s.album)===norm(np.al));
@@ -62,8 +72,9 @@ async function host(){
 function hostTick(force){
   if(role!=='host'||!room)return;
   const s=B.cur(),np=s?{t:String(s.title||'').slice(0,140),a:String(s.artist||'').slice(0,140),al:String(s.album||'').slice(0,140),
+    videoId:validVideoId(s.sourceId)?s.sourceId:'',
     dur:Math.round((B.duration()||0)*10)/10,pos:Math.round(B.time()*100)/100,playing:!B.paused(),art:/^https:\/\//.test(B.art(s)||'')?B.art(s).slice(0,500):''}:null;
-  const sig=JSON.stringify(np&&[np.t,np.a,np.playing,np.dur,Math.floor(np.pos/15)]);
+  const sig=JSON.stringify(np&&[trackKey(np),np.playing,np.dur,Math.floor(np.pos/15)]);
   const jumped=np&&lastNp&&np.t===lastNp.t&&Math.abs(np.pos-(lastNp.pos+(Date.now()-lastNpAt)/1000*(lastNp.playing?1:0)))>(np.playing?1.2:.2);
   if(!force&&sig===lastSig&&!jumped)return;
   lastSig=sig;lastNp=np;lastNpAt=Date.now();
@@ -83,7 +94,7 @@ async function join(raw){
   await me.set({name:myName()||'Guest',joinedAt:now()});
   try{const back=await me.get(),t1=Date.now(),ts=back.data()?.joinedAt;if(ts&&ts.toMillis)offset=ts.toMillis()-(t0+t1)/2}catch(e){}
   window.ipodAchievements?.event('join');
-  role='guest';code=c;room=ref;hostName=d.data().hostName||'Host';missing=null;lastApplied=null;remember();
+  role='guest';code=c;room=ref;hostName=d.data().hostName||'Host';missing=null;missingStatus='';lastApplied=null;remember();
   unsubs.push(ref.onSnapshot(x=>{
     if(!x.exists){B.toast(hostName+' ended Listen Together');return end(true)}
     const v=x.data();state={np:v.state?.np||null,at:v.updatedAt?.toMillis?v.updatedAt.toMillis():Date.now()+offset};follow();
@@ -91,21 +102,63 @@ async function join(raw){
   timer=setInterval(follow,2500);
 }
 function expected(){const np=state&&state.np;if(!np)return 0;return np.pos+(np.playing?Math.max(0,(Date.now()+offset-state.at)/1000):0)}
+async function downloadMissing(np,key){
+  const session=room;
+  const stillFollowing=()=>role==='guest'&&room===session&&state?.np&&trackKey(state.np)===key&&missing===key;
+  try{
+    let id=np.videoId;
+    if(!validVideoId(id)){
+      const match=await window.ipodPlaylistImport?.youtubeMatch({title:np.t,artist:np.a,album:np.al,duration:np.dur});
+      id=match?.youtubeId;
+    }
+    if(!stillFollowing())return;
+    if(!validVideoId(id)){
+      missingStatus='No confirmed YouTube match';
+      B.refresh();
+      return;
+    }
+    missingStatus='Downloading song…';
+    B.refresh();
+    await B.enqueueYT({kind:'yt',id,title:np.t,artist:np.a,album:np.al});
+    if(stillFollowing())follow();
+  }catch(error){
+    if(!stillFollowing())return;
+    missingStatus=error.dailyQuota?'YouTube search limit reached':'Couldn’t get this song';
+    B.toast(missingStatus);
+    B.refresh();
+  }
+}
 function follow(){
   if(role!=='guest'||!state)return;
   const np=state.np;
-  if(!np){missing=null;return B.refresh()}
+  if(!np){missing=null;missingStatus='';return B.refresh()}
+  const key=trackKey(np);
   const song=findLocal(np);
   if(!song){
-    if(missing!==np.t+'|'+np.a){missing=np.t+'|'+np.a;if(!B.paused())B.pause();B.toast('Not in your library: '+np.t);noteMissed(np);B.refresh()}
+    if(missing!==key){
+      missing=key;
+      missingStatus=validVideoId(np.videoId)?'Downloading song…':'Looking for this song…';
+      if(!B.paused())B.pause();
+      noteMissed(np);
+      B.refresh();
+      downloadMissing(np,key);
+    }
     return;
   }
-  missing=null;
-  const key=np.t+'|'+np.a,cur=B.cur();
+  missing=null;missingStatus='';
+  const cur=B.cur();
   if(!cur||cur.id!==song.id||lastApplied!==key){
-    lastApplied=key;B.playSong(song);
+    lastApplied=key;B.playSong(song,np.playing);
     // seek once the new song has loaded, then match play/pause
-    let tries=0;const settle=setInterval(()=>{if(++tries>40||(B.cur()?.id===song.id&&B.duration())){clearInterval(settle);sync(song,true)}},150);
+    const session=room;
+    let tries=0;
+    const settle=setInterval(()=>{
+      if(role!=='guest'||room!==session||!state?.np||trackKey(state.np)!==key||++tries>40){
+        clearInterval(settle);
+      }else if(B.cur()?.id===song.id&&B.duration()){
+        clearInterval(settle);sync(song,true);
+      }
+    },150);
     return B.refresh();
   }
   sync(song,false);
@@ -123,11 +176,11 @@ const MKEY='ipod.listen.missed';let missedThisSession=0;
 const readMissed=()=>{try{const x=JSON.parse(localStorage.getItem(MKEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return []}};
 function noteMissed(np){
   const k=norm(np.t)+'|'+norm(np.a),list=readMissed().filter(x=>norm(x.t)+'|'+norm(x.a)!==k);
-  list.unshift({t:np.t,a:np.a,al:np.al||'',host:hostName,at:Date.now()});missedThisSession++;
+  list.unshift({t:np.t,a:np.a,al:np.al||'',videoId:np.videoId||'',host:hostName,at:Date.now()});missedThisSession++;
   try{localStorage.setItem(MKEY,JSON.stringify(list.slice(0,200)))}catch(e){}
 }
 function missedMenu(){
-  return B.list('Songs You Missed',()=>{const m=readMissed().filter(x=>!findLocal({t:x.t,a:x.a,al:x.al}));
+  return B.list('Songs You Missed',()=>{const m=readMissed().filter(x=>!findLocal(x));
     if(!m.length)return [{label:'Nothing missing',action:()=>{}}];
     return [...m.map(x=>({label:x.t,val:x.a,action:B.go(B.msgView(x.t,[x.a,x.al].filter(Boolean).join(' — ')+'\n\nPlayed by '+x.host+' on '+new Date(x.at).toLocaleDateString()+'. Add it to your library to hear it next time.'))})),
       {label:'Clear List',action:()=>{try{localStorage.removeItem(MKEY)}catch(e){}B.render()}}];
@@ -156,7 +209,7 @@ function sessionView(){
       if(!x){body.innerHTML=`<div class="ltg"><div class="ltg-top"><div class="ltg-art"></div><div class="ltg-meta"><b>${role==='host'?'Play something to share it':'Waiting for '+B.esc(hostName)+'…'}</b><div class="ltg-who">${who}</div></div></div><div class="ltg-note">Center for options · MENU to go back</div></div>`;v.start();return}
       body.innerHTML=`<div class="ltg"><div class="ltg-top"><div class="ltg-art" style="background-image:url(&quot;${B.esc(x.art||'')}&quot;)"></div>
         <div class="ltg-meta"><b>${B.esc(x.np.t)}</b><span>${B.esc([x.np.a,x.np.al].filter(Boolean).join(' — '))}</span><div class="ltg-who">${who}</div>
-        ${role==='guest'&&!x.song?'<div class="ltg-miss">Not in your library</div>':''}</div></div>
+        ${role==='guest'&&!x.song?`<div class="ltg-miss">${B.esc(missingStatus||'Not in your library')}</div>`:''}</div></div>
         <div class="ltg-bar"><span id="lt-c">0:00</span><div class="t"><i id="lt-i"></i></div><span id="lt-d">0:00</span></div>
         <div class="ltg-lyric" id="lt-l"></div><div class="ltg-note">Center for options · MENU to go back</div></div>`;
       v.update();v.start();
@@ -176,7 +229,7 @@ function sessionView(){
   // refresh while this screen is showing; stops when you leave it and restarts when you come back
   v.start=()=>{if(v._t)return;v._t=setInterval(()=>{
     if(B.top()!==v||!role){clearInterval(v._t);v._t=null;return}
-    const x=shown(),k=x?x.np.t+'|'+x.np.a+'|'+!!x.song+'|'+listeners:'none';
+    const x=shown(),k=x?trackKey(x.np)+'|'+!!x.song+'|'+listeners+'|'+missingStatus:'none';
     if(k!==lastKey){lastKey=k;B.render()}else v.update()},250)};
   return v;
 }
@@ -184,8 +237,9 @@ function sessionView(){
 /* ---- ending ---- */
 async function end(remote){
   const r=room,was=role;clearInterval(timer);timer=null;clearSubs();
-  role=null;room=null;state=null;missing=null;remember();
-  if(was==='guest'&&missedThisSession)B.toast(missedThisSession+(missedThisSession===1?' song':' songs')+' to add · Listen Together ▸ Songs You Missed');
+  role=null;room=null;state=null;missing=null;missingStatus='';remember();
+  const remaining=missedThisSession&&readMissed().filter(x=>!findLocal(x)).length;
+  if(was==='guest'&&remaining)B.toast(remaining+(remaining===1?' song':' songs')+' to add · Listen Together ▸ Songs You Missed');
   else if(!remote)B.toast(was==='host'?'Listen Together ended':'You left Listen Together');
   missedThisSession=0;
   if(B.top()?.type==='custom'&&B.top().title==='Listen Together')B.pop();
@@ -216,7 +270,7 @@ function menu(){
     ];
     if(role==='guest'){const np=state&&state.np;return [
       {label:'Listening With',val:hostName},
-      {label:np?(missing?'Not in Your Library':'Now Playing'):'Waiting for '+hostName,val:np?np.t:'',action:()=>{if(np&&!missing)B.openNow()}},
+      {label:np?(missing?(missingStatus||'Not in Your Library'):'Now Playing'):'Waiting for '+hostName,val:np?np.t:'',action:()=>{if(np&&!missing)B.openNow()}},
       ...(missing?[{label:'You’ll rejoin on the next song you have',action:()=>{}}]:[]),
       {label:'Leave',action:()=>end(false)},
     ]}
@@ -229,8 +283,8 @@ function menu(){
         B.replaceTop(B.loadingView('Joining…'));
         try{await join(val);B.replaceTop(sessionView())}
         catch(e){B.replaceTop(B.msgView('Couldn’t Join',e.message||'Please try again.'))}}))},
-      {label:'Songs You Missed',icon:'library',chev:1,val:String(readMissed().filter(x=>!findLocal({t:x.t,a:x.a,al:x.al})).length||''),action:()=>B.push(missedMenu())},
-      {label:'How It Works',chev:1,action:B.go(B.msgView('Listen Together','One person hosts and shares a 6-character code. Everyone who joins hears the same song at the same moment, each from their own library. Nothing is downloaded.'))},
+      {label:'Songs You Missed',icon:'library',chev:1,val:String(readMissed().filter(x=>!findLocal(x)).length||''),action:()=>B.push(missedMenu())},
+      {label:'How It Works',chev:1,action:B.go(B.msgView('Listen Together','One person hosts and shares a 6-character code. Guests use their saved songs first. Missing songs download automatically when a YouTube ID is available or the app finds one confirmed match.'))},
     ];
   });
 }

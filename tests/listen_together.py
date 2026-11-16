@@ -61,7 +61,7 @@ def main():
         guest.wait_for_timeout(1500)
         check('guest without the song is told and stays paused', guest.evaluate('ipodListen.missing') and guest.evaluate('ipodListenBridge.paused()'), guest.evaluate('ipodListen.missing'))
         guest.wait_for_timeout(600)
-        check('guest screen says Not in your library and keeps the bar moving', 'Not in your library' in guest.inner_text('.ltg') and 'Red Line Track' in guest.inner_text('.ltg'), guest.inner_text('#body'))
+        check('guest screen shows the unavailable song and keeps the bar moving', 'Couldn’t get this song' in guest.inner_text('.ltg') and 'Red Line Track' in guest.inner_text('.ltg'), guest.inner_text('#body'))
         guest.screenshot(path='/tmp/shots/listen-missing.png', clip=guest.locator('#screen').bounding_box())
         C.home(hostp); C.choose(hostp, 'Music'); C.choose(hostp, 'Offline Music'); C.choose(hostp, 'Songs'); C.choose(hostp, 'Blue Hour Track'); hostp.wait_for_timeout(1200)
         guest.wait_for_timeout(1500)
