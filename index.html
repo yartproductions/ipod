@@ -898,8 +898,10 @@ addEventListener('resize',window.ipodRefit);
 addEventListener('orientationchange',window.ipodRefit);
 window.visualViewport?.addEventListener('resize',window.ipodRefit);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)window.ipodRefit()});
-fit();applyHDR();if(settings.shakeShuffle==='On'){startShakeListening();
-  if(needsMotionAsk()){const re=()=>{removeEventListener('touchend',re,true);askMotion()};addEventListener('touchend',re,true)}}
+fit();applyHDR();
+// Shake to Shuffle is declared further down the script: start it once everything has loaded.
+setTimeout(()=>{if(settings.shakeShuffle!=='On')return;startShakeListening();
+  if(needsMotionAsk()){const re=()=>{removeEventListener('touchend',re,true);askMotion()};addEventListener('touchend',re,true)}},0);
 // iOS can refuse autoplay (e.g. Low Power Mode): start the brightness layer on the first touch instead.
 addEventListener('pointerdown',()=>{if(document.documentElement.classList.contains('hdr'))document.getElementById('hdrboost')?.play?.().catch(()=>{})},{once:true,capture:true});
 const COLORS=['Silver','Black','Graphite','Red','Blue','Green','Pink','Gold','Frost','Smoke','Album'];
