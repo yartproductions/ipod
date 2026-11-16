@@ -42,6 +42,11 @@ const {doc,collection,query,where,getDocs,getDoc,setDoc,updateDoc,writeBatch,ser
      createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
    await assertFails(updateDoc(req,{status:'accepted',updatedAt:serverTimestamp()}));
    await assertSucceeds(getDocs(query(collection(b,'friendRequests'),where('to','==','bob'))));
+   // a friend card checks both directions: the missing one must read as "not found", not fail
+   await assertSucceeds(getDoc(doc(b,'friendRequests','bob_alice')));
+   await assertSucceeds(getDoc(doc(b,'friendRequests','alice_bob')));
+   await assertFails(getDoc(doc(c,'friendRequests','alice_bob')));
+   await assertFails(getDoc(doc(c,'friendRequests','alice_zed')));
    await assertSucceeds(updateDoc(doc(b,'friendRequests','alice_bob'),{status:'accepted',updatedAt:serverTimestamp()}));
    const recent=[{title:'Yellow',artist:'Coldplay',album:'Parachutes',artworkUrl:'',listenedAt:new Date()}];
    await assertSucceeds(setDoc(doc(a,'activity','alice'),{uid:'alice',recent,updatedAt:serverTimestamp()}));
