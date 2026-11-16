@@ -1035,7 +1035,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)window.ipo
 fit();applyHDR();
 // Shake to Shuffle is declared further down the script: start it once everything has loaded.
 setTimeout(()=>{if(settings.shakeShuffle!=='On')return;startShakeListening();
-  if(needsMotionAsk()){const re=()=>{removeEventListener('touchend',re,true);askMotion()};addEventListener('touchend',re,true)}},0);
+  if(needsMotionAsk()&&!nativeShake()){const re=()=>{removeEventListener('touchend',re,true);askMotion()};addEventListener('touchend',re,true)}},0);
 // iOS can refuse autoplay (e.g. Low Power Mode): start the brightness layer on the first touch instead.
 addEventListener('pointerdown',()=>{if(document.documentElement.classList.contains('hdr'))document.getElementById('hdrboost')?.play?.().catch(()=>{})},{once:true,capture:true});
 const COLORS=['Silver','Black','Graphite','Red','Blue','Green','Pink','Gold','Frost','Smoke','Album'];
@@ -2375,11 +2375,17 @@ function onMotion(event){
     shakeShuffle();
   }
 }
+// In the iPhone app the app itself detects iOS's shake gesture (no permission prompt) and calls
+// window.ipodShake(); browsers listen to the motion sensors instead.
+const nativeShake=()=>window.webkit?.messageHandlers?.ipodShake;
 function startShakeListening(){
   if(SHAKE.on||settings.shakeShuffle!=='On')return;
-  SHAKE.on=true;addEventListener('devicemotion',onMotion);
+  SHAKE.on=true;
+  if(nativeShake()){nativeShake().postMessage({on:true});return}
+  addEventListener('devicemotion',onMotion);
 }
 function stopShakeListening(){
+  nativeShake()?.postMessage({on:false});
   SHAKE.on=false;SHAKE.peaks=[];SHAKE.gravity=null;
   removeEventListener('devicemotion',onMotion);
 }
@@ -2390,7 +2396,7 @@ function shakeOn(){settings.shakeShuffle='On';saveSettings();startShakeListening
 async function askMotion(){try{return await DeviceMotionEvent.requestPermission()}catch(e){return 'error'}}
 async function toggleShakeShuffle(){
   if(settings.shakeShuffle==='On'){settings.shakeShuffle='Off';saveSettings();stopShakeListening();return render()}
-  if(!needsMotionAsk())return shakeOn();
+  if(nativeShake()||!needsMotionAsk())return shakeOn();
   const r=await askMotion();
   if(r==='granted')return shakeOn();
   if(r==='denied')return push(msgView('Motion Access Off','iOS has blocked motion for this app. In Safari: aA ▸ Website Settings ▸ Motion & Orientation Access, or quit and reopen Safari to be asked again.'));
