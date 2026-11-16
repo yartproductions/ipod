@@ -55,6 +55,7 @@ struct IPodWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: Coordinator.volumeHandlerName)
         controller.add(context.coordinator, name: Coordinator.shareFileHandlerName)
         controller.add(context.coordinator, name: Coordinator.keepAwakeHandlerName)
+        controller.add(context.coordinator, name: Coordinator.shakeHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -89,6 +90,7 @@ struct IPodWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.volumeHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.shareFileHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.keepAwakeHandlerName)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.shakeHandlerName)
         coordinator.stopMonitoringDevice()
     }
 
@@ -100,6 +102,9 @@ struct IPodWebView: UIViewRepresentable {
         static let volumeHandlerName = "ipodVolume"
         static let shareFileHandlerName = "ipodShareFile"
         static let keepAwakeHandlerName = "ipodKeepAwake"
+        static let shakeHandlerName = "ipodShake"
+        /// Shake to Shuffle is on in the iPod's settings.
+        private var shakeEnabled = false
         /// A nearly invisible system volume view: lets the click wheel set the real iPhone volume
         /// and hides the iOS volume pop-up, so the iPod's own volume bar shows instead.
         private let volumeView = MPVolumeView(frame: CGRect(x: -2000, y: -2000, width: 10, height: 10))
@@ -135,6 +140,7 @@ struct IPodWebView: UIViewRepresentable {
                 DispatchQueue.main.async { self?.sendVolume(session.outputVolume) }
             }
             NotificationCenter.default.addObserver(self, selector: #selector(wakeRequested(_:)), name: .ipodWakeUp, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(deviceShaken(_:)), name: .ipodDeviceShaken, object: nil)
             if IPodAlarm.shared.pendingWake { deliverWake(attempt: 0) }   // launched by tapping the alarm
             for name in [AVAudioSession.routeChangeNotification, UIApplication.didBecomeActiveNotification] {
                 NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
@@ -143,6 +149,12 @@ struct IPodWebView: UIViewRepresentable {
         }
 
         @objc private func wakeRequested(_ note: Notification) { deliverWake(attempt: 0) }
+
+        /// iOS's shake gesture (same as shake-to-undo): no motion permission needed.
+        @objc private func deviceShaken(_ note: Notification) {
+            guard shakeEnabled else { return }
+            deviceWebView?.evaluateJavaScript("window.ipodShake && window.ipodShake()", completionHandler: nil)
+        }
 
         /// Backup & Restore: hand the backup file to the share sheet (Save to Files, AirDrop, …).
         private func shareFile(named name: String, contents: String) {
@@ -264,6 +276,10 @@ struct IPodWebView: UIViewRepresentable {
                 sendAudioRoute()
                 return
             }
+            if message.name == Self.shakeHandlerName {
+                shakeEnabled = ((message.body as? [String: Any])?["on"] as? Bool) ?? false
+                return
+            }
             if message.name == Self.keepAwakeHandlerName {
                 // Hold switch: keep the iPhone's screen from dimming and auto-locking while it's on.
                 let on = ((message.body as? [String: Any])?["on"] as? Bool) ?? false
@@ -383,5 +399,18 @@ final class HapticPlayer {
                 self.fallback.prepare()
             }
         }
+    }
+}
+
+extension Notification.Name {
+    /// Posted by the window when the iPhone is shaken (Shake to Shuffle).
+    static let ipodDeviceShaken = Notification.Name("ipodDeviceShaken")
+}
+
+extension UIWindow {
+    // Shakes travel up the responder chain to the window: hand them to the iPod.
+    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake { NotificationCenter.default.post(name: .ipodDeviceShaken, object: nil) }
+        super.motionEnded(motion, with: event)
     }
 }
