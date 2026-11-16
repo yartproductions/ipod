@@ -1128,8 +1128,22 @@ function isPlaying(){return !audio.paused}
 function curTime(){return audio.currentTime||0}
 function dur(){return audio.duration||0}
 function seekTo(t){if(isFinite(t)){cancelCrossfade();audio.currentTime=t}}
-function getVol(){return audio.volume}
-function setVol(v){backgroundDeck.volume=mainDeck.volume=spareDeck.volume=Math.max(0,Math.min(1,v));return audio.volume}
+/* Volume. iOS ignores <audio>.volume, so in the iPhone app the wheel drives the real system volume
+   (and the side buttons move the iPod's volume bar). Elsewhere the decks' own volume is used. */
+const nativeVolume=()=>window.webkit?.messageHandlers?.ipodVolume;
+let sysVol=null,sysVolSetAt=0;
+function getVol(){return nativeVolume()&&sysVol!=null?sysVol:audio.volume}
+function setVol(v){
+  v=Math.max(0,Math.min(1,v));
+  if(nativeVolume()){sysVol=v;sysVolSetAt=Date.now();nativeVolume().postMessage({set:v});return v}
+  backgroundDeck.volume=mainDeck.volume=spareDeck.volume=v;return audio.volume}
+// The app reports the system volume (on launch and whenever it changes, e.g. the side buttons).
+window.ipodSystemVolume=v=>{
+  if(typeof v!=='number'||Date.now()-sysVolSetAt<400)return;   // ignore echoes of our own changes
+  const changed=sysVol!=null&&Math.abs(v-sysVol)>.001;sysVol=v;
+  if(changed&&typeof showVol==='function'&&['now','video'].includes(top()?.type))showVol();
+};
+setTimeout(()=>nativeVolume()?.postMessage({get:true}),0);
 /* iOS/CarPlay-connected audio: one persistent media element and hardware media controls.
    This is web media playback, not a native CarPlay app entitlement. */
 function resumeAudio(){
@@ -2338,9 +2352,22 @@ function saveAlarm(){
   if(h)h.postMessage(alarm.on?{action:'schedule',hour:alarm.hour,minute:alarm.minute,repeat:!!alarm.repeat,label:alarmSourceLabel()}:{action:'cancel'});
 }
 const alarmTime=()=>{const h=alarm.hour%12||12;return `${h}:${String(alarm.minute).padStart(2,'0')} ${alarm.hour<12?'AM':'PM'}`};
-function alarmSourceLabel(){return alarm.source==='favorites'?'Favorites':alarm.source==='shuffle'?'Shuffle All':alarm.source==='recent'?'Recently Played':'Favorites'}
+function savedPlaylists(){try{const p=JSON.parse(localStorage.getItem('ipod.importedPlaylists.v1')||'[]');return Array.isArray(p)?p:[]}catch(e){return []}}
+function alarmSourceLabel(){const x=alarm.source||'favorites';
+  if(x.startsWith('smart:'))return x.slice(6);
+  if(x.startsWith('playlist:'))return savedPlaylists().find(p=>p.id===x.slice(9))?.name||'Playlist';
+  return {favorites:'Favorites',shuffle:'Shuffle All',recent:'Recently Played',session:'Last Session'}[x]||'Favorites'}
+// The local songs of a saved/imported playlist (by id, or by title + artist).
+function playlistSongs(pl){
+  const live=songs.filter(s=>!s.deleted),byId=new Map(live.map(s=>[s.id,s])),k=(t,a)=>String(t||'').toLowerCase().trim()+'|'+String(a||'').toLowerCase().trim();
+  const byName=new Map(live.map(s=>[k(s.title,s.artist),s]));
+  return (pl?.tracks||[]).map(t=>byId.get(t.localSongId)||byName.get(k(t.title,t.artist))).filter(Boolean);
+}
 function alarmSongs(){
-  const live=songs.filter(s=>!s.deleted);
+  const live=songs.filter(s=>!s.deleted),src=alarm.source||'';
+  if(src.startsWith('smart:')){const l=smartLists().find(x=>x.name===src.slice(6));if(l&&l.songs.length)return l.songs.slice()}
+  if(src.startsWith('playlist:')){const l=playlistSongs(savedPlaylists().find(p=>p.id===src.slice(9)));if(l.length)return l}
+  if(src==='session'){const x=listeningSessions()[0];if(x&&x.songs.length)return x.songs.slice()}
   if(alarm.source==='favorites'){const f=live.filter(s=>s.favorite);if(f.length)return shuffled(f)}
   if(alarm.source==='recent'){const by=new Map(live.map(s=>[s.id,s])),seen=new Set(),r=[];
     for(const e of listened){const s=by.get(e.id);if(s&&!seen.has(s.id)){seen.add(s.id);r.push(s)}if(r.length>=40)break}
@@ -2373,10 +2400,22 @@ if(alarm.on)setTimeout(saveAlarm,1500);
 function alarmMenu(){return list('Wake-Up Alarm',()=>[
   {label:'Alarm',val:alarm.on?'On':'Off',action:()=>{alarm.on=!alarm.on;saveAlarm();triggerHaptic(alarm.on?'success':'selection');render()}},
   {label:'Time',val:alarmTime(),chev:1,action:go(()=>({type:'timepick',title:'Wake-Up Time',h:alarm.hour,m:alarm.minute,field:0}))},
-  {label:'Play',val:alarmSourceLabel(),action:()=>{alarm.source={favorites:'shuffle',shuffle:'recent',recent:'favorites'}[alarm.source]||'favorites';saveAlarm();render()}},
+  {label:'Play',val:alarmSourceLabel(),chev:1,action:go(alarmSourceMenu)},
   {label:'Repeat Daily',val:alarm.repeat?'On':'Off',action:()=>{alarm.repeat=!alarm.repeat;saveAlarm();render()}},
   ...(nativeAlarm()?[{label:'How It Rings',chev:1,action:go(msgView('Wake-Up Alarm','A real alarm rings even when your iPhone is locked or on Silent. Tap Play Music to start your playlist. Fall asleep with the Sleep Timer and the iPod stays awake quietly, then fades your music in at the alarm time with no alarm sound at all.'))}]:[{label:'How It Rings',chev:1,action:go(msgView('Wake-Up Alarm','In the browser the alarm only rings while the iPod is open. Use the iPhone app for a real alarm.'))}]),
 ])}
+function alarmSourceMenu(){
+  const pick=src=>()=>{alarm.source=src;saveAlarm();triggerHaptic('selection');pop()};
+  const tick=src=>alarm.source===src?'✓':'';
+  return list('Wake Up To',()=>[
+    {label:'Favorites',icon:'heart',val:tick('favorites'),action:pick('favorites')},
+    {label:'Shuffle All',icon:'shuffle',val:tick('shuffle'),action:pick('shuffle')},
+    {label:'Recently Played',icon:'clock',val:tick('recent'),action:pick('recent')},
+    {label:'Last Session',icon:'clock',val:tick('session'),action:pick('session')},
+    ...smartLists().map(l=>({label:l.name,icon:l.icon,val:tick('smart:'+l.name)||String(l.songs.length),action:pick('smart:'+l.name)})),
+    ...savedPlaylists().filter(p=>playlistSongs(p).length).map(p=>({label:p.name,icon:'playlist',val:tick('playlist:'+p.id)||String(playlistSongs(p).length),action:pick('playlist:'+p.id)})),
+  ]);
+}
 function renderTimePick(v){
   const h=v.h%12||12,mm=String(v.m).padStart(2,'0'),ap=v.h<12?'AM':'PM';
   body.innerHTML=`<div class="timepick"><div class="tp"><span class="${v.field===0?'on':''}">${h}</span>:<span class="${v.field===1?'on':''}">${mm}</span> <small class="${v.field===2?'on':''}">${ap}</small></div>
