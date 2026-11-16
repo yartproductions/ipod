@@ -91,8 +91,9 @@ def main():
         check('the native app gets the alarm schedule', posted and posted[-1]['action'] == 'schedule' and posted[-1]['hour'] == 8, posted)
         # night mode: Sleep Timer ends with the alarm on in the iPhone app -> stay awake on a silent loop
         C.home(pg); C.choose(pg, 'Music'); C.choose(pg, 'Shuffle Songs'); pg.wait_for_timeout(500)
+        pg.evaluate("__posted.length=0")
         C.home(pg); C.choose(pg, 'Music'); C.choose(pg, 'Sleep Timer'); C.choose(pg, 'End of This Song')
-        pg.evaluate("__posted.length=0;[...document.querySelectorAll('audio')].forEach(a=>a.dispatchEvent(new Event('ended')))"); pg.wait_for_timeout(300)
+        pg.wait_for_timeout(3000)   # the 2-second test song ends by itself
         posted = pg.evaluate('__posted')
         check('after the Sleep Timer the app enters night mode', any(m.get('action') == 'night' and m.get('on') for m in posted), posted)
         C.home(pg); pg.evaluate("__posted.length=0;ipodWakeUp()"); pg.wait_for_timeout(500)

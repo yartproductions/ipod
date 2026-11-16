@@ -874,6 +874,24 @@ html.landscape .flow.withpanel .stage{left:32%}
 .flow .fpanel div.dim{opacity:.45}
 #screen .flow.menu.withpanel .stage{left:28%}
 #screen .flow.menu.withpanel .cap{right:44%}
+.newtag{display:inline-block;margin-left:6px;padding:0 4px;border-radius:3px;font-style:normal;font-size:8px;font-weight:800;letter-spacing:.05em;
+  line-height:13px;vertical-align:2px;color:#fff;background:linear-gradient(#5aa9f5,#2d7fd8)}
+.row.sel .newtag{background:#fff;color:#2d7fd8}
+.tour{position:absolute;inset:0;display:flex;flex-direction:column;padding:10px 14px;color:#111;text-align:center}
+.tour .tdots{display:flex;gap:3px;justify-content:center}
+.tour .tdots i{width:5px;height:5px;border-radius:50%;background:#d4d4d8}
+.tour .tdots i.on{background:#2d7fd8;width:12px;border-radius:3px}
+.tour .tc{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;animation:tIn .4s cubic-bezier(.2,1,.3,1)}
+.tour.back .tc{animation-name:tBack}
+@keyframes tIn{from{opacity:0;transform:translateX(24px)}}
+@keyframes tBack{from{opacity:0;transform:translateX(-24px)}}
+.tour .ti{width:48px;height:48px;border-radius:13px;display:grid;place-items:center;box-shadow:0 6px 14px rgba(0,0,0,.25);margin-bottom:4px}
+.tour .ti svg{width:26px;height:26px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tour b{font-size:15px;line-height:1.2}
+.tour p{margin:0;font-size:11.5px;line-height:1.4;color:#444;max-width:92%}
+.tour small{font-size:9.5px;color:#888}
+.chost{background:#fff}
+.modern .chost{background:transparent}
 </style>
 </head>
 <body>
@@ -1811,12 +1829,25 @@ function musicRootMenu(){return list('Music',()=>[
   {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
   {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
   {label:'DJ Mode',icon:'shuffle',chev:1,action:go(djMenu)},
-  {label:'Song Memories',icon:'heart',chev:1,action:go(memoriesMenu)},
-  {label:'Shared Playlists',icon:'people',chev:1,action:()=>window.ipodShared?window.ipodShared.open():push(msgView('Shared Playlists Unavailable','Reload the iPod to load Shared Playlists.'))},
-  {label:'Listen Together',icon:'people',val:window.ipodListen?.role==='host'?'Hosting':window.ipodListen?.role==='guest'?'Joined':'',chev:1,action:()=>window.ipodListen?window.ipodListen.open():push(msgView('Listen Together Unavailable','Reload the iPod to load Listen Together.'))},
+  {label:'Playlists',icon:'playlist',chev:1,action:go(musicPlaylistsMenu)},
+  {label:'Together',icon:'people',val:window.ipodListen?.role==='host'?'Hosting':window.ipodListen?.role==='guest'?'Joined':'',chev:1,action:go(musicTogetherMenu)},
+  {label:'Your Story',icon:'album',chev:1,action:go(musicStoryMenu)},
+  {label:'Sleep & Wake',icon:'clock',val:sleep.mode?sleepLeft():alarm.on?alarmTime():'',chev:1,action:go(musicSleepMenu)},
+])}
+// Music's grouped submenus
+function musicPlaylistsMenu(){return list('Playlists',()=>[
   {label:'Smart Playlists',icon:'music',chev:1,action:go(smartMenu)},
-  {label:'iPod Wrapped',icon:'album',chev:1,action:go(wrappedMenu)},
   {label:'Sessions',icon:'clock',chev:1,action:go(sessionsMenu)},
+])}
+function musicTogetherMenu(){return list('Together',()=>[
+  {label:'Listen Together',icon:'people',val:window.ipodListen?.role==='host'?'Hosting':window.ipodListen?.role==='guest'?'Joined':'',chev:1,action:()=>window.ipodListen?window.ipodListen.open():push(msgView('Listen Together Unavailable','Reload the iPod to load Listen Together.'))},
+  {label:'Shared Playlists',icon:'people',chev:1,action:()=>window.ipodShared?window.ipodShared.open():push(msgView('Shared Playlists Unavailable','Reload the iPod to load Shared Playlists.'))},
+])}
+function musicStoryMenu(){return list('Your Story',()=>[
+  {label:'iPod Wrapped',icon:'album',chev:1,action:go(wrappedMenu)},
+  {label:'Song Memories',icon:'heart',chev:1,action:go(memoriesMenu)},
+])}
+function musicSleepMenu(){return list('Sleep & Wake',()=>[
   {label:'Sleep Timer',icon:'clock',val:sleepLeft(),chev:1,action:go(sleepMenu)},
   {label:'Wake-Up Alarm',icon:'clock',val:alarm.on?alarmTime():'Off',chev:1,action:go(alarmMenu)},
 ])}
@@ -2043,7 +2074,8 @@ function settingsMenu(){
     {label:'Landscape',val:settings.landscape,action:()=>{settings.landscape=settings.landscape==='Off'?'Auto':'Off';saveSettings();fit();render()}},
     {label:'Clock',icon:'clock',chev:1,action:go({type:'clock',title:'Clock'})},
     {label:'Backup & Restore',icon:'download',chev:1,action:go(backupMenu)},
-    {label:'About',icon:'info',chev:1,action:go(aboutView)},
+    {label:'What’s New',icon:'sparkle',chev:1,action:()=>push(tourView())},
+  {label:'About',icon:'info',chev:1,action:go(aboutView)},
   ])}
 function aboutView(){return list('About',[
   {label:'What’s New',chev:1,action:()=>showWhatsNew(null)},
@@ -2966,6 +2998,44 @@ function wrappedMenu(){seedStats();return list('iPod Wrapped',()=>{
     ...months.filter(k=>k!==thisM&&k!==lastM).map(k=>({label:name(k),chev:1,action:()=>push(wrappedView(name(k),[k]))})),
   ];
 })}
+/* ---------- What's New: a short tour of the latest features, plus NEW tags until you open them ---------- */
+const TOUR_VERSION=2;
+// menu label -> shown with a NEW tag until you open it once
+const NEW_ITEMS=['Flows','Playlists','Together','Your Story','Sleep & Wake','DJ Mode','Smart Playlists','Sessions','Listen Together','Shared Playlists',
+  'iPod Wrapped','Song Memories','Wake-Up Alarm','Achievements','Music Quiz','Mac Display','Shake to Shuffle','Backup & Restore','Notifications','Flow Track List','Rating'];
+const newSeen=new Set(ls.get('ipod.new.seen',[]));
+function isNew(label){return NEW_ITEMS.includes(label)&&!newSeen.has(label)&&ls.get('ipod.tour.v',0)>=1}
+function seenNew(label){if(NEW_ITEMS.includes(label)&&!newSeen.has(label)){newSeen.add(label);ls.set('ipod.new.seen',[...newSeen])}}
+const TOUR=[
+  {icon:'sparkle',c:'#5b6cff,#a855f7',t:'What’s New on your iPod',d:'A quick look at everything added lately. Spin to flip through, Center to try one, MENU to close.'},
+  {icon:'album',c:'#0ea5e9,#2563eb',t:'Flow, with a list beside it',d:'In any Flow, a list slides in as you spin. Stop on a cover to see what’s inside it.',go:()=>{pop();push(flowsMenu())}},
+  {icon:'music',c:'#f43f5e,#f59e0b',t:'A tidier Music menu',d:'Playlists, Together, Your Story and Sleep & Wake now group the new stuff.',go:()=>{pop();push(musicRootMenu())}},
+  {icon:'shuffle',c:'#10b981,#059669',t:'DJ Mode',d:'One endless mix that takes turns between all your playlists, so each gets an equal share.',go:()=>{pop();push(djMenu())}},
+  {icon:'playlist',c:'#8b5cf6,#6366f1',t:'Smart Playlists & Sessions',d:'Most Played, Heavy Rotation, After Dark, Top Rated and your listening sessions, built automatically.',go:()=>{pop();push(musicPlaylistsMenu())}},
+  {icon:'heart',c:'#f59e0b,#ef4444',t:'Star ratings',d:'On Now Playing, double-press Center ▸ Rating, then spin for 1–5 stars.'},
+  {icon:'heart',c:'#d97706,#92400e',t:'Song Memories',d:'Pin a short note to a song. It slides up every time that song plays.',go:()=>{pop();push(musicStoryMenu())}},
+  {icon:'album',c:'#ec4899,#8b5cf6',t:'iPod Wrapped',d:'Your month or year in music: minutes, top songs, top artists and your listening personality.',go:()=>{pop();push(wrappedMenu())}},
+  {icon:'people',c:'#06b6d4,#3b82f6',t:'Listen Together & Shared Playlists',d:'Hear the same song at the same moment as a friend, and build playlists together.',go:()=>{pop();push(musicTogetherMenu())}},
+  {icon:'clock',c:'#1e3a8a,#7c3aed',t:'Sleep & Wake',d:'Fall asleep with the Sleep Timer and wake up to any playlist, even with the phone locked.',go:()=>{pop();push(musicSleepMenu())}},
+  {icon:'sparkle',c:'#eab308,#f97316',t:'Achievements',d:'Dozens to unlock, a couple of them secret. Find them in Games.',go:()=>{pop();push(achievementsMenu())}},
+  {icon:'settings',c:'#64748b,#334155',t:'Shake, Mac Display & more',d:'Shake for a random song, show Cover Flow and lyrics on your Mac, try the Frost, Smoke and Album bodies.',go:()=>{pop();push(settingsMenu())}},
+  {icon:'download',c:'#16a34a,#15803d',t:'Back it all up',d:'Settings ▸ Backup & Restore saves everything except the music files, so nothing gets lost.',go:()=>{pop();push(backupMenu())}},
+];
+function tourView(){
+  const v={type:'custom',title:'What’s New',i:0,dir:1,
+    render(body){const c=TOUR[v.i];
+      body.innerHTML=`<div class="tour${v.dir<0?' back':''}"><div class="tdots">${TOUR.map((_,k)=>`<i class="${k===v.i?'on':''}"></i>`).join('')}</div>
+        <div class="tc"><div class="ti" style="background:linear-gradient(140deg,${c.c})"><svg viewBox="0 0 24 24"><path d="${MENU_ICONS[c.icon]||MENU_ICONS.info}"/></svg></div>
+        <b>${esc(c.t)}</b><p>${esc(c.d)}</p></div>
+        <small>${v.i<TOUR.length-1?'Spin for next':'That’s everything'}${c.go?' · Center to try it':v.i===TOUR.length-1?' · Center to finish':''} · MENU to close</small></div>`},
+    input(btn,dir){
+      if(dir){const n=Math.max(0,Math.min(TOUR.length-1,v.i+dir));if(n!==v.i){v.dir=dir;v.i=n;click();render()}return}
+      if(btn==='select'){const c=TOUR[v.i];if(c.go){triggerHaptic('selection');c.go()}else if(v.i<TOUR.length-1){v.dir=1;v.i++;click();render()}else pop()}}};
+  return v;
+}
+// Show the tour once per version, after the iPod has started.
+setTimeout(()=>{if(navigator.webdriver&&!ls.get('ipod.tour.force',false))return;   // automated test runs
+  if(ls.get('ipod.tour.v',0)<TOUR_VERSION&&top()?.title==='iPod'){ls.set('ipod.tour.v',TOUR_VERSION);push(tourView())}},1800);
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -3263,7 +3333,7 @@ function renderView(){
     for(let i=v.scroll;i<Math.min(it.length,v.scroll+VIS);i++){const x=it[i],rp=sbw?'right:14px':'';
       const isCur=playing&&((x.song&&x.song.id===playing.id)||(x.ytid&&playing.id===x.ytid));
       const icon=classicRowIcon(x);
-      h+=`<div class="row${i===v.sel?' sel':''}${x.thumb?' th':''}${icon||(gutter&&!x.thumb)?' has-icon':''}" style="${sbw?'padding-right:28px':''}">${x.thumb?`<span class="thumb${x.avatar?' av':''}" style="background-image:url(&quot;${esc(x.thumb)}&quot;)"></span>`:icon}<span class="lb"><span class="lt">${esc(x.label)}</span></span>${
+      h+=`<div class="row${i===v.sel?' sel':''}${x.thumb?' th':''}${icon||(gutter&&!x.thumb)?' has-icon':''}" style="${sbw?'padding-right:28px':''}">${x.thumb?`<span class="thumb${x.avatar?' av':''}" style="background-image:url(&quot;${esc(x.thumb)}&quot;)"></span>`:icon}<span class="lb"><span class="lt">${esc(x.label)}</span>${isNew(x.label)?'<i class="newtag">NEW</i>':''}</span>${
         x.val!=null?`<span class="val" style="${rp}">${esc(x.val)}</span>`:x.chev?`<span class="chev" style="${rp}">›</span>`:isCur?`<span class="spk" style="${rp}">${spk}</span>`:''}</div>`}
     if(sbw){const hh=190,th=Math.max(14,hh*VIS/it.length),ty=(hh-th)*v.scroll/(it.length-VIS);h+=`<div class="sb"><i style="top:${ty}px;height:${th}px"></i></div>`}
     body.innerHTML=h+'</div>';
@@ -3296,7 +3366,7 @@ function renderView(){
   }else if(v.type==='timepick'){
     renderTimePick(v);
   }else if(v.type==='custom'){
-    v.render(body);   // screens drawn by add-on scripts (Listen Together)
+    body.innerHTML='<div class="list chost"></div>';v.render(body.firstChild);   // add-on screens sit below the header, like menus
   }else if(v.type==='now'&&settings.npStyle==='Flow'&&cur()){
     renderNowFlow(changed?direction:0);
   }else if(v.type==='now'&&settings.style==='Modern'&&cur()){
@@ -4732,7 +4802,7 @@ function press(btn){
   else if(btn==='play'){playPause();if(v.type==='video')flashVo()}
   else if(btn==='select'){
     if(v.type==='music-home'){const x=v.choices[v.sel];if(x&&x.action)x.action()}
-    if(v.type==='list'||v.type==='covers'){const x=itemsOf(v)[v.sel];if(x&&x.action)x.action()}
+    if(v.type==='list'||v.type==='covers'){const x=itemsOf(v)[v.sel];if(x)seenNew(x.label);if(x&&x.action)x.action()}
     else if(v.type==='msg')pop();
     else if(v.type==='flow')selectFlow(v);
     else if(v.type==='input')submitInput();
