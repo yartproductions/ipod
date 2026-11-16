@@ -32,6 +32,32 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 #wrap{position:relative;z-index:1;animation:pop .9s cubic-bezier(.2,1.25,.35,1) both}
 @keyframes pop{0%{opacity:0;transform:translateY(60px) scale(.82)}60%{opacity:1}100%{opacity:1;transform:none}}
 #stage{width:320px;height:540px;transform-origin:center center;position:relative}
+@keyframes turn{0%{opacity:.2;transform:rotate(-8deg) scale(.92)}100%{opacity:1;transform:none}}
+/* ---------- landscape: wide screen + wheel on the right, labels turned like a nano ---------- */
+html.landscape #stage{width:680px;height:300px}
+html.landscape .ipod{border-radius:34px;padding:20px}
+html.landscape .bezel{width:400px;height:260px;margin:0}
+html.landscape .screen{width:390px;height:250px}
+html.landscape .wheel{left:auto;right:18px;top:39px;margin-left:0;transform:rotate(-90deg)}
+html.landscape .hold{right:60px}
+html.landscape .plug.dk{left:315px;top:288px}
+html.landscape .portglow.dk{left:308px;top:290px}
+html.landscape .screen:has(canvas.game){background:#0e1420}
+html.landscape .screen:has(canvas.bubbles){background:#051463}
+html.landscape canvas.game{left:50%;margin-left:-135px;transform-origin:top center;transform:scale(1.2)}
+html.landscape .covergrid{height:188px;grid-auto-rows:88px;grid-template-columns:repeat(3,1fr)}
+html.landscape .covergrid .ci{width:84px;height:84px}
+/* Now Playing gets cinematic in landscape: big cover, details and lyrics alongside */
+html.landscape .np.lyrics-np .top{height:128px}
+html.landscape .np.lyrics-np .artcol,html.landscape .np.lyrics-np .art{width:128px;height:128px}
+html.landscape .np.lyrics-np .meta{top:156px}
+html.landscape .np.lyrics-np:not(.lyrics-on) .meta{left:154px;top:44px}
+html.landscape .np.lyrics-np:not(.lyrics-on) .meta .t{font-size:16px}
+html.landscape .np.lyrics-np .np-neighbors .previous{left:150px;top:42px}
+html.landscape .np.lyrics-np .np-neighbors .upcoming{top:42px}
+html.landscape .mnp .meta .t{font-size:19px}
+html.landscape .fnp .stage{transform:scale(1.22);transform-origin:center top}
+html.landscape .fnp.lyrics-flow .stage{left:24%}
 
 .ipod{position:absolute;inset:0;border-radius:36px;padding:20px 20px 0;
   background:linear-gradient(160deg,#f4f5f7 0%,#d9dce1 35%,#c4c8ce 60%,#e3e5e9 100%);
@@ -739,7 +765,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -751,7 +777,25 @@ listened=listened.map(entry=>typeof entry==='string'?{id:entry,at:null}:entry)
 let lastListenedSong=null;
 
 /* ---------- layout ---------- */
-function fit(){const s=Math.min(innerWidth/335,innerHeight/555,1.7);$('#stage').style.transform=`scale(${s})`}
+/* Landscape (like an iPod nano turned on its side): wide screen on the left, wheel on the right. */
+let VIS=7;
+const LANDSCAPE_MQ=matchMedia('(orientation: landscape) and (max-height: 640px)');
+const isLandscape=()=>settings.landscape!=='Off'&&LANDSCAPE_MQ.matches;
+let wasLandscape=null;
+function fit(){
+  const land=isLandscape();
+  if(land!==wasLandscape){
+    const first=wasLandscape===null;wasLandscape=land;
+    document.documentElement.classList.toggle('landscape',land);VIS=land?8:7;
+    if(!first){
+      const w=$('#wrap');w.style.animation='none';void w.offsetWidth;w.style.animation='turn .55s cubic-bezier(.2,1.1,.35,1) both';
+      if(typeof render==='function'&&stack.length)render();
+    }
+  }
+  const s=land?Math.min(innerWidth/700,innerHeight/318,1.9):Math.min(innerWidth/335,innerHeight/555,1.7);
+  $('#stage').style.transform=`scale(${s})`;
+}
+LANDSCAPE_MQ.addEventListener?.('change',fit);
 addEventListener('resize',fit);fit();
 const COLORS=['Silver','Black','Graphite','Red','Blue','Green','Pink','Gold'];
 const darkMQ=window.matchMedia?matchMedia('(prefers-color-scheme: dark)'):null;
@@ -1706,6 +1750,7 @@ function settingsMenu(){
       {label:'Cancel',action:()=>pop()},
       {label:'Erase All Songs',action:async()=>{latestPlayRequest++;importedPlayback=null;audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
     {label:'Clear YouTube History',action:go(()=>{history=[];ls.set('ipod.history',[]);return msgView('Cleared','Recently Played is empty.')})},
+    {label:'Landscape',val:settings.landscape,action:()=>{settings.landscape=settings.landscape==='Off'?'Auto':'Off';saveSettings();fit();render()}},
     {label:'Clock',icon:'clock',chev:1,action:go({type:'clock',title:'Clock'})},
     {label:'About',icon:'info',chev:1,action:go(aboutView)},
   ])}
@@ -1834,7 +1879,7 @@ function bubRows(g){return g.grid.length}
 let bubRAF=null;
 function bubblesMount(v){
   if(!v.g)v.g=bubNew();
-  body.innerHTML='<canvas class="game" id="game" width="540" height="380"></canvas>';
+  body.innerHTML='<canvas class="game bubbles" id="game" width="540" height="380"></canvas>';
   cancelAnimationFrame(bubRAF);let last=performance.now();
   const loop=t=>{if(top()!==v)return;const dt=Math.min(40,t-last)/16.67;last=t;bubStep(v.g,dt);bubDraw(v.g);bubRAF=requestAnimationFrame(loop)};
   bubRAF=requestAnimationFrame(loop);
@@ -1966,7 +2011,7 @@ const top=()=>stack[stack.length-1];
 const itemsOf=v=>typeof v.items==='function'?v.items():v.items;
 
 /* ---------- rendering ---------- */
-const ROW=27, VIS=7;
+const ROW=27;   // VIS (rows on screen) is declared with the landscape code: 7, or 8 in landscape
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const spk='<svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z"/></svg>';
 const fmt=t=>{if(!isFinite(t))t=0;t=Math.max(0,Math.floor(t));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=String(t%60).padStart(2,'0');return h?`${h}:${String(m).padStart(2,'0')}:${s}`:`${m}:${s}`};
@@ -3667,7 +3712,9 @@ body.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('[d
 /* ---------- click wheel ---------- */
 const STEP=15;
 let tr=null;
-function ang(e){const r=wheel.getBoundingClientRect();return Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2))*180/Math.PI}
+function ang(e){const r=wheel.getBoundingClientRect();let a=Math.atan2(e.clientY-(r.top+r.height/2),e.clientX-(r.left+r.width/2))*180/Math.PI;
+  if(document.documentElement.classList.contains('landscape')){a+=90;if(a>180)a-=360}   // wheel is turned a quarter: MENU sits on the left
+  return a}
 wheel.addEventListener('pointerdown',e=>{if(e.target===center)return;e.preventDefault();wheel.setPointerCapture(e.pointerId);const a=ang(e);tr={id:e.pointerId,start:a,last:a,acc:0,moved:0}});
 wheel.addEventListener('pointermove',e=>{
   if(!tr||e.pointerId!==tr.id)return;const a=ang(e);let d=a-tr.last;if(d>180)d-=360;if(d<-180)d+=360;
