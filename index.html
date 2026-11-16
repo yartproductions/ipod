@@ -526,6 +526,11 @@ html.landscape .fnp.lyrics-flow .stage{left:24%}
 .hdr .lk{position:absolute;left:22px;top:4px;width:10px;height:12px;display:none}.hdr .lk.on{display:block}
 /* backlight */
 .screen{transition:filter .6s ease}
+/* Bright Screen (HDR): a tiny looping HDR-white video multiplied over the display. On HDR iPhones the
+   screen's whites go brighter than the rest of the page (the same extended-brightness trick HDR photos use). */
+#hdrboost{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;z-index:8;pointer-events:none;mix-blend-mode:multiply;display:none;opacity:0;transition:opacity .8s ease}
+html.hdr #hdrboost{display:block;opacity:var(--hdr,1)}
+html.hdr .screen.dim #hdrboost{opacity:0}
 .screen.dim{filter:brightness(.32) saturate(.7)}
 /* fast-scroll letter */
 .letter{position:absolute;left:50%;top:58%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:10px;background:rgba(30,40,55,.78);color:#fff;font-size:40px;font-weight:700;display:flex;align-items:center;justify-content:center;z-index:6;opacity:0;transition:opacity .25s;pointer-events:none}
@@ -727,7 +732,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
   <div class="portglow hp" id="glow-hp"></div><div class="portglow dk" id="glow-dk"></div>
   <div class="ipod" id="ipod">
     <div class="hold" id="hold" title="Hold"></div>
-    <div class="bezel"><div class="screen" id="screen">
+    <div class="bezel"><div class="screen" id="screen"><video id="hdrboost" muted loop playsinline autoplay preload="auto" aria-hidden="true" tabindex="-1" disablepictureinpicture><source src="hdr-white.mp4" type='video/mp4; codecs="hvc1"'><source src="hdr-white-av1.mp4" type='video/mp4; codecs="av01.0.00M.10"'></video>
       <div class="hdr"><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="status"><span id="hclock"></span><span class="bat" role="img"><i id="batlvl"></i></span></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
@@ -770,7 +775,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -783,6 +788,17 @@ let lastListenedSong=null;
 
 /* ---------- layout ---------- */
 /* Landscape (like an iPod nano turned on its side): wide screen on the left, wheel on the right. */
+const HDR_MQ=matchMedia('(dynamic-range: high)');
+const hdrCapable=()=>HDR_MQ.matches;
+function applyHDR(){
+  const on=hdrCapable()&&settings.brightScreen!=='Off',v=document.getElementById('hdrboost');
+  document.documentElement.classList.toggle('hdr',on);
+  document.documentElement.style.setProperty('--hdr',settings.brightScreen==='Max'?'1':'.62');
+  if(!v)return;
+  if(on){v.play?.().catch(()=>{})}else v.pause?.();
+}
+HDR_MQ.addEventListener?.('change',applyHDR);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)applyHDR()});
 let VIS=7;
 const LANDSCAPE_MQ=matchMedia('(orientation: landscape) and (max-height: 640px)');
 const isLandscape=()=>settings.landscape!=='Off'&&LANDSCAPE_MQ.matches;
@@ -801,7 +817,9 @@ function fit(){
   $('#stage').style.transform=`scale(${s})`;
 }
 LANDSCAPE_MQ.addEventListener?.('change',fit);
-addEventListener('resize',fit);fit();
+addEventListener('resize',fit);fit();applyHDR();
+// iOS can refuse autoplay (e.g. Low Power Mode): start the brightness layer on the first touch instead.
+addEventListener('pointerdown',()=>{if(document.documentElement.classList.contains('hdr'))document.getElementById('hdrboost')?.play?.().catch(()=>{})},{once:true,capture:true});
 const COLORS=['Silver','Black','Graphite','Red','Blue','Green','Pink','Gold'];
 const darkMQ=window.matchMedia?matchMedia('(prefers-color-scheme: dark)'):null;
 const isLightUI=()=>settings.appearance==='Light'||(settings.appearance==='Auto'&&!(darkMQ&&darkMQ.matches));
@@ -1755,6 +1773,9 @@ function settingsMenu(){
       {label:'Cancel',action:()=>pop()},
       {label:'Erase All Songs',action:async()=>{latestPlayRequest++;importedPlayback=null;audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
     {label:'Clear YouTube History',action:go(()=>{history=[];ls.set('ipod.history',[]);return msgView('Cleared','Recently Played is empty.')})},
+    {label:'Bright Screen (HDR)',val:hdrCapable()?settings.brightScreen:'Not Supported',action:()=>{
+      if(!hdrCapable())return push(msgView('Bright Screen','This display or browser doesn’t show HDR brightness.'));
+      settings.brightScreen={Off:'On',On:'Max',Max:'Off'}[settings.brightScreen]||'On';saveSettings();applyHDR();render()}},
     {label:'Landscape',val:settings.landscape,action:()=>{settings.landscape=settings.landscape==='Off'?'Auto':'Off';saveSettings();fit();render()}},
     {label:'Clock',icon:'clock',chev:1,action:go({type:'clock',title:'Clock'})},
     {label:'About',icon:'info',chev:1,action:go(aboutView)},
