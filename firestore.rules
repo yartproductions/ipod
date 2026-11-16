@@ -237,6 +237,28 @@ service cloud.firestore {
           || get(sharedDoc(code)).data.owner == request.auth.uid);
       }
     }
+    // Feedback & Ideas: bug reports are private to their author (the developer reads them in the
+    // console); ideas are visible to every listener, who can upvote each once.
+    match /feedback/{id} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['kind', 'text', 'diag', 'uid', 'name', 'createdAt'])
+        && request.resource.data.kind in ['bug', 'idea']
+        && request.resource.data.text is string && request.resource.data.text.size() >= 4 && request.resource.data.text.size() <= 1000
+        && request.resource.data.diag is string && request.resource.data.diag.size() <= 2000
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.name is string && request.resource.data.name.size() <= 32
+        && request.resource.data.createdAt == request.time;
+      allow get, list: if signedIn() && (resource.data.kind == 'idea' || resource.data.uid == request.auth.uid);
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+      match /votes/{voter} {
+        allow read: if signedIn();
+        allow create: if signedIn() && voter == request.auth.uid
+          && get(/databases/$(database)/documents/feedback/$(id)).data.kind == 'idea'
+          && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time;
+        allow delete: if signedIn() && voter == request.auth.uid;
+      }
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }
