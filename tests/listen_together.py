@@ -29,16 +29,16 @@ def main():
 
         C.choose(hostp, 'Music'); C.choose(hostp, 'Listen Together'); C.choose(hostp, 'Host a Session'); hostp.wait_for_timeout(600)
         code = hostp.evaluate('ipodListen.code')
-        check('host gets a 6-character code on the session screen', code and len(code) == 6 and code in hostp.inner_text('.lt-who'), (code, hostp.inner_text('#body')))
+        check('host gets a 6-character code on the session screen', code and len(code) == 6 and code in hostp.inner_text('.ltg-who'), (code, hostp.inner_text('#body')))
 
         C.choose(guest, 'Music'); C.choose(guest, 'Listen Together'); C.choose(guest, 'Join with Code')
         guest.fill('#inpt', 'ABCDEF'); C.key(guest, 'Enter', wait=600)
         check('a wrong code is refused', 'Couldn’t Join' in guest.text_content('#htitle'), guest.text_content('#htitle'))
         C.key(guest, 'Escape', wait=200); C.choose(guest, 'Join with Code')
         guest.fill('#inpt', code.lower()); C.key(guest, 'Enter', wait=900)
-        check('guest joins and sees the session screen', guest.evaluate('ipodListen.role') == 'guest' and 'Listening with' in guest.inner_text('.lt-who'), guest.inner_text('#body'))
+        check('guest joins and sees the session screen', guest.evaluate('ipodListen.role') == 'guest' and 'Listening with' in guest.inner_text('.ltg-who'), guest.inner_text('#body'))
         hostp.wait_for_timeout(400)
-        check('host sees one listener', hostp.evaluate('ipodListen.listeners') == 1 and '1 listening' in hostp.inner_text('.lt-who'), hostp.inner_text('#body'))
+        check('host sees one listener', hostp.evaluate('ipodListen.listeners') == 1 and '1 listening' in hostp.inner_text('.ltg-who'), hostp.inner_text('#body'))
 
         # host plays: guest follows from its own library
         C.home(hostp); C.choose(hostp, 'Music'); C.choose(hostp, 'Offline Music'); C.choose(hostp, 'Songs'); C.choose(hostp, 'Green Room Track'); hostp.wait_for_timeout(1500)
@@ -46,7 +46,7 @@ def main():
         check('guest plays the same song', guest.evaluate('ipodListenBridge.cur()?.title') == 'Green Room Track', guest.evaluate('ipodListenBridge.cur()?.title'))
         check('guest is playing', guest.evaluate('!ipodListenBridge.paused()'))
         C.home(guest); C.choose(guest, 'Music'); C.choose(guest, 'Listen Together'); guest.wait_for_timeout(500)
-        check('guest session screen shows the song and a moving progress bar', 'Green Room Track' in guest.inner_text('.lt') and guest.evaluate("parseFloat(document.getElementById('lt-i').style.width)") > 0, guest.inner_text('#body'))
+        check('guest session screen shows the song and a moving progress bar', 'Green Room Track' in guest.inner_text('.ltg') and guest.evaluate("parseFloat(document.getElementById('lt-i').style.width)") > 0, guest.inner_text('#body'))
         C.key(hostp, 'Space', wait=300); guest.wait_for_timeout(1500)
         check('host pauses → guest pauses', hostp.evaluate('ipodListenBridge.paused()') and guest.evaluate('ipodListenBridge.paused()'))
         hostp.evaluate('ipodListenBridge.seek(1.2)'); hostp.wait_for_timeout(400); guest.wait_for_timeout(1500)
@@ -61,7 +61,7 @@ def main():
         guest.wait_for_timeout(1500)
         check('guest without the song is told and stays paused', guest.evaluate('ipodListen.missing') and guest.evaluate('ipodListenBridge.paused()'), guest.evaluate('ipodListen.missing'))
         guest.wait_for_timeout(600)
-        check('guest screen says Not in your library and keeps the bar moving', 'Not in your library' in guest.inner_text('.lt') and 'Red Line Track' in guest.inner_text('.lt'), guest.inner_text('#body'))
+        check('guest screen says Not in your library and keeps the bar moving', 'Not in your library' in guest.inner_text('.ltg') and 'Red Line Track' in guest.inner_text('.ltg'), guest.inner_text('#body'))
         guest.screenshot(path='/tmp/shots/listen-missing.png', clip=guest.locator('#screen').bounding_box())
         C.home(hostp); C.choose(hostp, 'Music'); C.choose(hostp, 'Offline Music'); C.choose(hostp, 'Songs'); C.choose(hostp, 'Blue Hour Track'); hostp.wait_for_timeout(1200)
         guest.wait_for_timeout(1500)
