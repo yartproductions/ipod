@@ -4,11 +4,12 @@ const code=fs.readFileSync(require.resolve('../stremio.js'),'utf8');new vm.Scrip
 const html=fs.readFileSync(require.resolve('../index.html'),'utf8');for(const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(m[1]);
 let views=[],calls=[],store=new Map(),fail=false,paused=0,restored=0;
 class Element{
- constructor(tag){this.tag=tag;this.children=[];this.events={};this.currentTime=0;this.duration=600;this.value=''}
+ constructor(tag){this.tag=tag;this.children=[];this.events={};this.currentTime=0;this.duration=600;this.value='';this.paused=true;this.classList={add(){},remove(){}}}
  setAttribute(){} removeAttribute(name){delete this[name]} addEventListener(name,fn){this.events[name]=fn} removeEventListener(){}
- append(...items){this.children.push(...items)} showModal(){} focus(){} remove(){} load(){} pause(){this.events.pause?.()} play(){return Promise.resolve()}
+ append(...items){this.children.push(...items)} showModal(){} focus(){} remove(){} load(){} pause(){this.paused=true;this.events.pause?.()} play(){this.paused=false;return Promise.resolve()}
 }
-const document={body:new Element('body'),createElement:tag=>new Element(tag),querySelector:()=>null,addEventListener(){},removeEventListener(){}};
+const screen=new Element('screen'),menu=new Element('menu');screen.append(menu);
+const document={body:new Element('body'),createElement:tag=>new Element(tag),querySelector:selector=>selector==='#screen'?screen:null,addEventListener(){},removeEventListener(){}};
 const bridge={list:(title,items,extra={})=>({title,items,...extra}),push:v=>views.push(v),pop:()=>views.pop(),replaceTop:v=>views[views.length-1]=v,top:()=>views.at(-1),msgView:(title,msg)=>({title,msg}),loadingView:title=>({title}),inputView:(title,ph,onSubmit,value='')=>({title,ph,onSubmit,value}),pauseMusic:()=>paused++,restoreMusicControls:()=>restored++};
 const window={ipodVideoBridge:bridge,addEventListener(){},removeEventListener(){}};
 const localStorage={getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)};
@@ -31,11 +32,15 @@ const choose=label=>{const row=rows().find(x=>x.label===label);assert(row,'missi
  api.settings();choose('Connect Account');views.at(-1).onSubmit('me@example.com');assert.equal(views.at(-1).inputType,'password');
  await views.at(-1).onSubmit('password-secret');assert.equal(rows()[0].label,'Account Connected');assert.equal(rows()[1].val,'1');assert.equal(store.size,0,'no login or provider credentials saved');
  api.open();await choose('Shows');assert.equal(views.at(-1).type,'covers');await choose('Sample Show');assert.equal(rows()[0].label,'Season 1');choose('Season 1');await choose('1. Pilot');assert.equal(rows().length,1,'only playable HTTPS sources');choose('Torrentio RD');choose('Play');assert.equal(paused,1);assert(api.playing);
- const dialog=document.body.children.at(-1),video=dialog.children[1];video.currentTime=90;video.events.timeupdate();
+ const dialog=screen.children.at(-1),video=dialog.children[1];assert.equal(dialog.tag,'section');assert.equal(document.body.children.length,0);assert.equal(menu.inert,true);
+ api.control('play');assert(video.paused);api.control('select');assert(!video.paused);
+ api.control('prev');assert.equal(video.currentTime,0);api.control('next');assert.equal(video.currentTime,10);
+ video.currentTime=599;api.control('next');assert.equal(video.currentTime,600);
+ video.currentTime=90;video.events.timeupdate();
  assert(![...store.values()].join().includes('secret'));assert(![...store.values()].join().includes('https://'));
- api.close();assert(!api.playing);assert.equal(restored,1);
+ api.control('menu');assert.equal(menu.inert,undefined);assert(!api.playing);assert.equal(restored,1);
  api.open();choose('Continue Watching');assert.equal(rows().length,1);await rows()[0].action();choose('Torrentio RD');choose('Play');
- const resumed=document.body.children.at(-1).children[1];resumed.events.loadedmetadata();assert.equal(resumed.currentTime,90);resumed.events.ended();api.close();
+ const resumed=screen.children.at(-1).children[1];resumed.events.loadedmetadata();assert.equal(resumed.currentTime,90);resumed.events.ended();api.close();
  api.open();choose('Continue Watching');assert.equal(rows().length,0,'finished titles are removed');
  fail=true;api.open();await choose('Movies');assert(!views.at(-1).msg.includes('secret'),'network errors never expose source URLs');fail=false;
  api.settings();choose('Disconnect');assert.equal(rows()[0].label,'Connect Account');

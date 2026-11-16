@@ -690,12 +690,17 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .black #center.favorite-saved::after,.modern:not(.lightui) #center.favorite-saved::after{color:#ffce64}
 #center.favorite-confirmed{display:grid;place-items:center;color:#fff4c2;background:radial-gradient(circle at 45% 32%,#ffe69a,#ba7212);box-shadow:0 0 18px #ffcc63,inset 0 1px 3px #fff5b8;filter:none;font-size:32px;text-shadow:0 1px 3px #85500c}
 #center.favorite-confirmed::after{content:"★"}
-.ipod-video{position:fixed;inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;border:0;background:#080a0e;color:#fff;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));touch-action:auto}
-.ipod-video[open]{display:flex;flex-direction:column;gap:12px}.ipod-video::backdrop{background:#000}
-.ipod-video video{width:100%;flex:1;min-height:0;background:#000;touch-action:auto}
-.video-toolbar{display:flex;align-items:center;gap:12px}.video-toolbar strong{flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.video-toolbar button{border:1px solid #687384;border-radius:7px;padding:10px;background:#242d3a;color:white;font:inherit;cursor:pointer}
-.video-toolbar button:focus-visible{outline:2px solid #83bfff}.ipod-video p{font-size:14px;line-height:1.4;text-align:center;min-height:20px}
+/* Keep video inside the display, including while the iPod changes orientation. */
+.screen.video-active{filter:none}
+.screen.video-active>:not(.ipod-video){visibility:hidden}
+.ipod-video{position:absolute;inset:0;z-index:100;display:flex;flex-direction:column;overflow:hidden;background:#000;color:#fff;touch-action:auto}
+.ipod-video video{display:block;width:100%;flex:1;min-height:0;object-fit:contain;background:#000;touch-action:auto}
+.video-toolbar{display:flex;align-items:center;gap:4px;padding:3px;background:#10151d;flex-shrink:0}
+.video-toolbar strong{flex:1;min-width:0;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.video-toolbar button{border:1px solid #687384;border-radius:4px;min-height:28px;padding:3px 6px;background:#242d3a;color:white;font:inherit;font-size:11px;cursor:pointer}
+.video-toolbar button:focus-visible{outline:2px solid #83bfff}
+.ipod-video p{position:absolute;top:38px;left:6px;right:6px;margin:0;padding:5px;background:#10151de6;font-size:11px;line-height:1.3;text-align:center;pointer-events:none}
+.ipod-video p:empty{display:none}
 </style>
 </head>
 <body>
@@ -3675,9 +3680,9 @@ function scroll(dir){
   }
 }
 function press(btn){
-  if(window.ipodVideos?.playing){if(btn==='menu')window.ipodVideos.close();return}
   wake();
   if(holdOn){showLock();return}
+  if(window.ipodVideos?.playing){window.ipodVideos.control(btn);return}
   if(sheet){sheetPress(btn);return}
   if(top().type==='brick'&&btn!=='menu'){click();brickInput(top(),btn,0);return}
   if(top().type==='bubbles'&&btn!=='menu'){if(btn!=='select')click();bubblesInput(top(),btn,0);return}
@@ -3839,7 +3844,7 @@ function beginCenterPress(id){
   const radial=sheet?.kind==='queue-ring';
   const useCurrent=radial||view.type==='now'||!(highlighted?.song||highlighted?.video);
   const track=useCurrent?{song:cur()}:highlighted;
-  const canHold=!holdOn&&(!sheet||radial)&&view.type!=='input';
+  const canHold=!window.ipodVideos?.playing&&!holdOn&&(!sheet||radial)&&view.type!=='input';
   const canFavorite=canHold&&!!(track?.song||track?.video);
   const state={id,view,track,selected:view.sel,sheet,current:useCurrent,
     started:performance.now(),long:false,ringTimer:null,favoriteTimer:null,frame:null};

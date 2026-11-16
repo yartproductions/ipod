@@ -15,6 +15,7 @@ const run=new Function('assert',`
  const hub={...node(),querySelector:tag=>captions.get(tag)};
  const $=()=>hub;
  const document={addEventListener(){}};
+ const window={ipodVideos:{playing:false}};
  const performance={now:()=>now};
  const setTimeout=(fn,delay)=>{timers.set(++id,{fn,at:now+delay});return id};
  const clearTimeout=id=>timers.delete(id);
@@ -61,6 +62,8 @@ const run=new Function('assert',`
    assert(classes.has('favorite-saved'));
    assert.equal(sheet,null);
    assert.deepEqual(pulses,['confirm','confirm','confirm']);
+   window.ipodVideos.playing=true;touch('touchstart');advance(6000);touch('touchend');
+   assert.equal(sheet,null,'video hold must not open the music queue');assert.equal(saved,1);
  })();
 `);
 run(assert).then(()=>console.log('PASS Center touch opens the queue dial and continued hold saves a favorite'))

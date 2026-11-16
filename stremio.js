@@ -140,7 +140,10 @@ function closePlayer(){if(player)player.close()}
 function play(stream,item){
  const url=httpsURL(stream.url);if(!url)return;
  closePlayer();b.pauseMusic();
- const dialog=document.createElement('dialog');dialog.className='ipod-video';dialog.setAttribute('aria-label',item.name);
+ const screen=document.querySelector('#screen'),previousFocus=document.activeElement;
+ const hidden=[...screen.children].map(el=>[el,el.inert]);
+ hidden.forEach(([el])=>el.inert=true);screen.classList.add('video-active');
+ const dialog=document.createElement('section');dialog.className='ipod-video';dialog.setAttribute('aria-label',item.name);
  const bar=document.createElement('div');bar.className='video-toolbar';
  const title=document.createElement('strong');title.textContent=item.name;
  const close=document.createElement('button');close.textContent='Close';close.type='button';
@@ -150,8 +153,14 @@ function play(stream,item){
  let lastSaved=0,closed=false,finished=false;
  const save=()=>remember(item,video.currentTime,video.duration,finished);
  const onHide=()=>{if(document.hidden)save()};
- const finish=()=>{if(closed)return;closed=true;save();video.pause();video.removeAttribute('src');video.load();dialog.remove();document.removeEventListener('visibilitychange',onHide);window.removeEventListener('pagehide',save);player=null;b.restoreMusicControls()};
- player={close:finish};
+ const finish=()=>{if(closed)return;closed=true;save();video.pause();video.removeAttribute('src');video.load();dialog.remove();document.removeEventListener('visibilitychange',onHide);window.removeEventListener('pagehide',save);player=null;hidden.forEach(([el,inert])=>el.inert=inert);screen.classList.remove('video-active');if(previousFocus?.isConnected)previousFocus.focus();b.restoreMusicControls()};
+ const seek=delta=>{if(Number.isFinite(video.duration))video.currentTime=Math.max(0,Math.min(video.duration,video.currentTime+delta))};
+ player={close:finish,control:btn=>{
+  if(btn==='menu')finish();
+  else if(btn==='play'||btn==='select'){if(video.paused)video.play().catch(()=>{status.textContent='Tap Play to try again.'});else video.pause()}
+  else if(btn==='next')seek(10);
+  else if(btn==='prev')seek(-10);
+ }};
  if('mediaSession' in navigator){try{
   const ms=navigator.mediaSession;ms.setPositionState?.();ms.metadata=new MediaMetadata({title:item.name,artist:'iPod Videos'});
   ms.setActionHandler('play',()=>video.play().catch(()=>{}));ms.setActionHandler('pause',()=>video.pause());
@@ -160,7 +169,7 @@ function play(stream,item){
  }catch{}}
 
  close.onclick=finish;dialog.addEventListener('cancel',e=>{e.preventDefault();finish()});
- dialog.addEventListener('keydown',e=>e.stopPropagation());dialog.addEventListener('wheel',e=>e.stopPropagation());
+ dialog.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Escape'){e.preventDefault();finish()}});dialog.addEventListener('wheel',e=>e.stopPropagation());
  fullscreen.onclick=()=>{if(video.webkitEnterFullscreen)video.webkitEnterFullscreen();else if(video.requestFullscreen)video.requestFullscreen().catch(()=>{status.textContent='Fullscreen is unavailable. You can still watch here.'})};
  video.addEventListener('loadedmetadata',()=>{const progress=readProgress().find(x=>x.id===item.id&&x.type===item.type);if(progress&&Number.isFinite(video.duration)&&progress.time<video.duration-15)video.currentTime=progress.time});
  video.addEventListener('playing',()=>{status.textContent='';b.pauseMusic();if(navigator.mediaSession)navigator.mediaSession.playbackState='playing'});
@@ -170,9 +179,9 @@ function play(stream,item){
  video.addEventListener('ended',()=>{finished=true;save();status.textContent='Finished'});
  video.addEventListener('pause',()=>{save();if(navigator.mediaSession)navigator.mediaSession.playbackState='paused'});
  document.addEventListener('visibilitychange',onHide);window.addEventListener('pagehide',save);
- bar.append(close,title,fullscreen);dialog.append(bar,video,status);document.body.append(dialog);dialog.showModal();close.focus();
+ bar.append(close,title,fullscreen);dialog.append(bar,video,status);screen.append(dialog);close.focus();
  // Use the user's Play tap so iOS can start media without a second gesture.
  video.play().catch(()=>{if(!closed&&!video.error)status.textContent='Tap the video’s Play button to start.'});
 }
-window.ipodVideos=Object.freeze({open:()=>push(home()),settings:()=>push(settingsView()),close:closePlayer,get playing(){return !!player}});
+window.ipodVideos=Object.freeze({open:()=>push(home()),settings:()=>push(settingsView()),close:closePlayer,control:btn=>player?.control(btn),get playing(){return !!player}});
 })();
