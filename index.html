@@ -474,6 +474,23 @@ body{display:flex;align-items:center;justify-content:center;padding:env(safe-are
 .modern.lightui .sheet .st{color:#0b1220}.modern.lightui .sheet .sbody{color:#374151}.modern.lightui .sheet .cl li{border-color:#eef1f5}
 .modern.lightui .sheet .bt{color:#111827;background:#eef1f5}.modern.lightui .sheet .bt.sel{background:#2563eb;color:#fff}
 /* hold switch on the top edge */
+/* Cables: EarPods into the headphone jack (top left), charger into the dock port (bottom). */
+.plug{position:absolute;z-index:0;pointer-events:none;opacity:0;filter:drop-shadow(0 3px 4px rgba(0,0,0,.25));
+  transition:transform .42s cubic-bezier(.55,0,.8,.25),opacity .3s ease .12s}
+.plug.hp{left:44px;top:-250px;transform:translateY(-150px)}
+.plug.dk{left:135px;top:528px;transform:translateY(160px)}
+.plug.on{opacity:1;transform:none;transition:transform .75s cubic-bezier(.2,.85,.3,1.12),opacity .2s ease}
+.plug.instant{transition:none!important}
+.portglow{position:absolute;z-index:3;pointer-events:none;border-radius:50%;opacity:0;
+  background:radial-gradient(closest-side,rgba(140,255,190,.9),rgba(80,220,140,.35) 55%,transparent)}
+.portglow.hp{left:41px;top:-10px;width:30px;height:18px}
+.portglow.dk{left:128px;top:530px;width:64px;height:20px}
+.portglow.flash{animation:portFlash .9s ease-out}
+@keyframes portFlash{0%{opacity:0;transform:scale(.6)}25%{opacity:1;transform:scale(1.15)}100%{opacity:0;transform:scale(1.4)}}
+.hdr .bat.charging i{background-image:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent),linear-gradient(#ffe066,#e7b400)!important;
+  background-size:60% 100%,100% 100%;background-repeat:no-repeat;animation:batSweep 1.6s linear infinite}
+@keyframes batSweep{from{background-position:-120% 0,0 0}to{background-position:220% 0,0 0}}
+@media (prefers-reduced-motion: reduce){.plug,.plug.on{transition:opacity .2s}.portglow.flash{animation:none}.hdr .bat.charging i{animation:none}}
 .hold{position:absolute;top:-7px;right:44px;width:34px;height:10px;border-radius:5px 5px 0 0;background:linear-gradient(#cfd2d7,#9ea3aa);box-shadow:inset 0 1px 0 #fff8,0 0 0 1px #0002;cursor:pointer;z-index:2}
 .hold::before{content:"";position:absolute;top:2px;left:3px;width:14px;height:6px;border-radius:3px;background:linear-gradient(#fafafa,#c9ccd1);box-shadow:0 0 0 1px #0003;transition:left .18s}
 .hold::after{content:"";position:absolute;top:3px;right:4px;width:8px;height:4px;border-radius:2px;background:#e8873a;opacity:0;transition:opacity .18s}
@@ -652,6 +669,25 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 <body>
 <div id="ambient" aria-hidden="true"><div class="ambient-art"></div><div class="ambient-art"></div><canvas class="ambient-particles"></canvas><div class="ambient-grain"></div></div>
 <div id="wrap"><div id="stage">
+  <div class="plug hp" id="plug-hp" aria-hidden="true"><svg viewBox="0 0 24 262" width="24" height="262">
+      <defs><linearGradient id="hpBody" x1="0" x2="1"><stop offset="0" stop-color="#e9ebef"/><stop offset=".45" stop-color="#ffffff"/><stop offset="1" stop-color="#c9cdd3"/></linearGradient>
+      <linearGradient id="hpPin" x1="0" x2="1"><stop offset="0" stop-color="#9aa1aa"/><stop offset=".5" stop-color="#f4f6f8"/><stop offset="1" stop-color="#7d848d"/></linearGradient></defs>
+      <path d="M12 0C7 70 18 150 12 212" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="4.4" stroke-linecap="round" transform="translate(1.5 1)"/>
+      <path d="M12 0C7 70 18 150 12 212" fill="none" stroke="#f3f4f6" stroke-width="3.2" stroke-linecap="round"/>
+      <path d="M9.4 210h5.2l1.6 18H7.8z" fill="url(#hpBody)" stroke="#b8bdc4" stroke-width=".5"/>
+      <rect x="6" y="226" width="12" height="22" rx="4" fill="url(#hpBody)" stroke="#b3b8bf" stroke-width=".6"/>
+      <rect x="10.4" y="247" width="3.2" height="15" rx="1.4" fill="url(#hpPin)"/>
+      <rect x="10.4" y="251.5" width="3.2" height=".9" fill="#3a3f46"/><rect x="10.4" y="255.5" width="3.2" height=".9" fill="#3a3f46"/></svg></div>
+  <div class="plug dk" id="plug-dk" aria-hidden="true"><svg viewBox="0 0 50 252" width="50" height="252">
+      <defs><linearGradient id="dkBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d4d8de"/></linearGradient>
+      <linearGradient id="dkMetal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8d949d"/><stop offset=".5" stop-color="#eef1f4"/><stop offset="1" stop-color="#9aa1aa"/></linearGradient></defs>
+      <rect x="8" y="0" width="34" height="12" rx="1.5" fill="url(#dkMetal)"/>
+      <rect x="4" y="11" width="42" height="18" rx="4" fill="url(#dkBody)" stroke="#b3b8bf" stroke-width=".6"/>
+      <rect x="17" y="17" width="16" height="2.2" rx="1.1" fill="#c3c8cf"/>
+      <path d="M20.5 29h9l-1.6 14h-5.8z" fill="url(#dkBody)" stroke="#b8bdc4" stroke-width=".5"/>
+      <path d="M25 42C31 110 19 180 25 252" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="4.6" stroke-linecap="round" transform="translate(1.5 1)"/>
+      <path d="M25 42C31 110 19 180 25 252" fill="none" stroke="#f3f4f6" stroke-width="3.4" stroke-linecap="round"/></svg></div>
+  <div class="portglow hp" id="glow-hp"></div><div class="portglow dk" id="glow-dk"></div>
   <div class="ipod" id="ipod">
     <div class="hold" id="hold" title="Hold"></div>
     <div class="bezel"><div class="screen" id="screen">
@@ -3842,14 +3878,40 @@ function setBatteryIndicator(level,charging){
   icon.title=label;
   icon.setAttribute('aria-label',label);
 }
-window.ipodSetBattery=setBatteryIndicator;
+window.ipodSetBattery=(level,charging)=>{setBatteryIndicator(level,charging);setPlugged('dk',!!charging)};
+// Plug animations: the cable slides into its port, settles, and the port glows; pulling it out reverses.
+const plugState={dk:null,hp:null};
+function setPlugged(kind,on){
+  const el=$('#plug-'+kind);if(!el)return;
+  const first=plugState[kind]===null;
+  if(plugState[kind]===on)return;
+  plugState[kind]=on;
+  if(first){   // state at launch: show it as already connected, no animation
+    el.classList.add('instant');el.classList.toggle('on',on);requestAnimationFrame(()=>requestAnimationFrame(()=>el.classList.remove('instant')));
+    $('.hdr .bat')?.classList.toggle('charging',kind==='dk'?on:$('.hdr .bat')?.classList.contains('charging'));return;
+  }
+  el.classList.toggle('on',on);
+  if(kind==='dk')$('.hdr .bat')?.classList.toggle('charging',on);
+  if(on)setTimeout(()=>{
+    if(!el.classList.contains('on'))return;
+    const g=$('#glow-'+kind);g.classList.remove('flash');void g.offsetWidth;g.classList.add('flash');
+    triggerHaptic('confirm');
+    if(!hdrTask)setHdrTask(kind==='dk'?'Charging':'Headphones',1,true);   // never interrupt a sync
+  },560);
+}
+function setHeadphones(kind){
+  if(kind==='bluetooth'&&!hdrTask&&plugState.hp!==true&&plugState.bt!==true)setHdrTask('Bluetooth Headphones',1,true);
+  plugState.bt=kind==='bluetooth';
+  setPlugged('hp',kind==='wired');
+}
+window.ipodSetHeadphones=setHeadphones;
 setBatteryIndicator(null,false);
 window.ipodSetCarPlayRoute=setCarPlayRoute;
 window.webkit?.messageHandlers?.ipodAudioRoute?.postMessage('ready');
 const nativeBattery=window.webkit?.messageHandlers?.ipodBattery;
 if(nativeBattery)nativeBattery.postMessage('ready');
 else if(navigator.getBattery)navigator.getBattery().then(b=>{
-  const update=()=>setBatteryIndicator(b.level,b.charging);
+  const update=()=>{setBatteryIndicator(b.level,b.charging);setPlugged('dk',!!b.charging)};
   update();
   b.addEventListener('levelchange',update);
   b.addEventListener('chargingchange',update);
