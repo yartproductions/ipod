@@ -16,7 +16,36 @@ struct IPodWebView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(trustedURL: hostedURL) }
 
-    func makeUIView(context: Context) -> WKWebView {
+    /// Plain container that pins the web view to its edges with Auto Layout, so the page always gets the
+    /// real window size (also mid-rotation), and tells the page to re-measure whenever the size changes.
+    final class WebContainer: UIView {
+        let webView: WKWebView
+        private var lastSize: CGSize = .zero
+        init(webView: WKWebView) {
+            self.webView = webView
+            super.init(frame: .zero)
+            backgroundColor = .black
+            webView.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(webView)
+            NSLayoutConstraint.activate([
+                webView.leadingAnchor.constraint(equalTo: leadingAnchor),
+                webView.trailingAnchor.constraint(equalTo: trailingAnchor),
+                webView.topAnchor.constraint(equalTo: topAnchor),
+                webView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            ])
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard bounds.size != lastSize, bounds.width > 0, bounds.height > 0 else { return }
+            lastSize = bounds.size
+            webView.setNeedsLayout(); webView.layoutIfNeeded()
+            // WebKit can report the old viewport for a moment after rotating; ask the page to fit again.
+            webView.evaluateJavaScript("window.ipodRefit && window.ipodRefit()", completionHandler: nil)
+        }
+    }
+
+    func makeUIView(context: Context) -> WebContainer {
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: Coordinator.handlerName)
         controller.add(context.coordinator, name: Coordinator.batteryHandlerName)
@@ -40,17 +69,13 @@ struct IPodWebView: UIViewRepresentable {
         #endif
         context.coordinator.monitorDevice(in: webView)
         webView.load(URLRequest(url: hostedURL, cachePolicy: .reloadRevalidatingCacheData))   // always pick up the latest site
-        return webView
+        return WebContainer(webView: webView)
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ uiView: WebContainer, context: Context) {}
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: WKWebView, context: Context) -> CGSize? {
-        guard let width = proposal.width, let height = proposal.height else { return nil }
-        return CGSize(width: width, height: height)
-    }
-
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+    static func dismantleUIView(_ container: WebContainer, coordinator: Coordinator) {
+        let uiView = container.webView
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.handlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.batteryHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.audioRouteHandlerName)
