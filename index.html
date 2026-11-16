@@ -2983,8 +2983,119 @@ async function restoreBackup(data){
   replaceTop(msgView('Restored',`Settings, playlists, memories, achievements and history are back.${fav?`\n${fav} favorites`:''}${rated?`\n${rated} ratings`:''}${missing?`\n\n${missing} rated or favorite songs aren’t in this library yet; add them and restore again.`:''}\n\nReloading…`));
   setTimeout(()=>location.reload(),2200);
 }
+/* ---------- Downloaded music export ---------- */
+function musicExportBatches(tracks){
+  const batches=[];
+  let batch=[],size=0;
+  for(const song of tracks){
+    if(batch.length&&(batch.length>=25||size+song.blob.size>64*1024*1024)){
+      batches.push(batch);
+      batch=[];size=0;
+    }
+    batch.push(song);
+    size+=song.blob.size;
+  }
+  if(batch.length)batches.push(batch);
+  return batches;
+}
+async function musicExportZip(entries){
+  // Audio is already compressed. ZIP store mode preserves each original Blob.
+  const table=Uint32Array.from({length:256},(_,i)=>{
+    for(let bit=0;bit<8;bit++)i=(i>>>1)^((i&1)?0xedb88320:0);
+    return i;
+  });
+  const encoder=new TextEncoder(),parts=[],central=[];
+  let offset=0,centralSize=0;
+  for(const {path,blob} of entries){
+    const name=encoder.encode(path);
+    let crc=0xffffffff;
+    const reader=blob.stream().getReader();
+    for(let chunk=await reader.read();!chunk.done;chunk=await reader.read()){
+      for(const byte of chunk.value)crc=(crc>>>8)^table[(crc^byte)&255];
+    }
+    crc=(crc^0xffffffff)>>>0;
+    const header=new DataView(new ArrayBuffer(30));
+    header.setUint32(0,0x04034b50,true);
+    header.setUint16(4,20,true);
+    header.setUint16(6,0x0800,true);
+    header.setUint16(12,33,true);
+    header.setUint32(14,crc,true);
+    header.setUint32(18,blob.size,true);
+    header.setUint32(22,blob.size,true);
+    header.setUint16(26,name.length,true);
+    const directory=new DataView(new ArrayBuffer(46));
+    directory.setUint32(0,0x02014b50,true);
+    directory.setUint16(4,20,true);
+    new Uint8Array(directory.buffer,6,26).set(new Uint8Array(header.buffer,4,26));
+    directory.setUint32(42,offset,true);
+    parts.push(header.buffer,name,blob);
+    central.push(directory.buffer,name);
+    offset+=30+name.length+blob.size;
+    centralSize+=46+name.length;
+  }
+  const end=new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true);
+  end.setUint16(8,entries.length,true);
+  end.setUint16(10,entries.length,true);
+  end.setUint32(12,centralSize,true);
+  end.setUint32(16,offset,true);
+  return new Blob([...parts,...central,end.buffer],{type:'application/zip'});
+}
+function musicExportExtension(song){
+  const type=song.blob.type.split(';')[0].toLowerCase();
+  return {'audio/mpeg':'mp3','audio/mp3':'mp3','audio/mp4':'m4a','audio/x-m4a':'m4a',
+    'audio/aac':'aac','audio/wav':'wav','audio/x-wav':'wav','audio/flac':'flac',
+    'audio/ogg':'ogg','audio/webm':'webm','audio/aiff':'aiff'}[type]||
+    String(song.filename||song.name||'').match(/\.([a-z0-9]{1,8})$/i)?.[1]?.toLowerCase()||'bin';
+}
+async function saveMusicExport(file){
+  if(navigator.canShare?.({files:[file]})){
+    try{await navigator.share({files:[file],title:'iPod Music Export'});return}
+    catch(error){if(error.name==='AbortError')return}
+  }
+  const link=document.createElement('a');
+  link.href=URL.createObjectURL(file);
+  link.download=file.name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(()=>URL.revokeObjectURL(link.href),60000);
+}
+function exportDownloadedMusic(){
+  const tracks=songs.filter(song=>!song.deleted&&song.blob instanceof Blob&&song.blob.size);
+  if(!tracks.length){push(msgView('Export Music','There are no saved audio files on this device.'));return}
+  const batches=musicExportBatches(tracks),stamp=new Date().toISOString().replace(/[:.]/g,'-');
+  push(list('Export Music',batches.map((batch,part)=>({
+    label:batches.length===1?'Prepare ZIP':'Prepare ZIP '+(part+1)+' of '+batches.length,
+    val:batch.length+' songs',
+    action:async()=>{
+      const pending=loadingView('Preparing Music ZIP…');
+      push(pending);
+      try{
+        const manifest={version:1,createdAt:stamp,batch:part+1,totalBatches:batches.length,tracks:[]};
+        const entries=batch.map((song,i)=>{
+          const videoId=/^[A-Za-z0-9_-]{11}$/.test(song.sourceId||'')?song.sourceId:null;
+          const path='audio/'+(i+1)+(videoId?'-'+videoId:'')+'.'+musicExportExtension(song);
+          manifest.tracks.push({path,videoId,title:song.title||'',artist:song.artist||'',
+            album:song.album||'',mimeType:song.blob.type,size:song.blob.size});
+          return {path,blob:song.blob};
+        });
+        entries.unshift({path:'index.json',blob:new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'})});
+        const zip=await musicExportZip(entries);
+        if(top()!==pending)return;
+        const file=new File([zip],'iPod Music '+stamp+' '+(part+1)+'.zip',{type:zip.type});
+        replaceTop(list('Music ZIP Ready',[
+          {label:'Save or Share ZIP',icon:'download',action:()=>saveMusicExport(file)},
+        ]));
+      }catch(error){
+        if(top()===pending)replaceTop(msgView('Export Failed',error.message||'Could not create the music ZIP.'));
+      }
+    },
+  }))));
+}
 function backupMenu(){return list('Backup & Restore',()=>{const last=ls.get('ipod.backup.last',0);return [
   {label:'Back Up Now',icon:'download',val:last?new Date(last).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'Never',action:backUpNow},
+  {label:'Export Downloaded Music',icon:'download',action:exportDownloadedMusic},
   {label:'Restore from Backup',icon:'library',chev:1,action:pickBackup},
   {label:'What’s Included',chev:1,action:go(msgView('Backup','Everything on this iPod except the music files: settings and colors, favorites and star ratings, playlists and shared playlist codes, song memories, achievements, alarm, listening history and stats.\n\nYour Friends account is anonymous and stays with this browser or app.'))},
 ]})}
