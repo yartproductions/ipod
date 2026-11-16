@@ -5153,8 +5153,8 @@ window.ipodFriendsBridge=Object.freeze({audio:{get paused(){return audio.paused}
 window.ipodMacBridge=Object.freeze({top,cur,queue:()=>queue,qi:()=>qi,time:curTime,duration:()=>audio.duration,paused:()=>audio.paused,
   artFor,nowPlayingArt,lyrics:populateLyrics,push,pop,list,go,msgView,inputView,loadingView,replaceTop,render,toast:t=>setHdrTask(t,1,true)});
 window.ipodListenBridge=Object.freeze({songs:()=>songs,cur,time:curTime,duration:()=>audio.duration,paused:()=>audio.paused,
-  play:resumeAudio,pause:()=>audio.pause(),seek:t=>seekTo(t),art:nowPlayingArt,
-  playSong:s=>{latestPlayRequest++;importedPlayback=null;queue=[s];qi=0;load(true)},
+  play:resumeAudio,pause:()=>audio.pause(),seek:t=>seekTo(t),art:nowPlayingArt,enqueueYT,
+  playSong:(s,playing=true)=>{latestPlayRequest++;importedPlayback=null;queue=[s];qi=0;load(playing)},
   list,go,push,pop,replaceTop,msgView,inputView,loadingView,toast:t=>setHdrTask(t,1,true),
   refresh:()=>{if(top()?.title==='Listen Together'||top()?.type==='custom')render()},openNow:()=>push(nowView()),
   top,render,lyrics:populateLyrics,genArt,esc});
