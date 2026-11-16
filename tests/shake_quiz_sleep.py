@@ -25,6 +25,8 @@ def main():
         # ---- Shake to Shuffle ----
         C.choose(pg, 'Settings'); C.choose(pg, 'Shake to Shuffle')
         check('Shake to Shuffle setting turns on', pg.evaluate("JSON.parse(localStorage.getItem('ipod.settings')).shakeShuffle") == 'On')
+        pg.reload(); pg.wait_for_timeout(1500)
+        check('the iPod still boots with Shake to Shuffle on', pg.text_content('#htitle') == 'iPod' and 'Music' in pg.inner_text('#body') and not errors, errors)
         C.home(pg)
         # simulate three hard jolts
         pg.evaluate("""for(let i=0;i<4;i++){const e=new Event('devicemotion');e.accelerationIncludingGravity={x:25,y:20,z:9.8};dispatchEvent(e)}""")
