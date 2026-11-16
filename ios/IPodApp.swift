@@ -12,6 +12,7 @@ struct IPodApp: App {
         // Background playback inside WKWebView still has to be confirmed on a physical iPhone.
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
+        IPodAlarm.shared.install()   // wake-up alarm notifications start the music
     }
 
     var body: some Scene {

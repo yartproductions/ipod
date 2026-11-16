@@ -50,6 +50,7 @@ struct IPodWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: Coordinator.handlerName)
         controller.add(context.coordinator, name: Coordinator.batteryHandlerName)
         controller.add(context.coordinator, name: Coordinator.audioRouteHandlerName)
+        controller.add(context.coordinator, name: Coordinator.alarmHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -79,6 +80,7 @@ struct IPodWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.handlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.batteryHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.audioRouteHandlerName)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.alarmHandlerName)
         coordinator.stopMonitoringDevice()
     }
 
@@ -86,6 +88,7 @@ struct IPodWebView: UIViewRepresentable {
         static let handlerName = "ipodHaptics"
         static let batteryHandlerName = "ipodBattery"
         static let audioRouteHandlerName = "ipodAudioRoute"
+        static let alarmHandlerName = "ipodAlarm"
         private weak var deviceWebView: WKWebView?
         private var previousBatteryMonitoring = false
 
@@ -110,9 +113,22 @@ struct IPodWebView: UIViewRepresentable {
                 NotificationCenter.default.addObserver(self, selector: #selector(batteryChanged(_:)),
                                                        name: name, object: nil)
             }
+            NotificationCenter.default.addObserver(self, selector: #selector(wakeRequested(_:)), name: .ipodWakeUp, object: nil)
+            if IPodAlarm.shared.pendingWake { deliverWake(attempt: 0) }   // launched by tapping the alarm
             for name in [AVAudioSession.routeChangeNotification, UIApplication.didBecomeActiveNotification] {
                 NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
                                                        name: name, object: nil)
+            }
+        }
+
+        @objc private func wakeRequested(_ note: Notification) { deliverWake(attempt: 0) }
+
+        /// Calls the page's `ipodWakeUp()`, retrying while the page is still loading.
+        private func deliverWake(attempt: Int) {
+            guard let webView = deviceWebView, attempt < 40 else { return }
+            webView.evaluateJavaScript("window.ipodWakeUp && window.ipodWakeUp() ? 1 : 0") { [weak self] result, _ in
+                if (result as? NSNumber)?.intValue == 1 { _ = IPodAlarm.shared.takePendingWake(); return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self?.deliverWake(attempt: attempt + 1) }
             }
         }
 
@@ -186,6 +202,18 @@ struct IPodWebView: UIViewRepresentable {
             }
             if message.name == Self.audioRouteHandlerName {
                 sendAudioRoute()
+                return
+            }
+            if message.name == Self.alarmHandlerName {
+                guard let d = message.body as? [String: Any] else { return }
+                if (d["action"] as? String) == "schedule" {
+                    IPodAlarm.shared.schedule(hour: (d["hour"] as? NSNumber)?.intValue ?? 7,
+                                              minute: (d["minute"] as? NSNumber)?.intValue ?? 0,
+                                              repeats: (d["repeat"] as? Bool) ?? true,
+                                              label: (d["label"] as? String) ?? "your music")
+                } else {
+                    IPodAlarm.shared.cancel()
+                }
                 return
             }
             guard message.name == Self.handlerName else { return }
