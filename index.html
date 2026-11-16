@@ -4723,12 +4723,12 @@ let holdOn=false,lockTimer=null;
 let displayLock=null,requestingDisplayLock=false;
 // Hold keeps the phone's screen on. In the iPhone app the app does it (the web wake lock doesn't
 // work in its web view); in browsers it's the Screen Wake Lock, retried on your next tap if refused.
-const nativeKeepAwake=()=>window.webkit?.messageHandlers?.ipodKeepAwake;
+const nativeKeepAwake=()=>globalThis.webkit?.messageHandlers?.ipodKeepAwake;
 let wakeRetryArmed=false;
 function armWakeRetry(){
   if(wakeRetryArmed)return;wakeRetryArmed=true;
-  const retry=()=>{removeEventListener('touchend',retry,true);removeEventListener('click',retry,true);wakeRetryArmed=false;syncHoldDisplayLock()};
-  addEventListener('touchend',retry,true);addEventListener('click',retry,true);
+  const g=globalThis,retry=()=>{g.removeEventListener?.('touchend',retry,true);g.removeEventListener?.('click',retry,true);wakeRetryArmed=false;syncHoldDisplayLock()};
+  g.addEventListener?.('touchend',retry,true);g.addEventListener?.('click',retry,true);
 }
 async function syncHoldDisplayLock(){
   if(nativeKeepAwake()){nativeKeepAwake().postMessage({on:holdOn});return}
