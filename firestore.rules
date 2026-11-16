@@ -79,7 +79,12 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /friendRequests/{id} {
-      allow get, list: if signedIn()
+      // A missing request between you and someone else reads as "doesn't exist" instead of failing,
+      // so a friend card can check both directions (only ids that include your own uid).
+      allow get: if signedIn() && (
+        (resource == null && (id.matches(request.auth.uid + '_.+') || id.matches('.+_' + request.auth.uid)))
+        || (resource != null && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid)));
+      allow list: if signedIn()
         && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['from', 'to', 'status', 'createdAt', 'updatedAt'])

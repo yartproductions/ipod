@@ -281,8 +281,10 @@ async function friendCard(uid){
   const doc=await api.db.collection('profiles').doc(uid).get();
   if(!doc.exists)return msgView('Not Found','This profile is unavailable.');
   const p=doc.data();
-  const outbound=await api.db.collection('friendRequests').doc(account.uid+'_'+uid).get();
-  const inbound=await api.db.collection('friendRequests').doc(uid+'_'+account.uid).get();
+  // A request that doesn't exist can come back as permission-denied with older rules: treat it as missing.
+  const getReq=async id=>{const ref=api.db.collection('friendRequests').doc(id);
+    try{return await ref.get()}catch(e){if(e&&e.code==='permission-denied')return {exists:false,ref,data:()=>undefined};throw e}};
+  const [outbound,inbound]=await Promise.all([getReq(account.uid+'_'+uid),getReq(uid+'_'+account.uid)]);
   const chosen=outbound.exists?outbound:inbound;
   const state=chosen.exists?chosen.data().status:'none';
   return list('@'+p.username,[
