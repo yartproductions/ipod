@@ -14,6 +14,7 @@ targets:
     sources:
       - path: IPodApp.swift
       - path: IPodWebView.swift
+      - path: IPodAlarm.swift
       - path: Assets.xcassets
     settings:
       base:

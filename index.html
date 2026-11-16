@@ -707,6 +707,38 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .video-toolbar button:focus-visible{outline:2px solid #83bfff}
 .ipod-video p{position:absolute;top:38px;left:6px;right:6px;margin:0;padding:5px;background:#10151de6;font-size:11px;line-height:1.3;text-align:center;pointer-events:none}
 .ipod-video p:empty{display:none}
+.quiz,.timepick{position:relative;height:100%;box-sizing:border-box;display:flex;flex-direction:column;padding:6px 10px;color:#111;font-size:13px}
+#shakefx{position:absolute;inset:0;z-index:40;overflow:hidden;background:radial-gradient(circle at 50% 42%,#2b2b30,#0b0b0d 75%);animation:shakeIn .18s ease-out}
+#shakefx i{position:absolute;width:52px;height:52px;background:#333 center/cover;border-radius:3px;box-shadow:0 3px 8px rgba(0,0,0,.55),inset 0 0 0 .5px rgba(255,255,255,.25)}
+#shakefx .pickcap{position:absolute;left:0;right:0;bottom:12px;text-align:center;color:#fff;opacity:0;transform:translateY(8px);transition:opacity .35s .25s,transform .35s .25s;text-shadow:0 1px 3px #000}
+#shakefx .pickcap b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 12px}
+#shakefx .pickcap span{font-size:11px;opacity:.75}
+#shakefx.picked .pickcap{opacity:1;transform:none}
+@keyframes shakeIn{from{opacity:0}}
+.quiz .qtop{display:flex;justify-content:space-between;font-weight:600;font-size:12px}
+.quiz .qbar{height:4px;background:#ddd;border-radius:2px;margin:4px 0 6px;overflow:hidden}
+.quiz .qbar i{display:block;height:100%;background:linear-gradient(90deg,#3a8ee6,#62b4ff);transition:width .1s linear}
+.quiz .qeq{height:38px;display:flex;align-items:flex-end;justify-content:center;gap:4px;margin-bottom:6px}
+.quiz .qeq i{width:6px;background:#3a8ee6;border-radius:2px;animation:qeq .9s ease-in-out infinite alternate}
+.quiz .qeq i:nth-child(2){animation-delay:-.3s}.quiz .qeq i:nth-child(3){animation-delay:-.6s}.quiz .qeq i:nth-child(4){animation-delay:-.15s}.quiz .qeq i:nth-child(5){animation-delay:-.45s}
+@keyframes qeq{from{height:6px}to{height:36px}}
+.quiz .qreveal{width:38px;height:38px;margin:0 auto 6px;background:#333 center/cover;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,.35);animation:qpop .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes qpop{from{transform:scale(.4);opacity:0}}
+.quiz .qopts{display:flex;flex-direction:column;gap:3px}
+.quiz .qo{padding:3px 8px;border-radius:4px;background:#f1f1f1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .15s,color .15s}
+.quiz .qo.sel{background:linear-gradient(#5aa9f5,#2d7fd8);color:#fff}
+.quiz .qo.right{background:#3fae5a;color:#fff}
+.quiz .qo.wrong{background:#d9534f;color:#fff}
+.quiz .qhint,.timepick .tphint{margin-top:auto;text-align:center;font-size:10.5px;color:#666}
+.quiz.end{align-items:center;justify-content:center;text-align:center;gap:4px}
+.quiz .qbig{font-size:40px;font-weight:700;line-height:1}.quiz .qicon{font-size:30px;font-weight:700;color:#3a8ee6}
+.quiz .qsub{font-size:12px;color:#333}.quiz .qbest{font-size:11px;color:#777}
+.quiz.end .qhint{margin-top:10px}
+.timepick{align-items:center;justify-content:center}
+.timepick .tp{font-size:40px;font-weight:300;letter-spacing:1px;margin-top:auto}
+.timepick .tp span,.timepick .tp small{padding:0 3px;border-radius:5px;transition:background .15s,color .15s}
+.timepick .tp small{font-size:18px}
+.timepick .on{background:linear-gradient(#5aa9f5,#2d7fd8);color:#fff}
 </style>
 </head>
 <body>
@@ -776,7 +808,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -832,7 +864,7 @@ addEventListener('resize',window.ipodRefit);
 addEventListener('orientationchange',window.ipodRefit);
 window.visualViewport?.addEventListener('resize',window.ipodRefit);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)window.ipodRefit()});
-fit();applyHDR();
+fit();applyHDR();if(settings.shakeShuffle==='On')startShakeListening();
 // iOS can refuse autoplay (e.g. Low Power Mode): start the brightness layer on the first touch instead.
 addEventListener('pointerdown',()=>{if(document.documentElement.classList.contains('hdr'))document.getElementById('hdrboost')?.play?.().catch(()=>{})},{once:true,capture:true});
 const COLORS=['Silver','Black','Graphite','Red','Blue','Green','Pink','Gold'];
@@ -1171,7 +1203,7 @@ function syncMediaPosition(){
     duration,position:Math.max(0,Math.min(position,duration)),playbackRate:audio.playbackRate||1
   })}catch(e){}
 }
-onActiveAudio('ended',()=>next(false));
+onActiveAudio('ended',()=>{if(sleepAtSongEnd())return;next(false)});
 ['play','pause','playing','waiting'].forEach(e=>onActiveAudio(e,()=>{
   renderHdr();syncMediaPlaybackState();
 }));
@@ -1574,6 +1606,8 @@ function musicRootMenu(){return list('Music',()=>[
   {label:'Offline Music',icon:'library',action:go(musicMenu),chev:1},
   {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
   {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
+  {label:'Sleep Timer',icon:'clock',val:sleepLeft(),chev:1,action:go(sleepMenu)},
+  {label:'Wake-Up Alarm',icon:'clock',val:alarm.on?alarmTime():'Off',chev:1,action:go(alarmMenu)},
 ])}
 function flowsMenu(){return list('Flows',[
   {label:'Album Flow',icon:'album',action:()=>openFlow(),chev:1},
@@ -1788,6 +1822,7 @@ function settingsMenu(){
       {label:'Cancel',action:()=>pop()},
       {label:'Erase All Songs',action:async()=>{latestPlayRequest++;importedPlayback=null;audio.pause();audio.removeAttribute('src');if(!isYT(cur())){qi=-1;queue=[]}songs=[];await dbClear();stack=[mainMenu()];render()}}]))},
     {label:'Clear YouTube History',action:go(()=>{history=[];ls.set('ipod.history',[]);return msgView('Cleared','Recently Played is empty.')})},
+    {label:'Shake to Shuffle',val:settings.shakeShuffle,action:()=>toggleShakeShuffle()},
     {label:'Bright Screen (HDR)',val:hdrCapable()?settings.brightScreen:'Not Supported',action:()=>{
       if(!hdrCapable())return push(msgView('Bright Screen','This display or browser doesn’t show HDR brightness.'));
       settings.brightScreen={Off:'On',On:'Max',Max:'Off'}[settings.brightScreen]||'On';saveSettings();applyHDR();render()}},
@@ -1805,7 +1840,8 @@ function aboutView(){return list('About',[
   {label:'Version',val:'3.13'}])}
 function extrasMenu(){return list('Games',[
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))},
-  {label:'Bubbles',chev:1,action:go(()=>({type:'bubbles',title:'Bubbles',g:null}))}])}
+  {label:'Bubbles',chev:1,action:go(()=>({type:'bubbles',title:'Bubbles',g:null}))},
+  {label:'Music Quiz',chev:1,action:go(quizView)}])}
 
 /* ---------- Clock ---------- */
 function renderClock(){
@@ -2036,6 +2072,204 @@ function bubblesInput(v,btn,dir){
   if(btn==='select'){if(g.over){v.g=bubNew();return}if(g.paused){g.paused=false;return}if(g.intro){g.intro=false;return}bubShoot(g)}
   if(btn==='play'&&!g.over)g.paused=!g.paused;
   if((btn==='next'||btn==='prev')&&!g.shot&&!g.over&&!g.paused){[g.cur,g.next]=[g.next,g.cur];if(settings.haptics)triggerHaptic('selection')}
+}
+/* ---------- Shake to Shuffle: covers tumble around the screen, one pops out and plays ---------- */
+const SHAKE={on:false,last:0,peaks:[]};
+function shakeAllowedHere(){const t=top()?.type;return !holdOn&&!['brick','bubbles','quiz','input','timepick'].includes(t)&&!$('#shakefx')}
+function onMotion(e){
+  const a=e.accelerationIncludingGravity||e.acceleration;if(!a||a.x==null)return;
+  const m=Math.hypot(a.x,a.y,a.z),now=Date.now();
+  if(Math.abs(m-9.81)>14){SHAKE.peaks=SHAKE.peaks.filter(t=>now-t<700);SHAKE.peaks.push(now)}
+  if(SHAKE.peaks.length>=3&&now-SHAKE.last>2500){SHAKE.peaks=[];SHAKE.last=now;if(shakeAllowedHere())shakeShuffle()}
+}
+function startShakeListening(){
+  if(SHAKE.on||settings.shakeShuffle!=='On')return;
+  SHAKE.on=true;addEventListener('devicemotion',onMotion);
+}
+function stopShakeListening(){SHAKE.on=false;removeEventListener('devicemotion',onMotion)}
+// iOS asks for motion permission once, from a tap: done when you turn the setting on.
+async function toggleShakeShuffle(){
+  if(settings.shakeShuffle==='On'){settings.shakeShuffle='Off';saveSettings();stopShakeListening();return render()}
+  try{
+    if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
+      const r=await DeviceMotionEvent.requestPermission();
+      if(r!=='granted')return push(msgView('Motion Access Needed','Allow Motion & Orientation access to shake for a random song.'));
+    }
+  }catch(e){return push(msgView('Motion Access Needed','Allow Motion & Orientation access to shake for a random song.'))}
+  settings.shakeShuffle='On';saveSettings();startShakeListening();render();
+}
+function shakeShuffle(){
+  const pool=songs.filter(s=>!s.deleted);if(!pool.length)return;
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const pick=pool[Math.random()*pool.length|0];
+  const covers=shuffled(pool).slice(0,13);if(!covers.includes(pick))covers[0]=pick;
+  const fx=document.createElement('div');fx.id='shakefx';
+  fx.innerHTML=covers.map(s=>`<i style="background-image:url(&quot;${esc(artFor(s))}&quot;)"></i>`).join('')+
+    `<div class="pickcap"><b>${esc(pick.title)}</b><span>${esc(pick.artist||'')}</span></div>`;
+  screenEl.appendChild(fx);
+  const W=screenEl.clientWidth,H=screenEl.clientHeight,tiles=[...fx.querySelectorAll('i')],chosen=tiles[covers.indexOf(pick)];
+  triggerHaptic('confirm');
+  if(!reduce)[90,220,360,520,700].forEach(t=>setTimeout(()=>triggerHaptic('selection'),t));
+  tiles.forEach((el,i)=>{
+    const sx=Math.random()*(W-56),sy=20+Math.random()*(H-76);
+    el.style.left=sx+'px';el.style.top=sy+'px';
+    if(reduce){el.animate([{opacity:0},{opacity:.9}],{duration:200,fill:'forwards'});return}
+    const frames=[{transform:`translate(0,-${H}px) rotate(${(Math.random()-.5)*90}deg)`,opacity:0}];
+    for(let k=0;k<5;k++)frames.push({transform:`translate(${(Math.random()-.5)*W*.7}px,${(Math.random()-.5)*H*.6}px) rotate(${(Math.random()-.5)*160}deg)`,opacity:1});
+    frames.push({transform:`translate(0,0) rotate(${(Math.random()-.5)*24}deg)`,opacity:.85});
+    el.animate(frames,{duration:1000+i*25,easing:'cubic-bezier(.3,.7,.4,1)',fill:'forwards'});
+  });
+  setTimeout(()=>{
+    // the winner flies to the front; the rest sink back
+    tiles.forEach(el=>{if(el!==chosen)el.animate([{opacity:.85},{opacity:.12,transform:'scale(.8)'}],{duration:350,fill:'forwards'})});
+    const r=chosen.getBoundingClientRect(),sr=screenEl.getBoundingClientRect(),k=sr.width/screenEl.clientWidth;
+    const cx=(r.left-sr.left)/k,cy=(r.top-sr.top)/k,size=Math.min(118,H*.52),tx=(W-size)/2-cx,ty=H*.42-size/2-cy;
+    chosen.style.zIndex=5;
+    chosen.animate([{transform:'none'},{transform:`translate(${tx}px,${ty}px) scale(${size/52})`,boxShadow:'0 10px 26px rgba(0,0,0,.6)'}],
+      {duration:reduce?1:520,easing:'cubic-bezier(.2,1.2,.35,1)',fill:'forwards'});
+    fx.classList.add('picked');triggerHaptic('success');
+  },reduce?200:1150);
+  setTimeout(()=>{
+    fx.animate([{opacity:1},{opacity:0}],{duration:300,fill:'forwards'}).onfinish=()=>fx.remove();
+    if(['brick','bubbles','quiz','timepick'].includes(top().type))return;   // you started a game mid-shake: don't yank you out
+    latestPlayRequest++;importedPlayback=null;queue=[pick,...shuffled(pool.filter(s=>s!==pick))];qi=0;load(true);
+    if(top().type!=='now')push(nowView());else render();
+  },reduce?900:2250);
+}
+window.ipodShake=()=>{if(shakeAllowedHere())shakeShuffle()};
+
+/* ---------- Music Quiz: hear a few seconds, pick the song ---------- */
+const QUIZ_ROUNDS=10,QUIZ_TIME=10;
+const quizAudio=new Audio();quizAudio.preload='auto';
+function quizStop(){try{quizAudio.pause()}catch(e){}clearInterval(quizStop.t)}
+function quizView(){
+  const pool=songs.filter(s=>!s.deleted&&s.blob&&s.title);
+  const titles=new Set(pool.map(s=>s.title.toLowerCase()));
+  if(titles.size<4)return msgView('Music Quiz','Add at least 4 different songs to play.');
+  return {type:'quiz',title:'Music Quiz',round:0,score:0,streak:0,best:+(ls.get('ipod.quiz.best',0))||0,q:null,pool};
+}
+function quizNext(v){
+  quizStop();
+  if(v.round>=QUIZ_ROUNDS){v.q=null;v.done=true;if(v.score>v.best){v.best=v.score;ls.set('ipod.quiz.best',v.score);v.newBest=true}render();return}
+  v.round++;
+  const ans=v.pool[Math.random()*v.pool.length|0],seen=new Set([ans.title.toLowerCase()]),opts=[ans];
+  for(const s of shuffled(v.pool)){if(opts.length>=4)break;const k=s.title.toLowerCase();if(!seen.has(k)){seen.add(k);opts.push(s)}}
+  v.q={ans,opts:shuffled(opts),sel:0,left:QUIZ_TIME,picked:null};
+  if(!audio.paused)playPause();   // pause your music while the quiz plays
+  if(quizAudio.src)URL.revokeObjectURL(quizAudio.src);
+  quizAudio.src=URL.createObjectURL(ans.blob);
+  quizAudio.onloadedmetadata=()=>{const d=quizAudio.duration||60;quizAudio.currentTime=Math.max(0,d*(.2+Math.random()*.4));quizAudio.play().catch(()=>{})};
+  quizStop.t=setInterval(()=>{if(top()!==v||!v.q||v.q.picked!=null)return;v.q.left=Math.max(0,v.q.left-.1);
+    const bar=$('#qtime');if(bar)bar.style.width=(v.q.left/QUIZ_TIME*100)+'%';if(v.q.left<=0)quizPick(v,-1)},100);
+  render();
+}
+function quizPick(v,i){
+  const q=v.q;if(!q||q.picked!=null)return;q.picked=i;clearInterval(quizStop.t);
+  const ok=i>=0&&q.opts[i]===q.ans;
+  if(ok){v.streak++;v.score+=Math.round(50+q.left*10)+(v.streak>1?(v.streak-1)*20:0);triggerHaptic('success')}
+  else{v.streak=0;triggerHaptic('confirm')}
+  render();
+}
+function renderQuiz(v){
+  if(v.done){
+    body.innerHTML=`<div class="quiz end"><div class="qbig">${v.score}</div><div class="qsub">points${v.newBest?' · New best!':''}</div><div class="qbest">Best ${v.best}</div><div class="qhint">Center to play again · MENU to quit</div></div>`;return}
+  if(!v.q){body.innerHTML=`<div class="quiz end"><div class="qicon">♪?</div><div class="qsub">Hear a few seconds of a song from your library.<br>Pick the right title before time runs out.</div><div class="qhint">Center to start · ${QUIZ_ROUNDS} rounds</div></div>`;return}
+  const q=v.q,res=q.picked!=null;
+  body.innerHTML=`<div class="quiz"><div class="qtop"><span>${v.round}/${QUIZ_ROUNDS}</span><span>${v.streak>1?'🔥 '+v.streak+' · ':''}${v.score}</span></div>
+    <div class="qbar"><i id="qtime" style="width:${q.left/QUIZ_TIME*100}%"></i></div>
+    ${res?`<div class="qreveal" style="background-image:url(&quot;${esc(artFor(q.ans))}&quot;)"></div>`:'<div class="qeq"><i></i><i></i><i></i><i></i><i></i></div>'}
+    <div class="qopts">${q.opts.map((s,i)=>`<div class="qo${i===q.sel&&!res?' sel':''}${res&&s===q.ans?' right':''}${res&&i===q.picked&&s!==q.ans?' wrong':''}" data-i="${i}">${esc(s.title)}</div>`).join('')}</div>
+    ${res?`<div class="qhint">${q.picked>=0&&q.opts[q.picked]===q.ans?'Correct!':'It was “'+esc(q.ans.title)+'”'} · Center for next</div>`:''}</div>`;
+  body.querySelectorAll('.qo').forEach(el=>el.addEventListener('click',()=>{if(q.picked==null){q.sel=+el.dataset.i;quizPick(v,q.sel)}}));
+}
+function quizInput(v,btn,dir){
+  if(dir){if(v.q&&v.q.picked==null){const n=Math.max(0,Math.min(3,v.q.sel+dir));if(n!==v.q.sel){v.q.sel=n;click();render()}}return}
+  if(btn!=='select')return;
+  if(v.done){v.done=false;v.round=0;v.score=0;v.streak=0;v.newBest=false;return quizNext(v)}
+  if(!v.q||v.q.picked!=null)return quizNext(v);
+  quizPick(v,v.q.sel);
+}
+
+/* ---------- Sleep Timer + Wake-Up Alarm ---------- */
+const sleep={end:0,mode:null,t:null,baseVol:null};
+function sleepLeft(){return sleep.mode==='song'?'End of Song':sleep.end?Math.max(0,Math.ceil((sleep.end-Date.now())/60000))+' min':'Off'}
+function setSleep(mode){
+  clearInterval(sleep.t);if(sleep.baseVol!=null){setVol(sleep.baseVol);sleep.baseVol=null}
+  sleep.mode=mode;sleep.end=typeof mode==='number'?Date.now()+mode*60000:0;
+  if(!mode)return;
+  sleep.t=setInterval(()=>{
+    if(sleep.mode==='song')return;
+    const left=sleep.end-Date.now();
+    if(left<=45000&&!audio.paused){if(sleep.baseVol==null)sleep.baseVol=getVol();setVol(sleep.baseVol*Math.max(0,left/45000))}   // gentle fade over the last 45 s
+    if(left<=0)sleepNow();
+  },500);
+}
+function sleepNow(){
+  clearInterval(sleep.t);if(!audio.paused)playPause();
+  if(sleep.baseVol!=null){const v=sleep.baseVol;sleep.baseVol=null;setTimeout(()=>setVol(v),400)}
+  sleep.mode=null;sleep.end=0;setHdrTask('Sleep Timer · Good night',1,true);
+}
+function sleepMenu(){return list('Sleep Timer',()=>[
+  {label:'Off',val:!sleep.mode?'✓':'',action:()=>{setSleep(null);pop()}},
+  ...[15,30,45,60,90].map(m=>({label:m+' Minutes',val:sleep.mode===m?sleepLeft():'',action:()=>{setSleep(m);triggerHaptic('success');pop()}})),
+  {label:'End of This Song',val:sleep.mode==='song'?'✓':'',action:()=>{setSleep('song');triggerHaptic('success');pop()}},
+])}
+// A song ending while "End of This Song" is set stops playback instead of advancing.
+function sleepAtSongEnd(){if(sleep.mode==='song'){sleep.mode=null;setHdrTask('Sleep Timer · Good night',1,true);return true}return false}
+
+const alarm=Object.assign({on:false,hour:7,minute:30,source:'favorites',repeat:true},ls.get('ipod.alarm',{}));
+const nativeAlarm=()=>window.webkit?.messageHandlers?.ipodAlarm;
+function saveAlarm(){
+  ls.set('ipod.alarm',alarm);
+  const h=nativeAlarm();
+  if(h)h.postMessage(alarm.on?{action:'schedule',hour:alarm.hour,minute:alarm.minute,repeat:!!alarm.repeat,label:alarmSourceLabel()}:{action:'cancel'});
+}
+const alarmTime=()=>{const h=alarm.hour%12||12;return `${h}:${String(alarm.minute).padStart(2,'0')} ${alarm.hour<12?'AM':'PM'}`};
+function alarmSourceLabel(){return alarm.source==='favorites'?'Favorites':alarm.source==='shuffle'?'Shuffle All':alarm.source==='recent'?'Recently Played':'Favorites'}
+function alarmSongs(){
+  const live=songs.filter(s=>!s.deleted);
+  if(alarm.source==='favorites'){const f=live.filter(s=>s.favorite);if(f.length)return shuffled(f)}
+  if(alarm.source==='recent'){const by=new Map(live.map(s=>[s.id,s])),seen=new Set(),r=[];
+    for(const e of listened){const s=by.get(e.id);if(s&&!seen.has(s.id)){seen.add(s.id);r.push(s)}if(r.length>=40)break}
+    if(r.length)return r}
+  return shuffled(live);
+}
+// Start the wake-up music: soft at first, rising over a minute.
+let lastWake=0;
+function wakeUp(){
+  if(Date.now()-lastWake<120000)return true;   // the app and the notification can both ring: start once
+  const list=alarmSongs();if(!list.length)return false;   // library still loading: the app retries
+  lastWake=Date.now();
+  latestPlayRequest++;importedPlayback=null;queue=list;qi=0;
+  const target=Math.max(.35,getVol());setVol(.05);load(true);
+  if(top().type!=='now')push(nowView());else render();
+  setHdrTask('Good morning',1,true);triggerHaptic('success');
+  let k=0;const ramp=setInterval(()=>{k++;setVol(.05+(target-.05)*Math.min(1,k/60));if(k>=60)clearInterval(ramp)},1000);
+  if(!alarm.repeat){alarm.on=false;saveAlarm()}
+  return true;
+}
+window.ipodWakeUp=()=>wakeUp();   // called by the iPhone app's alarm notification
+// With the app open, ring on time even without the native notification.
+let alarmFired='';
+setInterval(()=>{
+  if(!alarm.on)return;const d=new Date(),key=d.toDateString()+alarm.hour+':'+alarm.minute;
+  if(d.getHours()===alarm.hour&&d.getMinutes()===alarm.minute&&alarmFired!==key){alarmFired=key;if(!document.hidden)wakeUp()}
+},5000);
+function alarmMenu(){return list('Wake-Up Alarm',()=>[
+  {label:'Alarm',val:alarm.on?'On':'Off',action:()=>{alarm.on=!alarm.on;saveAlarm();triggerHaptic(alarm.on?'success':'selection');render()}},
+  {label:'Time',val:alarmTime(),chev:1,action:go(()=>({type:'timepick',title:'Wake-Up Time',h:alarm.hour,m:alarm.minute,field:0}))},
+  {label:'Play',val:alarmSourceLabel(),action:()=>{alarm.source={favorites:'shuffle',shuffle:'recent',recent:'favorites'}[alarm.source]||'favorites';saveAlarm();render()}},
+  {label:'Repeat Daily',val:alarm.repeat?'On':'Off',action:()=>{alarm.repeat=!alarm.repeat;saveAlarm();render()}},
+  ...(nativeAlarm()?[]:[{label:'How It Rings',chev:1,action:go(msgView('Wake-Up Alarm','In the iPhone app the alarm rings with a notification even when the phone is locked; tap it to start the music. In the browser it only rings while the iPod is open.'))}]),
+])}
+function renderTimePick(v){
+  const h=v.h%12||12,mm=String(v.m).padStart(2,'0'),ap=v.h<12?'AM':'PM';
+  body.innerHTML=`<div class="timepick"><div class="tp"><span class="${v.field===0?'on':''}">${h}</span>:<span class="${v.field===1?'on':''}">${mm}</span> <small class="${v.field===2?'on':''}">${ap}</small></div>
+    <div class="tphint">Spin to change · Center for next · ${v.field===2?'Center to save':'MENU to cancel'}</div></div>`;
+}
+function timePickInput(v,btn,dir){
+  if(dir){if(v.field===0)v.h=(v.h+dir+24)%24;else if(v.field===1)v.m=(v.m+dir*1+60)%60;else v.h=(v.h+12)%24;click();return render()}
+  if(btn==='select'){if(v.field<2){v.field++;click();return render()}alarm.hour=v.h;alarm.minute=v.m;alarm.on=true;saveAlarm();triggerHaptic('success');pop()}
 }
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
@@ -2361,6 +2595,10 @@ function renderView(){
     brickMount(v);
   }else if(v.type==='bubbles'){
     bubblesMount(v);
+  }else if(v.type==='quiz'){
+    renderQuiz(v);
+  }else if(v.type==='timepick'){
+    renderTimePick(v);
   }else if(v.type==='now'&&settings.npStyle==='Flow'&&cur()){
     renderNowFlow(changed?direction:0);
   }else if(v.type==='now'&&settings.style==='Modern'&&cur()){
@@ -3700,6 +3938,8 @@ function scroll(dir){
   const v=top();
   if(v.type==='brick'){brickInput(v,null,dir);return}
   if(v.type==='bubbles'){bubblesInput(v,null,dir);return}
+  if(v.type==='quiz'){quizInput(v,null,dir);return}
+  if(v.type==='timepick'){timePickInput(v,null,dir);return}
   if(v.type==='music-home'){const ns=Math.max(0,Math.min(3,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();renderMusicHome(v)}return}
   if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v);updateFavoriteStar()}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
@@ -3721,6 +3961,9 @@ function press(btn){
   if(window.ipodVideos?.playing){window.ipodVideos.control(btn);return}
   if(sheet){sheetPress(btn);return}
   if(top().type==='brick'&&btn!=='menu'){click();brickInput(top(),btn,0);return}
+  if(top().type==='quiz'&&btn!=='menu'){quizInput(top(),btn,0);return}
+  if(top().type==='quiz'&&btn==='menu')quizStop();
+  if(top().type==='timepick'&&btn!=='menu'){timePickInput(top(),btn,0);return}
   if(top().type==='bubbles'&&btn!=='menu'){if(btn!=='select')click();bubblesInput(top(),btn,0);return}
   click();
   if(btn==='select')triggerHaptic('confirm');
