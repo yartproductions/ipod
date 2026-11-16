@@ -868,6 +868,9 @@ html.landscape .flow.withpanel .stage{left:32%}
 .flow .fpanel .ft{display:block;padding:1px 7px 4px;white-space:normal}
 .flow .fpanel .ft b{display:block;font-size:11px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .flow .fpanel .ft span{display:block;opacity:.6;font-size:9px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.flow .fpanel{transition:transform .45s cubic-bezier(.2,.9,.3,1),opacity .3s}
+.flow .fpanel.inside>*{animation:fpIn .28s ease-out}
+@keyframes fpIn{from{opacity:0;transform:translateY(4px)}}
 </style>
 </head>
 <body>
@@ -3843,13 +3846,22 @@ function flowUpdate(v){
 function flowPanel(v){
   const f=$('#flow');if(!f||v.type!=='flow'||settings.flowTracks==='Off')return;
   let p=f.querySelector('.fpanel');if(!p){p=document.createElement('div');p.className='fpanel';f.appendChild(p)}
-  f.classList.remove('withpanel');clearTimeout(flowPanel.t);
+  clearTimeout(flowPanel.t);
   const a=v.albums[v.sel];if(!a)return;
+  // while you spin: the whole Flow as a list, your spot highlighted
+  p.innerHTML=flowListHTML(v);p.classList.remove('inside');f.classList.add('withpanel');
+  // when you stop: what's inside that cover
   flowPanel.t=setTimeout(()=>{
     if(top()!==v||v.albums[v.sel]!==a||!document.body.contains(f))return;
     const html=flowPanelHTML(v,a);if(!html)return;
-    p.innerHTML=html;f.classList.add('withpanel');
-  },420);
+    p.innerHTML=html;p.classList.add('inside');
+  },650);
+}
+function flowListHTML(v){
+  const n=v.albums.length,show=7,from=Math.max(0,Math.min(n-show,v.sel-3)),to=Math.min(n,from+show);
+  let rows='';for(let i=from;i<to;i++){const x=v.albums[i];
+    rows+=`<div class="${i===v.sel?'on':''}"><i>${i+1}</i><span>${esc(x.album||x.title||'')}</span></div>`}
+  return `<h4>${esc(v.title||'Flow')} · ${n}</h4>${rows}`;
 }
 // Several songs: the track list. One song: its details. A streamed suggestion: what it is.
 function flowPanelHTML(v,a){
