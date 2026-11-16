@@ -32,7 +32,7 @@ targets:
         UILaunchScreen:
           UIColorName: ""
         UIRequiresFullScreen: true
-        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: false
         UIBackgroundModes: [audio]
