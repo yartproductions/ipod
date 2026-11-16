@@ -16,7 +16,7 @@ struct IPodWebView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(trustedURL: hostedURL) }
 
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> UIView {
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: Coordinator.handlerName)
         controller.add(context.coordinator, name: Coordinator.batteryHandlerName)
@@ -28,6 +28,16 @@ struct IPodWebView: UIViewRepresentable {
         configuration.mediaTypesRequiringUserActionForPlayback = []
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        let container = UIView(frame: .zero)
+        container.backgroundColor = .black
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: container.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
         webView.isOpaque = false
         webView.backgroundColor = .black
         webView.scrollView.backgroundColor = .black
@@ -40,20 +50,21 @@ struct IPodWebView: UIViewRepresentable {
         #endif
         context.coordinator.monitorDevice(in: webView)
         webView.load(URLRequest(url: hostedURL, cachePolicy: .reloadRevalidatingCacheData))   // always pick up the latest site
-        return webView
+        return container
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {}
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: WKWebView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIView, context: Context) -> CGSize? {
         guard let width = proposal.width, let height = proposal.height else { return nil }
         return CGSize(width: width, height: height)
     }
 
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.handlerName)
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.batteryHandlerName)
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.audioRouteHandlerName)
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        guard let webView = uiView.subviews.first(where: { $0 is WKWebView }) as? WKWebView else { return }
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.handlerName)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.batteryHandlerName)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.audioRouteHandlerName)
         coordinator.stopMonitoringDevice()
     }
 
