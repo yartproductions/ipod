@@ -1691,6 +1691,8 @@ function musicRootMenu(){return list('Music',()=>[
   {label:'Offline Music',icon:'library',action:go(musicMenu),chev:1},
   {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
   {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
+  {label:'Smart Playlists',icon:'music',chev:1,action:go(smartMenu)},
+  {label:'Sessions',icon:'clock',chev:1,action:go(sessionsMenu)},
   {label:'Sleep Timer',icon:'clock',val:sleepLeft(),chev:1,action:go(sleepMenu)},
   {label:'Wake-Up Alarm',icon:'clock',val:alarm.on?alarmTime():'Off',chev:1,action:go(alarmMenu)},
 ])}
@@ -2384,6 +2386,59 @@ function timePickInput(v,btn,dir){
   if(dir){if(v.field===0)v.h=(v.h+dir+24)%24;else if(v.field===1)v.m=(v.m+dir*1+60)%60;else v.h=(v.h+12)%24;click();return render()}
   if(btn==='select'){if(v.field<2){v.field++;click();return render()}alarm.hour=v.h;alarm.minute=v.m;alarm.on=true;saveAlarm();triggerHaptic('success');pop()}
 }
+/* ---------- Smart Playlists + Sessions (built from what you actually play) ---------- */
+const DAY=864e5;
+function addedAt(s){const t=s.added||parseInt(String(s.id||'').slice(0,8),36);return t>15e11&&t<=Date.now()+DAY?t:0}
+function liveSongs(){return songs.filter(s=>!s.deleted)}
+function playCounts(since=0){const m=new Map();for(const e of listened)if(e.at>=since)m.set(e.id,(m.get(e.id)||0)+1);return m}
+function lastPlayedMap(){const m=new Map();for(const e of listened)if(!m.has(e.id))m.set(e.id,e.at);return m}   // newest first
+function songListView(title,ss,sub){
+  const v=list(title,()=>[
+    {label:'Play',icon:'play',val:ss.length+' songs',action:()=>playList(ss,0)},
+    {label:'Shuffle',icon:'shuffle',action:()=>playList(shuffled(ss),0)},
+    {label:'Save as Playlist',icon:'plus',action:()=>{window.ipodPlaylistImport?.saveListeningHistory(title+(sub?' · '+sub:''),ss);setHdrTask('Saved “'+title+'”',1,true);triggerHaptic('success')}},
+    ...ss.map((x,i)=>({label:x.title,song:x,action:()=>playList(ss,i)})),
+  ]);
+  return v;
+}
+function smartLists(){
+  const all=liveSongs(),counts=playCounts(),recent=playCounts(Date.now()-14*DAY),last=lastPlayedMap(),now=Date.now();
+  const byCount=m=>all.filter(x=>m.get(x.id)).sort((a,b)=>m.get(b.id)-m.get(a.id));
+  const night=new Map();for(const e of listened){const h=new Date(e.at).getHours();if(h>=22||h<4)night.set(e.id,(night.get(e.id)||0)+1)}
+  const added=all.filter(addedAt).sort((a,b)=>addedAt(b)-addedAt(a));
+  return [
+    {name:'Recently Added',icon:'plus',songs:(added.filter(x=>now-addedAt(x)<30*DAY).length>=5?added.filter(x=>now-addedAt(x)<30*DAY):added).slice(0,50)},
+    {name:'Most Played',icon:'music',songs:byCount(counts).slice(0,50)},
+    {name:'Heavy Rotation',icon:'repeat',hint:'last 2 weeks',songs:byCount(recent).filter(x=>recent.get(x.id)>=2).slice(0,50)},
+    {name:'After Dark',icon:'clock',hint:'what you play 10 PM – 4 AM',songs:byCount(night).slice(0,50)},
+    {name:'Forgotten Favorites',icon:'heart',hint:'loved, not played in a month',songs:all.filter(x=>x.favorite&&now-(last.get(x.id)||0)>30*DAY)},
+    {name:'Never Played',icon:'library',songs:all.filter(x=>!last.has(x.id))},
+  ].filter(l=>l.songs.length);
+}
+function smartMenu(){return list('Smart Playlists',()=>{const ls_=smartLists();
+  return ls_.length?ls_.map(l=>({label:l.name,icon:l.icon,val:String(l.songs.length),chev:1,action:go(()=>songListView(l.name,l.songs))})):[{label:'Play some music first',action:()=>{}}]})}
+// A session = songs you played with no break longer than 45 minutes.
+function listeningSessions(){
+  const by=new Map(liveSongs().map(x=>[x.id,x])),out=[];let cur_=null;
+  for(const e of listened){   // newest first
+    if(!Number.isFinite(e.at))continue;
+    if(!cur_||cur_.start-e.at>45*60*1000){cur_={start:e.at,end:e.at,ids:[]};out.push(cur_)}
+    cur_.start=e.at;cur_.ids.unshift(e.id);
+  }
+  return out.map(x=>{const seen=new Set(),ss=[];for(const id of x.ids){const so=by.get(id);if(so&&!seen.has(id)){seen.add(id);ss.push(so)}}return {...x,songs:ss}}).filter(x=>x.songs.length).slice(0,25);
+}
+function sessionName(t){
+  const d=new Date(t),h=d.getHours(),part=h<5?'Late Night':h<12?'Morning':h<17?'Afternoon':h<21?'Evening':'Night';
+  const today=new Date();today.setHours(0,0,0,0);const days=Math.floor((+today-new Date(d).setHours(0,0,0,0))/DAY);
+  if(days===0)return part==='Morning'?'This Morning':part==='Afternoon'?'This Afternoon':part==='Late Night'?'Last Night':'Tonight';
+  if(days===1)return 'Yesterday '+part;
+  if(days<7)return d.toLocaleDateString(undefined,{weekday:'long'})+' '+part;
+  return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' · '+part;
+}
+function sessionsMenu(){return list('Sessions',()=>{const ss=listeningSessions();
+  if(!ss.length)return [{label:'Sessions appear after you listen',action:()=>{}}];
+  return ss.map(x=>{const name=sessionName(x.start),when=new Date(x.start).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+    return {label:name,val:x.songs.length+(x.songs.length===1?' song':' songs'),chev:1,action:go(()=>songListView(name,x.songs,when))}})})}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
