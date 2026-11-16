@@ -114,9 +114,10 @@ def main():
 
         # ---- colours ----
         choose(pg, 'Settings'); seen = []
-        for _ in range(8):
+        for _ in range(11):
             seen.append(pg.evaluate('document.getElementById("ipod").className')); choose(pg, 'Color')
-        check('Color cycles through 8 finishes', len(set(seen)) == 8, seen)
+        check('Color cycles through 11 finishes', len(set(seen)) == 11, seen)
+        check('special editions: Frost, Smoke and Album bodies', any('ed-frost' in c and 'smoke' not in c for c in seen) and any('smoke' in c and 'black' in c for c in seen) and any('ed-album' in c for c in seen), seen)
         check('dark finishes use the dark wheel', any('black' in c and 'c-graphite' in c for c in seen) and any(c.strip() == 'ipod black' for c in seen), seen)
         body_bg = pg.evaluate('getComputedStyle(document.getElementById("ipod")).backgroundImage')
         check('back to Silver after a full cycle', 'c-' not in pg.evaluate('document.getElementById("ipod").className') and 'gradient' in body_bg)
@@ -394,7 +395,7 @@ def main():
         check('shelf reopens on the card you last used', pg.text_content('#fal') == 'Settings', pg.text_content('#fal'))
         for _ in range(12): key(pg, 'ArrowUp', wait=40)
         c0 = pg.text_content('#fal')
-        check('caption shows the selected item', c0 == 'Music', c0)
+        check('caption shows the selected item', c0 == 'Flows', c0)
         tfs = pg.evaluate('[...document.querySelectorAll("#flow .cv")].slice(0,2).map(e=>e.style.transform)')
         check('front card faces you, next card is angled', 'rotateY(0deg)' in tfs[0] and '-62deg' in tfs[1], tfs)
         for _ in range(12):
