@@ -918,6 +918,7 @@ function fit(){
   if(land!==wasLandscape){
     const first=wasLandscape===null;wasLandscape=land;
     document.documentElement.classList.toggle('landscape',land);VIS=land?8:7;
+    if(land&&!first)setTimeout(()=>window.ipodAchievements?.event('landscape'),0);
     if(typeof drawInternals==='function')requestAnimationFrame(drawInternals);
     if(!first){
       const w=$('#wrap');w.style.animation='none';void w.offsetWidth;w.style.animation='turn .55s cubic-bezier(.2,1.1,.35,1) both';
@@ -951,7 +952,7 @@ if(darkMQ&&darkMQ.addEventListener)darkMQ.addEventListener('change',()=>{applyTh
 function applyColor(){const el=$('#ipod'),t=settings.theme;COLORS.forEach(c=>el.classList.remove('c-'+c.toLowerCase()));
   el.classList.remove('ed-frost','smoke','ed-album');
   el.classList.toggle('black',['Black','Graphite','Smoke','Album'].includes(t));
-  if(EDITIONS[t]){el.classList.add(...EDITIONS[t].split(' '));if(t!=='Album')drawInternals();else{let c=null;try{c=cur()?nowPlayingArt(cur()):null}catch(e){}updateBodyArt(c,true)}}
+  if(EDITIONS[t]){window.ipodAchievements?.event('edition');el.classList.add(...EDITIONS[t].split(' '));if(t!=='Album')drawInternals();else{let c=null;try{c=cur()?nowPlayingArt(cur()):null}catch(e){}updateBodyArt(c,true)}}
   else if(t!=='Silver'&&t!=='Black')el.classList.add('c-'+t.toLowerCase())}
 /* Frost/Smoke: faint original line-art of an iPod's insides, laid out around the screen and wheel. */
 function drawInternals(){
@@ -1649,6 +1650,7 @@ function recordListening(){
   lastListenedSong=song;
   listened=[{id:song.id,at:Date.now()},...listened].slice(0,500);
   ls.set('ipod.listeningHistory',listened);
+  try{achPlay(song)}catch(e){}
 }
 onActiveAudio('playing',recordListening);
 onActiveAudio('timeupdate',recordListening);
@@ -1983,10 +1985,11 @@ function aboutView(){return list('About',[
   {label:'Offline Songs',val:String(songs.length)},
   {label:'Haptics',val:hapticSupport()},
   {label:'Version',val:'3.13'}])}
-function extrasMenu(){return list('Games',[
+function extrasMenu(){return list('Games',()=>[
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))},
   {label:'Bubbles',chev:1,action:go(()=>({type:'bubbles',title:'Bubbles',g:null}))},
-  {label:'Music Quiz',chev:1,action:go(quizView)}])}
+  {label:'Music Quiz',chev:1,action:go(quizView)},
+  {label:'Achievements',chev:1,val:Object.keys(ach.unlocked).length+'/'+ACHIEVEMENTS.length,action:go(achievementsMenu)}])}
 
 /* ---------- Clock ---------- */
 function renderClock(){
@@ -2251,7 +2254,7 @@ async function toggleShakeShuffle(){
   addEventListener('touchend',once,true);addEventListener('click',once,true);
 }
 function shakeShuffle(){
-  const pool=songs.filter(s=>!s.deleted);if(!pool.length)return;
+  const pool=songs.filter(s=>!s.deleted);if(!pool.length)return;window.ipodAchievements?.event('shake');
   const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const pick=pool[Math.random()*pool.length|0];
   const covers=shuffled(pool).slice(0,13);if(!covers.includes(pick))covers[0]=pick;
@@ -2302,7 +2305,8 @@ function quizView(){
 }
 function quizNext(v){
   quizStop();
-  if(v.round>=QUIZ_ROUNDS){v.q=null;v.done=true;if(v.score>v.best){v.best=v.score;ls.set('ipod.quiz.best',v.score);v.newBest=true}render();return}
+  if(v.round>=QUIZ_ROUNDS){v.q=null;v.done=true;if(v.score>v.best){v.best=v.score;ls.set('ipod.quiz.best',v.score);v.newBest=true}
+    ach.quizBest=Math.max(ach.quizBest||0,v.score);if((v.correct||0)>=QUIZ_ROUNDS)ach.quizPerfect=1;window.ipodAchievements.event('quiz');render();return}
   v.round++;
   const ans=v.pool[Math.random()*v.pool.length|0],seen=new Set([ans.title.toLowerCase()]),opts=[ans];
   for(const s of shuffled(v.pool)){if(opts.length>=4)break;const k=s.title.toLowerCase();if(!seen.has(k)){seen.add(k);opts.push(s)}}
@@ -2318,7 +2322,7 @@ function quizNext(v){
 function quizPick(v,i){
   const q=v.q;if(!q||q.picked!=null)return;q.picked=i;clearInterval(quizStop.t);
   const ok=i>=0&&q.opts[i]===q.ans;
-  if(ok){v.streak++;v.score+=Math.round(50+q.left*10)+(v.streak>1?(v.streak-1)*20:0);triggerHaptic('success')}
+  if(ok){v.correct=(v.correct||0)+1;v.streak++;v.score+=Math.round(50+q.left*10)+(v.streak>1?(v.streak-1)*20:0);triggerHaptic('success')}
   else{v.streak=0;triggerHaptic('confirm')}
   render();
 }
@@ -2337,7 +2341,7 @@ function renderQuiz(v){
 function quizInput(v,btn,dir){
   if(dir){if(v.q&&v.q.picked==null){const n=Math.max(0,Math.min(3,v.q.sel+dir));if(n!==v.q.sel){v.q.sel=n;click();render()}}return}
   if(btn!=='select')return;
-  if(v.done){v.done=false;v.round=0;v.score=0;v.streak=0;v.newBest=false;return quizNext(v)}
+  if(v.done){v.done=false;v.round=0;v.score=0;v.streak=0;v.correct=0;v.newBest=false;return quizNext(v)}
   if(!v.q||v.q.picked!=null)return quizNext(v);
   quizPick(v,v.q.sel);
 }
@@ -2359,7 +2363,7 @@ function setSleep(mode){
 function sleepNow(){
   clearInterval(sleep.t);if(!audio.paused)playPause();
   if(sleep.baseVol!=null){const v=sleep.baseVol;sleep.baseVol=null;setTimeout(()=>setVol(v),400)}
-  sleep.mode=null;sleep.end=0;setHdrTask('Sleep Timer · Good night',1,true);enterNight();
+  sleep.mode=null;sleep.end=0;setHdrTask('Sleep Timer · Good night',1,true);enterNight();window.ipodAchievements?.event('sleep');
 }
 /* Night mode: after the Sleep Timer, if a wake-up alarm is set in the iPhone app, keep the iPod running
    on a silent loop so it can fade your music in at alarm time by itself, with the phone locked. */
@@ -2385,7 +2389,7 @@ function sleepMenu(){return list('Sleep Timer',()=>[
   {label:'End of This Song',val:sleep.mode==='song'?'✓':'',action:()=>{setSleep('song');triggerHaptic('success');pop()}},
 ])}
 // A song ending while "End of This Song" is set stops playback instead of advancing.
-function sleepAtSongEnd(){if(sleep.mode==='song'){sleep.mode=null;setHdrTask('Sleep Timer · Good night',1,true);enterNight();return true}return false}
+function sleepAtSongEnd(){if(sleep.mode==='song'){sleep.mode=null;setHdrTask('Sleep Timer · Good night',1,true);enterNight();window.ipodAchievements?.event('sleep');return true}return false}
 
 const alarm=Object.assign({on:false,hour:7,minute:30,source:'favorites',repeat:true},ls.get('ipod.alarm',{}));
 const nativeAlarm=()=>window.webkit?.messageHandlers?.ipodAlarm;
@@ -2424,7 +2428,7 @@ let lastWake=0;
 function wakeUp(){
   if(Date.now()-lastWake<120000)return true;   // the app and the notification can both ring: start once
   const list=alarmSongs();if(!list.length)return false;   // library still loading: the app retries
-  lastWake=Date.now();exitNight();
+  lastWake=Date.now();exitNight();window.ipodAchievements?.event('wake');
   latestPlayRequest++;importedPlayback=null;queue=list;qi=0;
   const target=Math.max(.35,getVol());setVol(.05);load(true);
   if(top().type!=='now')push(nowView());else render();
@@ -2563,6 +2567,7 @@ function djStart(){
   const mix=djMix(src.map(x=>x.songs),Math.min(800,Math.max(60,total*4)));
   latestPlayRequest++;importedPlayback=null;queue=mix;qi=0;load(true);
   if(top().type!=='now')push(nowView());
+  window.ipodAchievements?.event('dj');
   setHdrTask('DJ Mode · mixing '+src.length+(src.length===1?' list':' lists'),1,true);triggerHaptic('success');
 }
 function djMenu(){return list('DJ Mode',()=>{const src=djSources();return [
@@ -2642,6 +2647,107 @@ function notificationsMenu(){return list('Notifications',()=>{
     {label:'Mark All as Read',action:()=>{notes_.forEach(n=>n.read=true);ls.set(NKEY,notes_);updateBell();render()}},
     {label:'Clear All',action:()=>{notes_=[];ls.set(NKEY,notes_);updateBell();render()}}];
 })}
+/* ---------- Achievements: unlocked from what you play and do on the iPod ---------- */
+const ACH_KEY='ipod.achievements';
+const ach=Object.assign({unlocked:{},plays:0,days:[],songs:[],artists:[],night:0,morning:0,weekend:0,today:{},ev:{}},ls.get(ACH_KEY,{}));
+const dayKey=t=>{const d=new Date(t);return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
+// your existing listening history counts too, the first time
+if(!ach.seeded){
+  for(const e of listened){ach.plays++;const d=dayKey(e.at),h=new Date(e.at).getHours(),w=new Date(e.at).getDay();
+    if(!ach.days.includes(d))ach.days.push(d);if(!ach.songs.includes(e.id))ach.songs.push(e.id);
+    if(h<4)ach.night++;if(h>=5&&h<8)ach.morning++;if(w===0||w===6)ach.weekend++}
+  ach.seeded=true;
+}
+function streakDays(){
+  const set=new Set(ach.days);let n=0;const d=new Date();if(!set.has(dayKey(+d)))d.setDate(d.getDate()-1);
+  while(set.has(dayKey(+d))){n++;d.setDate(d.getDate()-1)}return n;
+}
+function completedAlbums(){
+  const heard=new Set(ach.songs),by=new Map();
+  for(const x of songs){if(x.deleted||!x.album)continue;const k=x.album+'|'+x.artist;if(!by.has(k))by.set(k,[]);by.get(k).push(x)}
+  return [...by.values()].filter(a=>a.length>=5&&a.every(x=>heard.has(x.id))).length;
+}
+const ev=k=>ach.ev[k]||0;
+// [id, name, how to get it, progress() -> [now, goal], secret]
+const ACHIEVEMENTS=[
+  ['play1','First Spin','Play your first song',()=>[ach.plays,1]],
+  ['play25','Warming Up','Play 25 songs',()=>[ach.plays,25]],
+  ['play100','Regular','Play 100 songs',()=>[ach.plays,100]],
+  ['play500','Devoted','Play 500 songs',()=>[ach.plays,500]],
+  ['play1000','Obsessed','Play 1,000 songs',()=>[ach.plays,1000]],
+  ['play5000','Legendary','Play 5,000 songs',()=>[ach.plays,5000]],
+  ['songs25','Explorer','Play 25 different songs',()=>[ach.songs.length,25]],
+  ['songs100','Crate Digger','Play 100 different songs',()=>[ach.songs.length,100]],
+  ['songs500','Encyclopedia','Play 500 different songs',()=>[ach.songs.length,500]],
+  ['artists10','Artist Hopper','Play 10 different artists',()=>[ach.artists.length,10]],
+  ['artists50','Globetrotter','Play 50 different artists',()=>[ach.artists.length,50]],
+  ['streak2','Back Again','Listen two days in a row',()=>[streakDays(),2]],
+  ['streak7','Week Streak','Listen 7 days in a row',()=>[streakDays(),7]],
+  ['streak30','Month Streak','Listen 30 days in a row',()=>[streakDays(),30]],
+  ['days100','Century','Listen on 100 different days',()=>[ach.days.length,100]],
+  ['night','Night Owl','Play 10 songs between midnight and 4 AM',()=>[ach.night,10]],
+  ['morning','Early Bird','Play 10 songs between 5 and 8 AM',()=>[ach.morning,10]],
+  ['weekend','Weekend Warrior','Play 50 songs on weekends',()=>[ach.weekend,50]],
+  ['album1','Album Completionist','Hear every song of an album (5+ songs)',()=>[completedAlbums(),1]],
+  ['album5','Box Set','Complete 5 albums',()=>[completedAlbums(),5]],
+  ['lib100','Collector','Have 100 songs in your library',()=>[songs.filter(x=>!x.deleted).length,100]],
+  ['lib1000','Archivist','Have 1,000 songs in your library',()=>[songs.filter(x=>!x.deleted).length,1000]],
+  ['fav1','Heart Eyes','Favorite a song',()=>[songs.filter(x=>x.favorite).length,1]],
+  ['fav25','Curator','Favorite 25 songs',()=>[songs.filter(x=>x.favorite).length,25]],
+  ['marathon','Marathon','Play 40 songs in one session',()=>[Math.max(0,...listeningSessions().map(x=>x.ids.length)),40]],
+  ['shake1','Shake It','Shake for a random song',()=>[ev('shake'),1]],
+  ['shake25','Shake Master','Shake 25 times',()=>[ev('shake'),25]],
+  ['quiz','Quiz Rookie','Finish a Music Quiz',()=>[ev('quiz'),1]],
+  ['quiz1000','Quiz Whiz','Score 1,000 in Music Quiz',()=>[ach.quizBest||0,1000]],
+  ['quiz10','Perfect Ten','Get all 10 quiz answers right',()=>[ach.quizPerfect||0,1]],
+  ['dj','In the Mix','Start DJ Mode',()=>[ev('dj'),1]],
+  ['sleep','Lights Out','Fall asleep with the Sleep Timer',()=>[ev('sleep'),1]],
+  ['wake','Rise and Shine','Wake up to the alarm',()=>[ev('wake'),1]],
+  ['mac','Big Screen','Connect the Mac Display',()=>[ev('mac'),1]],
+  ['host','Party Host','Host Listen Together with a friend',()=>[ev('host'),1]],
+  ['join','Plus One','Join a friend’s Listen Together',()=>[ev('join'),1]],
+  ['shared','Mixtape','Create a shared playlist',()=>[ev('sharedCreate'),1]],
+  ['shared10','Contributor','Add 10 songs to shared playlists',()=>[ev('sharedAdd'),10]],
+  ['memory','Memory Lane','Pin a memory to a song',()=>[ev('memory'),1]],
+  ['memory10','Scrapbook','Pin 10 memories',()=>[Object.values(ls.get('ipod.memories',{})).filter(m=>m.text).length,10]],
+  ['edition','Limited Edition','Try a special-edition body',()=>[ev('edition'),1]],
+  ['landscape','Sideways','Turn the iPod sideways',()=>[ev('landscape'),1]],
+  ['repeat','On Repeat','Play the same song 10 times in one day',()=>[Math.max(0,...Object.values(ach.today.counts||{})),10],true],
+  ['nightday','24-Hour Party','Listen in every part of the day: morning, afternoon, evening and night',()=>[['m','a','e','n'].filter(k=>(ach.parts||[]).includes(k)).length,4],true],
+];
+function saveAch(){ls.set(ACH_KEY,ach)}
+function checkAchievements(quiet){
+  let fresh=[];
+  for(const [id,name,how,prog] of ACHIEVEMENTS){
+    if(ach.unlocked[id])continue;let p=[0,1];try{p=prog()}catch(e){}
+    if(p[0]>=p[1]){ach.unlocked[id]=Date.now();fresh.push(name)}
+  }
+  if(fresh.length){saveAch();if(!quiet)fresh.forEach(n=>window.ipodNotify?.({id:'ach:'+n,kind:'achievement',title:'Achievement Unlocked',body:'🏆 '+n}))}
+  return fresh;
+}
+function achPlay(song){
+  const t=Date.now(),d=dayKey(t),h=new Date(t).getHours(),w=new Date(t).getDay();
+  ach.plays++;if(!ach.days.includes(d))ach.days=[...ach.days,d].slice(-800);
+  if(!ach.songs.includes(song.id))ach.songs.push(song.id);
+  const art=String(song.artist||'').trim().toLowerCase();if(art&&!ach.artists.includes(art))ach.artists.push(art);
+  if(h<4)ach.night++;if(h>=5&&h<8)ach.morning++;if(w===0||w===6)ach.weekend++;
+  if(ach.today.day!==d)ach.today={day:d,counts:{}};ach.today.counts[song.id]=(ach.today.counts[song.id]||0)+1;
+  const part=h>=5&&h<12?'m':h<17&&h>=12?'a':h>=17&&h<22?'e':'n';ach.parts=[...new Set([...(ach.parts||[]),part])];
+  saveAch();checkAchievements();
+}
+window.ipodAchievements={event(k,n=1){ach.ev[k]=(ach.ev[k]||0)+n;saveAch();checkAchievements()},check:checkAchievements};
+function achievementsMenu(){return list('Achievements',()=>{
+  const rows=ACHIEVEMENTS.map(([id,name,how,prog,secret])=>{let p=[0,1];try{p=prog()}catch(e){}return {id,name,how,secret,p,at:ach.unlocked[id]}});
+  const done=rows.filter(x=>x.at).sort((a,b)=>b.at-a.at),todo=rows.filter(x=>!x.at).sort((a,b)=>(b.p[0]/b.p[1])-(a.p[0]/a.p[1]));
+  const fmtN=n=>n>=1000?(n/1000).toFixed(n%1000?1:0)+'k':String(n);
+  return [
+    {label:'Unlocked',val:done.length+' of '+rows.length,action:()=>{}},
+    ...done.map(x=>({label:'🏆 '+x.name,val:new Date(x.at).toLocaleDateString(undefined,{month:'short',day:'numeric'}),chev:1,action:go(msgView('🏆 '+x.name,x.how+'\n\nUnlocked '+new Date(x.at).toLocaleDateString()))})),
+    ...todo.map(x=>x.secret?{label:'🔒 Secret',val:'???',action:go(msgView('Secret Achievement','Keep listening to find out.'))}
+      :{label:x.name,val:fmtN(Math.min(x.p[0],x.p[1]))+'/'+fmtN(x.p[1]),chev:1,action:go(msgView(x.name,x.how+'\n\nProgress: '+Math.min(x.p[0],x.p[1])+' of '+x.p[1]))}),
+  ];
+})}
+setTimeout(()=>checkAchievements(true),1500);   // quietly credit what you'd already done
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
