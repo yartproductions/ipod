@@ -112,7 +112,9 @@ async function makeCode(){
   for(let i=0;i<4;i++){
     code=newCode();ref=db.collection('pairs').doc(code);
     try{await ref.set({mac:uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});break}
-    catch(e){code=null;if(i===3){$('#err').textContent='Couldn’t reach the server. Retrying…';setTimeout(offerCode,5000);return}}
+    catch(e){code=null;console.warn('Mac Display: creating code failed',e);
+      if(e&&e.code==='permission-denied'){$('#err').textContent='The server refused the pairing code (permission denied). The Mac Display Firestore rules need to be deployed: firebase deploy --only firestore:rules';setTimeout(offerCode,15000);return}
+      if(i===3){$('#err').textContent='Couldn’t reach the server ('+(e&&(e.code||e.message)||'unknown error')+'). Retrying…';setTimeout(offerCode,5000);return}}
   }
   try{localStorage.setItem(KEY,code)}catch(e){}
   showCode(code);watch();
