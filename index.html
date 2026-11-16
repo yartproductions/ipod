@@ -664,6 +664,12 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .black #center.favorite-saved::after,.modern:not(.lightui) #center.favorite-saved::after{color:#ffce64}
 #center.favorite-confirmed{display:grid;place-items:center;color:#fff4c2;background:radial-gradient(circle at 45% 32%,#ffe69a,#ba7212);box-shadow:0 0 18px #ffcc63,inset 0 1px 3px #fff5b8;filter:none;font-size:32px;text-shadow:0 1px 3px #85500c}
 #center.favorite-confirmed::after{content:"★"}
+.ipod-video{position:fixed;inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;border:0;background:#080a0e;color:#fff;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));touch-action:auto}
+.ipod-video[open]{display:flex;flex-direction:column;gap:12px}.ipod-video::backdrop{background:#000}
+.ipod-video video{width:100%;flex:1;min-height:0;background:#000;touch-action:auto}
+.video-toolbar{display:flex;align-items:center;gap:12px}.video-toolbar strong{flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.video-toolbar button{border:1px solid #687384;border-radius:7px;padding:10px;background:#242d3a;color:white;font:inherit;cursor:pointer}
+.video-toolbar button:focus-visible{outline:2px solid #83bfff}.ipod-video p{font-size:14px;line-height:1.4;text-align:center;min-height:20px}
 </style>
 </head>
 <body>
@@ -1471,6 +1477,7 @@ function mainMenu(){
   return list('iPod',()=>[
     {label:'Music',icon:'music',action:go(musicRootMenu),chev:1},
     ...(qi>=0?[{label:'Now Playing',icon:'play',action:()=>push(nowView()),chev:1}]:[]),
+    {label:'Videos',icon:'play',chev:1,action:()=>window.ipodVideos?window.ipodVideos.open():push(msgView('Videos Unavailable','Reload the iPod to load Videos.'))},
     {label:'Flows',icon:'album',action:go(flowsMenu),chev:1},
     {label:'Friends',icon:'people',action:()=>window.ipodFriends?window.ipodFriends.open():push(msgView('Friends Unavailable','Please reload the iPod to load Friends.')),chev:1},
     {label:'Library',icon:'library',action:go(libraryMenu),chev:1},
@@ -1654,6 +1661,7 @@ function tornadoUsageView(){
 function settingsMenu(){
   const tog=(k,opts)=>()=>{const i=opts.indexOf(settings[k]);settings[k]=opts[(i+1)%opts.length];saveSettings();if(k==='theme'||k==='style'||k==='appearance')applyTheme();if(k==='backlight')wake();render()};
   return list('Settings',()=>[
+    {label:'Connect Stremio',icon:'play',chev:1,action:()=>window.ipodVideos?window.ipodVideos.settings():push(msgView('Videos Unavailable','Reload the iPod to load Videos.'))},
     {label:'Shuffle',icon:'shuffle',val:settings.shuffle?'Songs':'Off',action:tog('shuffle',[false,true])},
     {label:'Repeat',icon:'repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
     {label:'Crossfade',val:settings.crossfade?settings.crossfade+' sec':'Off',action:()=>{
@@ -2251,7 +2259,7 @@ function renderView(){
   }else if(v.type==='loading'){
     body.innerHTML=`<div class="list"><div class="empty"><div class="spin"></div>${esc(v.title)}</div></div>`;
   }else if(v.type==='input'){
-    body.innerHTML=`<div class="inp"><input id="inpt" type="text" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="go" placeholder="${esc(v.ph)}" value="${esc(v.value)}">
+    body.innerHTML=`<div class="inp"><input id="inpt" type="${v.inputType==='password'?'password':'text'}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="go" placeholder="${esc(v.ph)}" value="${esc(v.value)}">
       <div class="tip">Press the center button or Go to continue.<br>MENU to cancel.</div></div>`;
     const inp=$('#inpt');inp.addEventListener('input',()=>v.value=inp.value);
     inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();submitInput()}else if(e.key==='Escape'){inp.blur();pop()}});
@@ -3599,6 +3607,7 @@ function accelStep(){
 function showLetter(v){const x=itemsOf(v)[v.sel];if(!x)return;const ch=(String(x.label).trim()[0]||'').toUpperCase();if(!ch)return;
   const el=$('#letter');el.textContent=/[A-Z]/.test(ch)?ch:'#';el.classList.add('on');clearTimeout(letterTimer);letterTimer=setTimeout(()=>el.classList.remove('on'),550)}
 function scroll(dir){
+  if(window.ipodVideos?.playing)return;
   wake();
   if(holdOn){showLock();return}
   if(sheet){sheetScroll(dir);return}
@@ -3621,6 +3630,7 @@ function scroll(dir){
   }
 }
 function press(btn){
+  if(window.ipodVideos?.playing){if(btn==='menu')window.ipodVideos.close();return}
   wake();
   if(holdOn){showLock();return}
   if(sheet){sheetPress(btn);return}
@@ -4050,12 +4060,23 @@ async function initUpdates(){
 stack=[mainMenu()];render();wake();initUpdates();
 dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
 // Explicitly hand the optional Friends module only the player functions it needs.
+onActiveAudio('play',()=>{if(window.ipodVideos?.playing)audio.pause()});
+window.ipodVideoBridge=Object.freeze({list,push,pop,replaceTop,top,msgView,loadingView,inputView,
+  pauseMusic:()=>{cancelCrossfade();for(const deck of [mainDeck,spareDeck,backgroundDeck])deck.pause();},
+  restoreMusicControls:()=>{
+    if(cur()){setSession();syncMediaPlaybackState();return}
+    if('mediaSession' in navigator){navigator.mediaSession.metadata=null;navigator.mediaSession.playbackState='none';
+      for(const action of ['play','pause','stop','seekto','nexttrack','previoustrack'])safeMediaAction(action,null);
+      try{navigator.mediaSession.setPositionState?.()}catch{}}
+  }
+});
 window.ipodFriendsBridge=Object.freeze({audio:{get paused(){return audio.paused},get currentTime(){return audio.currentTime},addEventListener:onActiveAudio},cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
 window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,enqueueYT,render,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
 })();
 </script>
+<script src="./stremio.js" defer></script>
 <script src="./friends.js" defer></script>
 <script src="./track-match.js" defer></script>
 <script src="./playlist-import.js" defer></script>
