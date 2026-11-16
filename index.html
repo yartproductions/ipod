@@ -9,6 +9,19 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="iPod">
 <meta name="theme-color" content="#000">
+<script>
+// On a computer, this page becomes the Mac Display (the phone is the iPod). "?ipod" opens the iPod here
+// instead and remembers it; "?mac" goes back to the default.
+(()=>{try{
+  const q=new URLSearchParams(location.search);
+  if(q.has('ipod'))localStorage.setItem('ipod.desktop.ipod','1');
+  if(q.has('mac'))localStorage.removeItem('ipod.desktop.ipod');
+  const ua=navigator.userAgent,touchMac=navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1;   // iPads say "Mac"
+  const computer=!/iPhone|iPad|iPod|Android|Mobile/i.test(ua)&&!touchMac&&!(window.webkit&&window.webkit.messageHandlers)
+    &&matchMedia('(pointer:fine)').matches&&!navigator.webdriver;
+  if(computer&&localStorage.getItem('ipod.desktop.ipod')!=='1')location.replace('mac.html');
+}catch(e){}})();
+</script>
 <meta name="color-scheme" content="dark">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -4710,12 +4723,12 @@ let holdOn=false,lockTimer=null;
 let displayLock=null,requestingDisplayLock=false;
 // Hold keeps the phone's screen on. In the iPhone app the app does it (the web wake lock doesn't
 // work in its web view); in browsers it's the Screen Wake Lock, retried on your next tap if refused.
-const nativeKeepAwake=()=>window.webkit?.messageHandlers?.ipodKeepAwake;
+const nativeKeepAwake=()=>globalThis.webkit?.messageHandlers?.ipodKeepAwake;
 let wakeRetryArmed=false;
 function armWakeRetry(){
   if(wakeRetryArmed)return;wakeRetryArmed=true;
-  const retry=()=>{removeEventListener('touchend',retry,true);removeEventListener('click',retry,true);wakeRetryArmed=false;syncHoldDisplayLock()};
-  addEventListener('touchend',retry,true);addEventListener('click',retry,true);
+  const g=globalThis,retry=()=>{g.removeEventListener?.('touchend',retry,true);g.removeEventListener?.('click',retry,true);wakeRetryArmed=false;syncHoldDisplayLock()};
+  g.addEventListener?.('touchend',retry,true);g.addEventListener?.('click',retry,true);
 }
 async function syncHoldDisplayLock(){
   if(nativeKeepAwake()){nativeKeepAwake().postMessage({on:holdOn});return}
