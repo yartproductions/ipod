@@ -217,6 +217,10 @@ struct IPodWebView: UIViewRepresentable {
             }
             if message.name == Self.alarmHandlerName {
                 guard let d = message.body as? [String: Any] else { return }
+                if (d["action"] as? String) == "night" {
+                    IPodAlarm.shared.nightMode = (d["on"] as? Bool) ?? false
+                    return
+                }
                 if (d["action"] as? String) == "schedule" {
                     IPodAlarm.shared.schedule(hour: (d["hour"] as? NSNumber)?.intValue ?? 7,
                                               minute: (d["minute"] as? NSNumber)?.intValue ?? 0,
