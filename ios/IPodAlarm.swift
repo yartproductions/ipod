@@ -124,10 +124,16 @@ final class IPodAlarm: NSObject, UNUserNotificationCenterDelegate {
             cancelAlarmKit()
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.requestID])
 
-            let alert = AlarmPresentation.Alert(
-                title: "Good morning",
-                secondaryButton: AlarmButton(text: "Play Music", textColor: .white, systemImageName: "music.note"),
-                secondaryButtonBehavior: .custom)
+            let play = AlarmButton(text: "Play Music", textColor: .white, systemImageName: "music.note")
+            let alert: AlarmPresentation.Alert
+            if #available(iOS 26.1, *) {
+                alert = AlarmPresentation.Alert(title: "Good morning", secondaryButton: play, secondaryButtonBehavior: .custom)
+            } else {
+                // iOS 26.0 needs an explicit Stop button (this initializer is deprecated from 26.1).
+                alert = AlarmPresentation.Alert(title: "Good morning",
+                                                stopButton: AlarmButton(text: "Stop", textColor: .white, systemImageName: "stop.circle"),
+                                                secondaryButton: play, secondaryButtonBehavior: .custom)
+            }
             let attributes = AlarmAttributes<IPodAlarmMetadata>(
                 presentation: AlarmPresentation(alert: alert),
                 metadata: IPodAlarmMetadata(),
