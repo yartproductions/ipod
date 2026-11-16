@@ -54,6 +54,7 @@ struct IPodWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: Coordinator.alarmHandlerName)
         controller.add(context.coordinator, name: Coordinator.volumeHandlerName)
         controller.add(context.coordinator, name: Coordinator.shareFileHandlerName)
+        controller.add(context.coordinator, name: Coordinator.keepAwakeHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -87,6 +88,7 @@ struct IPodWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.alarmHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.volumeHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.shareFileHandlerName)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.keepAwakeHandlerName)
         coordinator.stopMonitoringDevice()
     }
 
@@ -97,6 +99,7 @@ struct IPodWebView: UIViewRepresentable {
         static let alarmHandlerName = "ipodAlarm"
         static let volumeHandlerName = "ipodVolume"
         static let shareFileHandlerName = "ipodShareFile"
+        static let keepAwakeHandlerName = "ipodKeepAwake"
         /// A nearly invisible system volume view: lets the click wheel set the real iPhone volume
         /// and hides the iOS volume pop-up, so the iPod's own volume bar shows instead.
         private let volumeView = MPVolumeView(frame: CGRect(x: -2000, y: -2000, width: 10, height: 10))
@@ -177,6 +180,7 @@ struct IPodWebView: UIViewRepresentable {
         }
 
         func stopMonitoringDevice() {
+            UIApplication.shared.isIdleTimerDisabled = false
             volumeObservation?.invalidate(); volumeObservation = nil
             volumeView.removeFromSuperview()
             NotificationCenter.default.removeObserver(self)
@@ -258,6 +262,12 @@ struct IPodWebView: UIViewRepresentable {
             }
             if message.name == Self.audioRouteHandlerName {
                 sendAudioRoute()
+                return
+            }
+            if message.name == Self.keepAwakeHandlerName {
+                // Hold switch: keep the iPhone's screen from dimming and auto-locking while it's on.
+                let on = ((message.body as? [String: Any])?["on"] as? Bool) ?? false
+                DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = on }
                 return
             }
             if message.name == Self.shareFileHandlerName {
