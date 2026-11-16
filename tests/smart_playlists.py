@@ -24,10 +24,11 @@ def main():
         C.home(pg); C.choose(pg, 'Music'); C.choose(pg, 'Shuffle Songs'); pg.wait_for_timeout(500)
         songs = pg.evaluate("ipodMacBridge.queue().map(s=>({id:s.id,t:s.title}))")
         now = int(time.time() * 1000); H = 3600 * 1000
+        yday = pg.evaluate("(()=>{const d=new Date();d.setHours(0,0,0,0);return +d-4*3600*1000})()")   # yesterday 8 PM, whatever the time now
         # tonight: 3 plays (A twice), yesterday evening: 2 plays, last week: 1 play; A played at 11 PM-ish counts toward After Dark
         a, b, c, d = songs[0], songs[1], songs[2], songs[3]
         hist = [{'id': a['id'], 'at': now - 5 * 60 * 1000}, {'id': b['id'], 'at': now - 10 * 60 * 1000}, {'id': a['id'], 'at': now - 15 * 60 * 1000},
-                {'id': c['id'], 'at': now - 26 * H}, {'id': a['id'], 'at': now - 26 * H - 20 * 60 * 1000},
+                {'id': c['id'], 'at': yday}, {'id': a['id'], 'at': yday - 20 * 60 * 1000},
                 {'id': d['id'], 'at': now - 6 * 24 * H}]
         pg.evaluate("h=>{localStorage.setItem('ipod.listeningHistory',JSON.stringify(h))}", hist)
         pg.reload(); pg.wait_for_timeout(1800); C.home(pg)

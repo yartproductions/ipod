@@ -2485,6 +2485,7 @@ function sessionName(t){
   const d=new Date(t),h=d.getHours(),part=h<5?'Late Night':h<12?'Morning':h<17?'Afternoon':h<21?'Evening':'Night';
   const today=new Date();today.setHours(0,0,0,0);const days=Math.floor((+today-new Date(d).setHours(0,0,0,0))/DAY);
   if(days===0)return part==='Morning'?'This Morning':part==='Afternoon'?'This Afternoon':part==='Late Night'?'Last Night':'Tonight';
+  if(days===1&&(part==='Night'||part==='Late Night')&&Date.now()-t<12*36e5)return 'Last Night';   // just after midnight
   if(days===1)return 'Yesterday '+part;
   if(days<7)return d.toLocaleDateString(undefined,{weekday:'long'})+' '+part;
   return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' · '+part;
