@@ -793,6 +793,16 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 #memocard .mi{font-size:15px;line-height:1;margin-top:1px;color:#b08a3a}
 #memocard b{display:block;font-size:12.5px;font-weight:600;line-height:1.3}
 #memocard small{display:block;font-size:10px;color:#8a7a5a;margin-top:2px}
+/* notification banner + header dot */
+.nbanner{position:absolute;left:6px;right:6px;top:4px;z-index:60;display:flex;gap:8px;align-items:center;padding:7px 10px;border-radius:10px;
+  background:rgba(250,250,252,.97);box-shadow:0 6px 18px rgba(0,0,0,.3),inset 0 0 0 .5px rgba(0,0,0,.1);color:#111;
+  transform:translateY(-130%);opacity:0;transition:transform .42s cubic-bezier(.2,1.1,.35,1),opacity .3s;pointer-events:none}
+.nbanner.on{transform:none;opacity:1}
+.nbanner svg{width:18px;height:18px;flex:none;fill:none;stroke:#2d7fd8;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nbanner b{display:block;font-size:12px}
+.nbanner span{display:block;font-size:11px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nbell{display:none;width:6px;height:6px;border-radius:50%;background:#e8473a;margin-left:4px;vertical-align:middle;box-shadow:0 0 0 1px rgba(255,255,255,.6)}
+#nbell.on{display:inline-block}
 </style>
 </head>
 <body>
@@ -820,7 +830,7 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
   <div class="ipod" id="ipod"><div class="edbody" id="edbody"><i></i><i></i></div>
     <div class="hold" id="hold" title="Hold"></div>
     <div class="bezel"><div class="screen" id="screen"><video id="hdrboost" muted loop playsinline autoplay preload="auto" aria-hidden="true" tabindex="-1" disablepictureinpicture><source src="hdr-white.mp4" type='video/mp4; codecs="hvc1"'><source src="hdr-white-av1.mp4" type='video/mp4; codecs="av01.0.00M.10"'></video>
-      <div class="hdr"><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="status"><span id="hclock"></span><span class="bat" role="img"><i id="batlvl"></i></span></span></div>
+      <div class="hdr"><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><i id="nbell"></i><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="status"><span id="hclock"></span><span class="bat" role="img"><i id="batlvl"></i></span></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
       <div id="body"></div><div class="sheet" id="sheet"><div class="card"><div class="st" id="sheetT"></div><div class="sbody" id="sheetB"><div class="in" id="sheetIn"></div></div><div class="btns" id="sheetBtns"></div></div></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div><div class="np" id="splitnp"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
@@ -1708,6 +1718,7 @@ const go=v=>()=>push(typeof v==='function'?v():v);
 function mainMenu(){
   // Short top level; everything else lives one step down.
   return list('iPod',()=>[
+    ...(unread()?[{label:'Notifications',icon:'info',val:String(unread()),action:go(notificationsMenu),chev:1}]:[]),
     {label:'Flows',icon:'album',action:go(flowsMenu),chev:1},
     {label:'Music',icon:'music',action:go(musicRootMenu),chev:1},
     ...(qi>=0?[{label:'Now Playing',icon:'play',action:()=>push(nowView()),chev:1}]:[]),
@@ -1745,6 +1756,7 @@ function libraryMenu(){return list('Library',()=>[
   {label:'Import Playlist',icon:'download',chev:1,action:()=>window.ipodPlaylistImport?window.ipodPlaylistImport.open():push(msgView('Importer Unavailable','Reload and try again.'))},
   {label:'Downloads',icon:'download',action:go(downloadsMenu),chev:1,val:downloadJobs.size?String([...downloadJobs.values()].filter(j=>j.state!=='Done'&&j.state!=='Failed').length||''):''},
   {label:'Listening History',icon:'clock',action:go(listeningHistoryMenu),chev:1},
+  {label:'Notifications',icon:'info',val:unread()?String(unread()):'',action:go(notificationsMenu),chev:1},
 ])}
 /* Search: offline (your library, instant) or online (YouTube search), switchable in Music ▸ Search In. */
 function searchLocal(q){
@@ -2581,6 +2593,47 @@ function memoriesMenu(){return list('Song Memories',()=>{
   if(!all.length)return [{label:'Add one from a song’s options',action:()=>{}}];
   return all.map(([k,m])=>{const so=songs.find(x=>memoKey(x)===k&&!x.deleted);
     return {label:m.t||'Song',val:m.text,action:()=>{if(so){playList([so],0);push(nowView());setTimeout(()=>showMemo(so,true),400)}else push(msgView(m.t||'Song',m.text))}}});
+})}
+/* ---------- Notifications: a banner on the iPod screen plus a list you can come back to ---------- */
+const NKEY='ipod.notifications',NSEEN='ipod.notifications.seen';
+let notes_=ls.get(NKEY,[]);
+const unread=()=>notes_.filter(n=>!n.read).length;
+const NICON={friends:'people',listen:'people',shared:'playlist',download:'download',achievement:'heart',alarm:'clock',info:'info'};
+// window.ipodNotify({id, kind, title, body}) — the id makes it show only once, ever.
+window.ipodNotify=n=>{
+  if(!n||!n.title)return;const seen=new Set(ls.get(NSEEN,[]));if(n.id&&seen.has(n.id))return;
+  if(n.id){seen.add(n.id);ls.set(NSEEN,[...seen].slice(-400))}
+  const note={id:n.id||String(Date.now()),kind:n.kind||'info',title:String(n.title).slice(0,60),body:String(n.body||'').slice(0,140),at:Date.now(),read:false};
+  notes_=[note,...notes_].slice(0,60);ls.set(NKEY,notes_);
+  showBanner(note);updateBell();if(top()?.title==='iPod'||top()?.title==='Notifications')render();
+};
+const bannerQ=[];let bannerBusy=false;
+function showBanner(n){
+  bannerQ.push(n);if(bannerBusy)return;bannerBusy=true;
+  (function nextBanner(){
+    const x=bannerQ.shift();if(!x){bannerBusy=false;return}
+    const el=document.createElement('div');el.className='nbanner';
+    el.innerHTML=`<svg viewBox="0 0 24 24"><path d="${MENU_ICONS[NICON[x.kind]]||MENU_ICONS.info}"/></svg><div><b>${esc(x.title)}</b><span>${esc(x.body)}</span></div>`;
+    screenEl.appendChild(el);triggerHaptic('success');
+    requestAnimationFrame(()=>el.classList.add('on'));
+    setTimeout(()=>{el.classList.remove('on');setTimeout(()=>{el.remove();nextBanner()},400)},3800);
+  })();
+}
+function updateBell(){const b=document.getElementById('nbell');if(b)b.classList.toggle('on',unread()>0)}
+setTimeout(updateBell,0);
+function openNotification(n){
+  n.read=true;ls.set(NKEY,notes_);updateBell();
+  if(n.kind==='friends'&&window.ipodFriends)return window.ipodFriends.open();
+  if(n.kind==='listen'&&window.ipodListen)return window.ipodListen.open();
+  if(n.kind==='shared'&&window.ipodShared)return window.ipodShared.open();
+  push(msgView(n.title,n.body));
+}
+function ago(t){const m=Math.round((Date.now()-t)/60000);return m<1?'now':m<60?m+'m':m<1440?Math.round(m/60)+'h':Math.round(m/1440)+'d'}
+function notificationsMenu(){return list('Notifications',()=>{
+  if(!notes_.length)return [{label:'No notifications',action:()=>{}}];
+  return [...notes_.map(n=>({label:(n.read?'':'● ')+n.title,val:ago(n.at),chev:1,action:()=>openNotification(n)})),
+    {label:'Mark All as Read',action:()=>{notes_.forEach(n=>n.read=true);ls.set(NKEY,notes_);updateBell();render()}},
+    {label:'Clear All',action:()=>{notes_=[];ls.set(NKEY,notes_);updateBell();render()}}];
 })}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});

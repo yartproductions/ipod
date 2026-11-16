@@ -56,7 +56,7 @@ async function host(){
     catch(e){if(e.code==='permission-denied')throw Error('Listen Together needs the updated Firestore rules. Deploy them with: firebase deploy --only firestore:rules');if(i===4)throw e}
   }
   role='host';hostName=myName()||'You';listeners=0;lastSig='';remember();
-  unsubs.push(room.collection('guests').onSnapshot(q=>{const n=q.size!=null?q.size:q.docs?.length||0;if(n>listeners)B.toast('Someone joined · '+n+' listening');listeners=n;B.refresh()},()=>{}));
+  unsubs.push(room.collection('guests').onSnapshot(q=>{const n=q.size!=null?q.size:q.docs?.length||0;if(n>listeners){B.toast('Someone joined · '+n+' listening');window.ipodNotify?.({id:'lt:'+code+':'+n+':'+Date.now(),kind:'listen',title:'Listen Together',body:'Someone joined · '+n+' listening'})}listeners=n;B.refresh()},()=>{}));
   timer=setInterval(hostTick,300);hostTick(true);
 }
 function hostTick(force){

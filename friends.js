@@ -405,5 +405,28 @@ async function publishPlay(song){
   await ref.set({uid,recent:[entry,...previous].slice(0,3),updatedAt:serverTime()});
 }
 audio.addEventListener('timeupdate',recordTime);
+/* Notifications: watch for friend requests to you, and for your requests being accepted. */
+async function watchNotifications(){
+  if(!window.ipodNotify)return;
+  let cached=null;try{cached=JSON.parse(localStorage.getItem(PKEY)||'null')}catch(e){}
+  if(!cached)return;   // no Friends profile on this device yet
+  try{await connect()}catch(e){return}
+  if(!profile)return;
+  const db=api.db,uid=account.uid,names=new Map();
+  const nameOf=async id=>{if(names.has(id))return names.get(id);
+    let n='Someone';try{const d=await db.collection('profiles').doc(id).get();if(d.exists)n='@'+d.data().username}catch(e){}names.set(id,n);return n};
+  const handle=async q=>{for(const ch of (q.docChanges?q.docChanges():[])){
+    if(ch.type==='removed')continue;const r=ch.doc.data(),id=ch.doc.id;if(!r)continue;
+    if(r.to===uid&&r.status==='pending')window.ipodNotify({id:'fr:'+id+':'+(r.updatedAt?.toMillis?.()||''),kind:'friends',
+      title:'Friend Request',body:(await nameOf(r.from))+' wants to be friends'});
+    if(r.from===uid&&r.status==='accepted')window.ipodNotify({id:'fa:'+id,kind:'friends',
+      title:'Request Accepted',body:(await nameOf(r.to))+' accepted your friend request'});
+  }};
+  try{
+    db.collection('friendRequests').where('to','==',uid).onSnapshot(handle,()=>{});
+    db.collection('friendRequests').where('from','==',uid).onSnapshot(handle,()=>{});
+  }catch(e){}
+}
+setTimeout(()=>watchNotifications().catch(()=>{}),3000);
 window.ipodFriends={open};
 })();

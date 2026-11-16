@@ -20,12 +20,14 @@ function docRef(path){
     async delete(){localStorage.removeItem(K(path));notify(path)},
     onSnapshot(cb){const fn=p=>{if(p===path)cb(snap(path,id))};local.add(fn);setTimeout(()=>cb(snap(path,id)),0);return ()=>local.delete(fn)}};
 }
-function collRef(path){
+function collRef(path,filters=[]){
   const list=()=>Object.keys(localStorage).filter(k=>k.startsWith(K(path)+'/')&&k.slice(K(path).length+1).indexOf('/')<0).map(k=>k.slice(7));
-  return {doc:id=>docRef(path+'/'+id),
+  const keep=p=>{const d=read(p);return d&&filters.every(([f,op,v])=>op==='=='?d[f]===v:true)};
+  const list0=list;const listF=()=>list0().filter(keep);
+  return {doc:id=>docRef(path+'/'+id),where:(f,op,v)=>collRef(path,[...filters,[f,op,v]]),
     async add(data){const r=docRef(path+'/'+Math.random().toString(36).slice(2,12));await r.set(data);return r},
-    async get(){const docs=list().map(p=>snap(p,p.split('/').pop()));return {docs,size:docs.length,empty:!docs.length}},
-    onSnapshot(cb){let seen=new Map(),first=true;const emit=()=>{const changes=[],now=list();
+    async get(){const docs=listF().map(p=>snap(p,p.split('/').pop()));return {docs,size:docs.length,empty:!docs.length}},
+    onSnapshot(cb){let seen=new Map(),first=true;const emit=()=>{const changes=[],now=listF();
         for(const p of now){const raw=localStorage.getItem(K(p));if(seen.get(p)!==raw){seen.set(p,raw);changes.push({type:'modified',doc:snap(p,p.split('/').pop())})}}
         for(const p of [...seen.keys()])if(!now.includes(p)){seen.delete(p);changes.push({type:'removed',doc:snap(p,p.split('/').pop())})}
         if(changes.length||first){first=false;cb({docChanges:()=>changes,size:now.length,docs:now.map(p=>snap(p,p.split('/').pop()))})}};
