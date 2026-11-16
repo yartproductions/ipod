@@ -2300,7 +2300,25 @@ function setSleep(mode){
 function sleepNow(){
   clearInterval(sleep.t);if(!audio.paused)playPause();
   if(sleep.baseVol!=null){const v=sleep.baseVol;sleep.baseVol=null;setTimeout(()=>setVol(v),400)}
-  sleep.mode=null;sleep.end=0;setHdrTask('Sleep Timer · Good night',1,true);
+  sleep.mode=null;sleep.end=0;setHdrTask('Sleep Timer · Good night',1,true);enterNight();
+}
+/* Night mode: after the Sleep Timer, if a wake-up alarm is set in the iPhone app, keep the iPod running
+   on a silent loop so it can fade your music in at alarm time by itself, with the phone locked. */
+let night=null;
+function silentWav(){const n=8000,b=new ArrayBuffer(44+n*2),v=new DataView(b),w=(o,t)=>[...t].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,8000,true);v.setUint32(28,16000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
+  return URL.createObjectURL(new Blob([b],{type:'audio/wav'}))}
+function enterNight(){
+  if(night||!alarm.on||!nativeAlarm())return;
+  night=new Audio(silentWav());night.loop=true;night.play().catch(()=>{});
+  nativeAlarm().postMessage({action:'night',on:true});
+}
+// You started music yourself: night mode is over.
+onActiveAudio('play',()=>{if(night)exitNight()});
+function exitNight(){
+  if(!night)return;try{night.pause();URL.revokeObjectURL(night.src)}catch(e){}night=null;
+  nativeAlarm()?.postMessage({action:'night',on:false});
 }
 function sleepMenu(){return list('Sleep Timer',()=>[
   {label:'Off',val:!sleep.mode?'✓':'',action:()=>{setSleep(null);pop()}},
@@ -2308,7 +2326,7 @@ function sleepMenu(){return list('Sleep Timer',()=>[
   {label:'End of This Song',val:sleep.mode==='song'?'✓':'',action:()=>{setSleep('song');triggerHaptic('success');pop()}},
 ])}
 // A song ending while "End of This Song" is set stops playback instead of advancing.
-function sleepAtSongEnd(){if(sleep.mode==='song'){sleep.mode=null;setHdrTask('Sleep Timer · Good night',1,true);return true}return false}
+function sleepAtSongEnd(){if(sleep.mode==='song'){sleep.mode=null;setHdrTask('Sleep Timer · Good night',1,true);enterNight();return true}return false}
 
 const alarm=Object.assign({on:false,hour:7,minute:30,source:'favorites',repeat:true},ls.get('ipod.alarm',{}));
 const nativeAlarm=()=>window.webkit?.messageHandlers?.ipodAlarm;
@@ -2332,7 +2350,7 @@ let lastWake=0;
 function wakeUp(){
   if(Date.now()-lastWake<120000)return true;   // the app and the notification can both ring: start once
   const list=alarmSongs();if(!list.length)return false;   // library still loading: the app retries
-  lastWake=Date.now();
+  lastWake=Date.now();exitNight();
   latestPlayRequest++;importedPlayback=null;queue=list;qi=0;
   const target=Math.max(.35,getVol());setVol(.05);load(true);
   if(top().type!=='now')push(nowView());else render();
@@ -2346,14 +2364,16 @@ window.ipodWakeUp=()=>wakeUp();   // called by the iPhone app's alarm notificati
 let alarmFired='';
 setInterval(()=>{
   if(!alarm.on)return;const d=new Date(),key=d.toDateString()+alarm.hour+':'+alarm.minute;
-  if(d.getHours()===alarm.hour&&d.getMinutes()===alarm.minute&&alarmFired!==key){alarmFired=key;if(!document.hidden)wakeUp()}
+  if(d.getHours()===alarm.hour&&d.getMinutes()===alarm.minute&&alarmFired!==key){alarmFired=key;if(!document.hidden||night)wakeUp()}
 },5000);
+// Re-register with the iPhone app on launch (keeps it in step after updates and reinstalls).
+if(alarm.on)setTimeout(saveAlarm,1500);
 function alarmMenu(){return list('Wake-Up Alarm',()=>[
   {label:'Alarm',val:alarm.on?'On':'Off',action:()=>{alarm.on=!alarm.on;saveAlarm();triggerHaptic(alarm.on?'success':'selection');render()}},
   {label:'Time',val:alarmTime(),chev:1,action:go(()=>({type:'timepick',title:'Wake-Up Time',h:alarm.hour,m:alarm.minute,field:0}))},
   {label:'Play',val:alarmSourceLabel(),action:()=>{alarm.source={favorites:'shuffle',shuffle:'recent',recent:'favorites'}[alarm.source]||'favorites';saveAlarm();render()}},
   {label:'Repeat Daily',val:alarm.repeat?'On':'Off',action:()=>{alarm.repeat=!alarm.repeat;saveAlarm();render()}},
-  ...(nativeAlarm()?[]:[{label:'How It Rings',chev:1,action:go(msgView('Wake-Up Alarm','In the iPhone app the alarm rings with a notification even when the phone is locked; tap it to start the music. In the browser it only rings while the iPod is open.'))}]),
+  ...(nativeAlarm()?[{label:'How It Rings',chev:1,action:go(msgView('Wake-Up Alarm','A real alarm rings even when your iPhone is locked or on Silent. Tap Play Music to start your playlist. Fall asleep with the Sleep Timer and the iPod stays awake quietly, then fades your music in at the alarm time with no alarm sound at all.'))}]:[{label:'How It Rings',chev:1,action:go(msgView('Wake-Up Alarm','In the browser the alarm only rings while the iPod is open. Use the iPhone app for a real alarm.'))}]),
 ])}
 function renderTimePick(v){
   const h=v.h%12||12,mm=String(v.m).padStart(2,'0'),ap=v.h<12?'AM':'PM';

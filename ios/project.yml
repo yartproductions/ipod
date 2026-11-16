@@ -37,4 +37,5 @@ targets:
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: false
         UIBackgroundModes: [audio]
+        NSAlarmKitUsageDescription: The iPod uses alarms to wake you up with your music, even when your iPhone is locked or on Silent.
         ITSAppUsesNonExemptEncryption: false
