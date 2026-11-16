@@ -1984,6 +1984,7 @@ function settingsMenu(){
       settings.brightScreen={Off:'On',On:'Max',Max:'Off'}[settings.brightScreen]||'On';saveSettings();applyHDR();render()}},
     {label:'Landscape',val:settings.landscape,action:()=>{settings.landscape=settings.landscape==='Off'?'Auto':'Off';saveSettings();fit();render()}},
     {label:'Clock',icon:'clock',chev:1,action:go({type:'clock',title:'Clock'})},
+    {label:'Backup & Restore',icon:'download',chev:1,action:go(backupMenu)},
     {label:'About',icon:'info',chev:1,action:go(aboutView)},
   ])}
 function aboutView(){return list('About',[
@@ -2778,6 +2779,63 @@ function ratingView(s){
       if(btn==='select'){setRating(s,v.n).then(()=>{triggerHaptic('success');pop();if(top().title==='Song')pop();render();npToast?.(v.n?'Rated '+'★'.repeat(v.n):'Rating cleared')})}}};
   return v;
 }
+/* ---------- Backup & Restore: everything except the audio, in one file ---------- */
+const BACKUP_APP='ipod-classic-web';
+function backupData(){
+  const store={};
+  for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('ipod.')&&k!=='ipod.backup.last')store[k]=localStorage.getItem(k)}
+  const library=songs.filter(x=>!x.deleted).map(x=>({id:x.id,title:x.title||'',artist:x.artist||'',album:x.album||'',
+    ...(x.favorite?{favorite:true}:{}),...(x.rating?{rating:x.rating}:{}),...(x.artworkUrl&&/^https:/.test(x.artworkUrl)?{artworkUrl:x.artworkUrl}:{})}));
+  return {app:BACKUP_APP,version:1,createdAt:new Date().toISOString(),store,library};
+}
+async function backUpNow(){
+  const data=backupData(),day=new Date().toISOString().slice(0,10);
+  const file=new File([JSON.stringify(data)],`iPod Backup ${day}.json`,{type:'application/json'});
+  let shared=false;
+  const nativeShare=window.webkit?.messageHandlers?.ipodShareFile;   // iPhone app: native share sheet (Save to Files, AirDrop…)
+  if(nativeShare){nativeShare.postMessage({name:file.name,text:JSON.stringify(data)});shared=true}
+  if(!shared)try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'iPod Backup'});shared=true}}
+  catch(e){if(e&&e.name==='AbortError')return push(msgView('Backup Cancelled','Nothing was saved.'))}
+  if(!shared){const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=file.name;document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000)}
+  ls.set('ipod.backup.last',Date.now());triggerHaptic('success');
+  push(msgView('Backup Saved',`${data.library.length} songs’ favorites and ratings, your settings, playlists, memories, achievements, alarm and history.\n\nThe music files themselves aren’t included; keep them where you added them from. Save the file to iCloud Drive or Files to restore it later.`));
+}
+function pickBackup(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='application/json,.json';
+  inp.onchange=async()=>{const f=inp.files&&inp.files[0];if(!f)return;
+    let data=null;try{data=JSON.parse(await f.text())}catch(e){}
+    if(!data||data.app!==BACKUP_APP||typeof data.store!=='object')return push(msgView('Not an iPod Backup','That file isn’t a backup made by this iPod.'));
+    const when=new Date(data.createdAt).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
+    push(list('Restore Backup?',[
+      {label:'From',val:when},
+      {label:'Songs',val:String((data.library||[]).length)},
+      {label:'Restore Everything',action:()=>restoreBackup(data)},
+      {label:'Cancel',action:()=>pop()},
+    ]));
+  };
+  inp.click();
+}
+async function restoreBackup(data){
+  push(loadingView('Restoring…'));
+  for(const [k,v] of Object.entries(data.store||{}))if(k.startsWith('ipod.')&&typeof v==='string')try{localStorage.setItem(k,v)}catch(e){}
+  const norm=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(),byId=new Map(songs.map(x=>[x.id,x])),byName=new Map(songs.map(x=>[norm(x.title)+'|'+norm(x.artist),x]));
+  let fav=0,rated=0,missing=0;
+  for(const m of data.library||[]){
+    const x=byId.get(m.id)||byName.get(norm(m.title)+'|'+norm(m.artist));if(!x){if(m.favorite||m.rating)missing++;continue}
+    let changed=false;
+    if(m.favorite&&!x.favorite){x.favorite=true;changed=true;fav++}
+    if(m.rating&&x.rating!==m.rating){x.rating=m.rating;changed=true;rated++}
+    if(changed&&x.blob)try{await dbPut(songRecord(x))}catch(e){}
+  }
+  replaceTop(msgView('Restored',`Settings, playlists, memories, achievements and history are back.${fav?`\n${fav} favorites`:''}${rated?`\n${rated} ratings`:''}${missing?`\n\n${missing} rated or favorite songs aren’t in this library yet; add them and restore again.`:''}\n\nReloading…`));
+  setTimeout(()=>location.reload(),2200);
+}
+function backupMenu(){return list('Backup & Restore',()=>{const last=ls.get('ipod.backup.last',0);return [
+  {label:'Back Up Now',icon:'download',val:last?new Date(last).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'Never',action:backUpNow},
+  {label:'Restore from Backup',icon:'library',chev:1,action:pickBackup},
+  {label:'What’s Included',chev:1,action:go(msgView('Backup','Everything on this iPod except the music files: settings and colors, favorites and star ratings, playlists and shared playlist codes, song memories, achievements, alarm, listening history and stats.\n\nYour Friends account is anonymous and stays with this browser or app.'))},
+]})}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
