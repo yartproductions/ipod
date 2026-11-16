@@ -864,7 +864,8 @@ addEventListener('resize',window.ipodRefit);
 addEventListener('orientationchange',window.ipodRefit);
 window.visualViewport?.addEventListener('resize',window.ipodRefit);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)window.ipodRefit()});
-fit();applyHDR();if(settings.shakeShuffle==='On')startShakeListening();
+fit();applyHDR();if(settings.shakeShuffle==='On'){startShakeListening();
+  if(needsMotionAsk()){const re=()=>{removeEventListener('touchend',re,true);askMotion()};addEventListener('touchend',re,true)}}
 // iOS can refuse autoplay (e.g. Low Power Mode): start the brightness layer on the first touch instead.
 addEventListener('pointerdown',()=>{if(document.documentElement.classList.contains('hdr'))document.getElementById('hdrboost')?.play?.().catch(()=>{})},{once:true,capture:true});
 const COLORS=['Silver','Black','Graphite','Red','Blue','Green','Pink','Gold'];
@@ -2087,16 +2088,23 @@ function startShakeListening(){
   SHAKE.on=true;addEventListener('devicemotion',onMotion);
 }
 function stopShakeListening(){SHAKE.on=false;removeEventListener('devicemotion',onMotion)}
-// iOS asks for motion permission once, from a tap: done when you turn the setting on.
+// iOS only grants motion access from a real tap. The wheel's touch handling doesn't always count as
+// one, so if the first ask fails we ask again on your next tap anywhere on the screen.
+const needsMotionAsk=()=>typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function';
+function shakeOn(){settings.shakeShuffle='On';saveSettings();startShakeListening();if(top().type==='list'||top().type==='msg')render();triggerHaptic('success')}
+async function askMotion(){try{return await DeviceMotionEvent.requestPermission()}catch(e){return 'error'}}
 async function toggleShakeShuffle(){
   if(settings.shakeShuffle==='On'){settings.shakeShuffle='Off';saveSettings();stopShakeListening();return render()}
-  try{
-    if(typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function'){
-      const r=await DeviceMotionEvent.requestPermission();
-      if(r!=='granted')return push(msgView('Motion Access Needed','Allow Motion & Orientation access to shake for a random song.'));
-    }
-  }catch(e){return push(msgView('Motion Access Needed','Allow Motion & Orientation access to shake for a random song.'))}
-  settings.shakeShuffle='On';saveSettings();startShakeListening();render();
+  if(!needsMotionAsk())return shakeOn();
+  const r=await askMotion();
+  if(r==='granted')return shakeOn();
+  if(r==='denied')return push(msgView('Motion Access Off','iOS has blocked motion for this app. In Safari: aA ▸ Website Settings ▸ Motion & Orientation Access, or quit and reopen Safari to be asked again.'));
+  push(msgView('Allow Motion','Tap this screen once to allow Shake to Shuffle.'));
+  const once=async()=>{removeEventListener('touchend',once,true);removeEventListener('click',once,true);
+    const r2=await askMotion();
+    if(r2==='granted'){if(top().type==='msg')pop();shakeOn()}
+    else if(top().type==='msg'){top().msg='Motion access was not allowed. Turn Shake to Shuffle on again to retry.';render()}};
+  addEventListener('touchend',once,true);addEventListener('click',once,true);
 }
 function shakeShuffle(){
   const pool=songs.filter(s=>!s.deleted);if(!pool.length)return;
