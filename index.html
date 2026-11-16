@@ -773,6 +773,19 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .edbody i.on{opacity:1}
 .ipod.ed-frost::before{background:var(--internals) center/100% 100% no-repeat,var(--noise)}
 .ipod.ed-frost.smoke::before{background:var(--internals-light) center/100% 100% no-repeat,var(--noise)}
+.lt{position:relative;height:100%;box-sizing:border-box;padding:8px 12px;display:flex;flex-direction:column;color:#111;font-size:12px}
+.lt .lt-top{display:flex;gap:10px;align-items:center}
+.lt .lt-art{width:64px;height:64px;flex:none;border-radius:3px;background:#ccc center/cover;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+.lt .lt-meta{min-width:0}
+.lt .lt-meta b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lt .lt-meta span{display:block;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lt .lt-who{font-size:10.5px;color:#2d7fd8;font-weight:600;margin-top:2px}
+.lt .lt-bar{display:flex;align-items:center;gap:6px;margin-top:10px;font-size:10.5px;color:#555;font-variant-numeric:tabular-nums}
+.lt .lt-bar .t{flex:1;height:7px;border-radius:4px;background:linear-gradient(#ddd,#eee);box-shadow:inset 0 1px 1px rgba(0,0,0,.15);overflow:hidden}
+.lt .lt-bar .t i{display:block;height:100%;width:0;background:linear-gradient(#78b6f5,#2d7fd8)}
+.lt .lt-lyric{margin-top:10px;min-height:2.6em;font-size:13px;font-weight:600;color:#222;text-align:center;transition:opacity .3s}
+.lt .lt-note{margin-top:auto;text-align:center;font-size:10.5px;color:#777}
+.lt .lt-miss{display:inline-block;background:#f6d7a8;color:#7a4a05;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700;margin-top:3px}
 </style>
 </head>
 <body>
@@ -2808,6 +2821,8 @@ function renderView(){
     renderQuiz(v);
   }else if(v.type==='timepick'){
     renderTimePick(v);
+  }else if(v.type==='custom'){
+    v.render(body);   // screens drawn by add-on scripts (Listen Together)
   }else if(v.type==='now'&&settings.npStyle==='Flow'&&cur()){
     renderNowFlow(changed?direction:0);
   }else if(v.type==='now'&&settings.style==='Modern'&&cur()){
@@ -4149,6 +4164,7 @@ function scroll(dir){
   if(v.type==='bubbles'){bubblesInput(v,null,dir);return}
   if(v.type==='quiz'){quizInput(v,null,dir);return}
   if(v.type==='timepick'){timePickInput(v,null,dir);return}
+  if(v.type==='custom'){v.input?.(null,dir);return}
   if(v.type==='music-home'){const ns=Math.max(0,Math.min(3,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();renderMusicHome(v)}return}
   if(v.type==='list'&&isFlowMenu(v)){const n=itemsOf(v).length,ns=Math.max(0,Math.min(n-1,v.sel+dir));if(ns!==v.sel){v.sel=ns;click();flowMenuUpdate(v);updateFavoriteStar()}return}
   if(v.type==='list'){const k=accelStep();if(k>1){const n=itemsOf(v).length;const ns=Math.max(0,Math.min(n-1,v.sel+dir*k));if(ns!==v.sel){v.sel=ns;click();render();showLetter(v)}return}}
@@ -4173,6 +4189,7 @@ function press(btn){
   if(top().type==='quiz'&&btn!=='menu'){quizInput(top(),btn,0);return}
   if(top().type==='quiz'&&btn==='menu')quizStop();
   if(top().type==='timepick'&&btn!=='menu'){timePickInput(top(),btn,0);return}
+  if(top().type==='custom'&&btn!=='menu'&&top().input){top().input(btn,0);return}
   if(top().type==='bubbles'&&btn!=='menu'){if(btn!=='select')click();bubblesInput(top(),btn,0);return}
   click();
   if(btn==='select')triggerHaptic('confirm');
@@ -4618,7 +4635,8 @@ window.ipodListenBridge=Object.freeze({songs:()=>songs,cur,time:curTime,duration
   play:resumeAudio,pause:()=>audio.pause(),seek:t=>seekTo(t),art:nowPlayingArt,
   playSong:s=>{latestPlayRequest++;importedPlayback=null;queue=[s];qi=0;load(true)},
   list,go,push,pop,replaceTop,msgView,inputView,loadingView,toast:t=>setHdrTask(t,1,true),
-  refresh:()=>{if(top()?.title==='Listen Together')render()},openNow:()=>push(nowView())});
+  refresh:()=>{if(top()?.title==='Listen Together'||top()?.type==='custom')render()},openNow:()=>push(nowView()),
+  top,render,lyrics:populateLyrics,genArt,esc});
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
 window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,enqueueYT,render,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
 })();

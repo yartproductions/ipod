@@ -96,7 +96,7 @@ function follow(){
   if(!np){missing=null;return B.refresh()}
   const song=findLocal(np);
   if(!song){
-    if(missing!==np.t+'|'+np.a){missing=np.t+'|'+np.a;if(!B.paused())B.pause();B.toast('Not in your library: '+np.t);B.refresh()}
+    if(missing!==np.t+'|'+np.a){missing=np.t+'|'+np.a;if(!B.paused())B.pause();B.toast('Not in your library: '+np.t);noteMissed(np);B.refresh()}
     return;
   }
   missing=null;
@@ -117,10 +117,78 @@ function sync(song,force){
   if(force||Math.abs(B.time()-want)>(np.playing?1.2:.25))B.seek(want);   // paused: line up exactly
 }
 
+/* ---- songs you didn't have, kept so you can add them later ---- */
+const MKEY='ipod.listen.missed';let missedThisSession=0;
+const readMissed=()=>{try{const x=JSON.parse(localStorage.getItem(MKEY)||'[]');return Array.isArray(x)?x:[]}catch(e){return []}};
+function noteMissed(np){
+  const k=norm(np.t)+'|'+norm(np.a),list=readMissed().filter(x=>norm(x.t)+'|'+norm(x.a)!==k);
+  list.unshift({t:np.t,a:np.a,al:np.al||'',host:hostName,at:Date.now()});missedThisSession++;
+  try{localStorage.setItem(MKEY,JSON.stringify(list.slice(0,200)))}catch(e){}
+}
+function missedMenu(){
+  return B.list('Songs You Missed',()=>{const m=readMissed().filter(x=>!findLocal({t:x.t,a:x.a,al:x.al}));
+    if(!m.length)return [{label:'Nothing missing',action:()=>{}}];
+    return [...m.map(x=>({label:x.t,val:x.a,action:B.go(B.msgView(x.t,[x.a,x.al].filter(Boolean).join(' — ')+'\n\nPlayed by '+x.host+' on '+new Date(x.at).toLocaleDateString()+'. Add it to your library to hear it next time.'))})),
+      {label:'Clear List',action:()=>{try{localStorage.removeItem(MKEY)}catch(e){}B.render()}}];
+  });
+}
+
+/* ---- the session screen: cover, live progress bar and the current lyric line ---- */
+const lyricCache=new Map();
+function lyricsFor(np,song){
+  const k=norm(np.t)+'|'+norm(np.a);if(lyricCache.has(k))return lyricCache.get(k);
+  lyricCache.set(k,null);
+  Promise.resolve(B.lyrics(song||{title:np.t,artist:np.a,album:np.al||'',duration:np.dur})).then(d=>{lyricCache.set(k,d||{lines:[],text:''})}).catch(()=>lyricCache.set(k,{lines:[],text:''}));
+  return null;
+}
+const fmt=t=>{t=Math.max(0,t|0);return (t/60|0)+':'+String(t%60).padStart(2,'0')};
+function shown(){
+  if(role==='host'){const s=B.cur();return s?{np:{t:s.title,a:s.artist,al:s.album,dur:B.duration()||0},pos:B.time(),song:s,art:B.art(s)}:null}
+  const np=state&&state.np;if(!np)return null;
+  const song=findLocal(np);
+  return {np,pos:Math.min(expected(),np.dur||1e9),song,art:song?B.art(song):(np.art||B.genArt(np.al||np.t,np.a))};
+}
+function sessionView(){
+  const v={type:'custom',title:'Listen Together',
+    render(body){
+      const x=shown(),who=role==='host'?`Code ${code} · ${listeners} listening`:`Listening with ${B.esc(hostName)}`;
+      if(!x){body.innerHTML=`<div class="lt"><div class="lt-top"><div class="lt-art"></div><div class="lt-meta"><b>${role==='host'?'Play something to share it':'Waiting for '+B.esc(hostName)+'…'}</b><div class="lt-who">${who}</div></div></div><div class="lt-note">Center for options · MENU to go back</div></div>`;v.start();return}
+      body.innerHTML=`<div class="lt"><div class="lt-top"><div class="lt-art" style="background-image:url(&quot;${B.esc(x.art||'')}&quot;)"></div>
+        <div class="lt-meta"><b>${B.esc(x.np.t)}</b><span>${B.esc([x.np.a,x.np.al].filter(Boolean).join(' — '))}</span><div class="lt-who">${who}</div>
+        ${role==='guest'&&!x.song?'<div class="lt-miss">Not in your library</div>':''}</div></div>
+        <div class="lt-bar"><span id="lt-c">0:00</span><div class="t"><i id="lt-i"></i></div><span id="lt-d">0:00</span></div>
+        <div class="lt-lyric" id="lt-l"></div><div class="lt-note">Center for options · MENU to go back</div></div>`;
+      v.update();v.start();
+    },
+    update(){
+      const x=shown();if(!x)return;
+      const c=document.getElementById('lt-c'),i=document.getElementById('lt-i'),d=document.getElementById('lt-d'),l=document.getElementById('lt-l');if(!i)return;
+      const dur=x.np.dur||0,pos=Math.min(x.pos,dur||x.pos);
+      c.textContent=fmt(pos);d.textContent=dur?'-'+fmt(dur-pos):'';i.style.width=dur?(pos/dur*100).toFixed(2)+'%':'0';
+      const L=lyricsFor(x.np,x.song);let line='';
+      if(L&&L.lines&&L.lines.length){for(const y of L.lines){if(y.at<=pos+.15)line=y.text;else break}}
+      if(l.textContent!==line)l.textContent=line;
+    },
+    input(btn){if(btn==='select')B.push(menu())},
+    key:null};
+  let lastKey='';
+  // refresh while this screen is showing; stops when you leave it and restarts when you come back
+  v.start=()=>{if(v._t)return;v._t=setInterval(()=>{
+    if(B.top()!==v||!role){clearInterval(v._t);v._t=null;return}
+    const x=shown(),k=x?x.np.t+'|'+x.np.a+'|'+!!x.song+'|'+listeners:'none';
+    if(k!==lastKey){lastKey=k;B.render()}else v.update()},250)};
+  return v;
+}
+
 /* ---- ending ---- */
 async function end(remote){
   const r=room,was=role;clearInterval(timer);timer=null;clearSubs();
-  role=null;room=null;state=null;missing=null;remember();B.refresh();
+  role=null;room=null;state=null;missing=null;remember();
+  if(was==='guest'&&missedThisSession)B.toast(missedThisSession+(missedThisSession===1?' song':' songs')+' to add · Listen Together ▸ Songs You Missed');
+  else if(!remote)B.toast(was==='host'?'Listen Together ended':'You left Listen Together');
+  missedThisSession=0;
+  if(B.top()?.type==='custom'&&B.top().title==='Listen Together')B.pop();
+  B.refresh();
   if(!remote&&r)try{was==='host'?await r.delete():await r.collection('guests').doc(uid).delete()}catch(e){}
 }
 async function resume(){
@@ -143,28 +211,29 @@ function menu(){
       {label:'Your Code',val:code},
       {label:'Listening',val:String(listeners)},
       {label:'Now Sharing',val:B.cur()?.title||'Nothing yet'},
-      {label:'End Session',action:async()=>{await end(false);B.toast('Listen Together ended')}},
+      {label:'End Session',action:()=>end(false)},
     ];
     if(role==='guest'){const np=state&&state.np;return [
       {label:'Listening With',val:hostName},
       {label:np?(missing?'Not in Your Library':'Now Playing'):'Waiting for '+hostName,val:np?np.t:'',action:()=>{if(np&&!missing)B.openNow()}},
       ...(missing?[{label:'You’ll rejoin on the next song you have',action:()=>{}}]:[]),
-      {label:'Leave',action:async()=>{await end(false);B.toast('You left Listen Together')}},
+      {label:'Leave',action:()=>end(false)},
     ]}
     return [
       {label:'Host a Session',icon:'people',chev:1,action:async()=>{
         B.push(B.loadingView('Starting…'));
-        try{await host();B.replaceTop(B.msgView('Code: '+code,'Friends open Music ▸ Listen Together ▸ Join and type '+code+'. Everyone hears what you play, from their own library.'))}
+        try{await host();B.replaceTop(sessionView())}
         catch(e){B.replaceTop(B.msgView('Couldn’t Start',e.message||'Please try again.'))}}},
       {label:'Join with Code',icon:'people',chev:1,action:()=>B.push(B.inputView('Join Listen Together','Code from your friend',async val=>{
         B.replaceTop(B.loadingView('Joining…'));
-        try{await join(val);B.replaceTop(B.msgView('Listening with '+hostName,'Songs you have play in sync with '+hostName+'. If you don’t have one, you’ll see it and rejoin on the next.'))}
+        try{await join(val);B.replaceTop(sessionView())}
         catch(e){B.replaceTop(B.msgView('Couldn’t Join',e.message||'Please try again.'))}}))},
+      {label:'Songs You Missed',icon:'library',chev:1,val:String(readMissed().filter(x=>!findLocal({t:x.t,a:x.a,al:x.al})).length||''),action:()=>B.push(missedMenu())},
       {label:'How It Works',chev:1,action:B.go(B.msgView('Listen Together','One person hosts and shares a 6-character code. Everyone who joins hears the same song at the same moment, each from their own library. Nothing is downloaded.'))},
     ];
   });
 }
-window.ipodListen=Object.freeze({open:()=>B.push(menu()),get role(){return role},get code(){return code},get listeners(){return listeners},
+window.ipodListen=Object.freeze({open:()=>B.push(role?sessionView():menu()),missed:missedMenu,get role(){return role},get code(){return code},get listeners(){return listeners},
   get missing(){return missing},end:()=>end(false),_host:host,_join:join});
 resume();
 })();
