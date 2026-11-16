@@ -1,4 +1,4 @@
-/* Stremio account + Torrentio HTTPS playback. Secrets stay in memory for this page session. */
+/* Stremio account + installed add-on HTTPS playback. Secrets stay in memory for this page session. */
 (()=>{
 'use strict';
 const b=window.ipodVideoBridge;if(!b)return;
@@ -28,7 +28,8 @@ async function rpc(method,params={}){
 function normalizeAddons(items){
  if(!Array.isArray(items))throw Error('Stremio did not return an add-on list.');
  return items.filter(a=>a&&httpsURL(a.transportUrl)&&new URL(a.transportUrl).pathname.endsWith('/manifest.json')&&a.manifest&&typeof a.manifest==='object')
-  .filter(a=>/torrentio/i.test(a.manifest.id||'')).map(a=>({base:a.transportUrl.replace(/\/manifest\.json(?:\?.*)?$/,''),manifest:a.manifest}));
+  .filter(a=>Array.isArray(a.manifest.resources)&&a.manifest.resources.some(r=>(typeof r==='string'?r:r?.name)==='stream'))
+  .map(a=>({base:a.transportUrl.replace(/\/manifest\.json(?:\?.*)?$/,''),manifest:a.manifest,name:clean(a.manifest.name||a.manifest.id||'Video add-on',60)}));
 }
 function supports(a,type,id){return Array.isArray(a.manifest.resources)&&a.manifest.resources.some(r=>{
  const resource=typeof r==='string'?{name:r,types:a.manifest.types,idPrefixes:a.manifest.idPrefixes}:r;
@@ -70,12 +71,12 @@ function disconnect(){
 function settingsView(){return list('Stremio',()=>[
  {label:authKey?'Account Connected':'Connect Account',icon:'people',action:authKey?undefined:connect},
  ...(authKey?[
-  {label:'Torrentio Sources',val:String(addons.length)},
+  {label:'Video Add-ons',val:String(addons.length)},
   {label:'Refresh Add-ons',action:()=>loading('Refreshing Add-ons',async()=>{const epoch=generation,collection=await rpc('addonCollectionGet',{update:true,addFromURL:[]});if(epoch===generation)addons=normalizeAddons(collection.addons);return settingsView()})},
   {label:'Disconnect',action:disconnect},
  ]:[]),
- {label:'Connection Info',icon:'info',action:()=>push(msgView('Connection Info','Sign in with your Stremio email and password. Your installed Torrentio configuration is retrieved automatically. Passwords and add-on keys are not saved; reconnect after reloading. Apple/Google-only accounts need a Stremio password.'))},
- {label:'Playback Help',icon:'info',action:()=>push(msgView('Playback Help','Uses direct HTTPS streams from your Torrentio add-ons. Raw torrents and streams requiring custom headers need another player. Unsupported codecs may not play on iPhone.'))},
+ {label:'Connection Info',icon:'info',action:()=>push(msgView('Connection Info','Sign in with your Stremio email and password. Installed video add-ons such as Torrentio, Absolute Cinema and WebStreamr are retrieved automatically. Passwords and add-on keys are not saved; reconnect after reloading. Apple/Google-only accounts need a Stremio password.'))},
+ {label:'Playback Help',icon:'info',action:()=>push(msgView('Playback Help','Uses direct HTTPS streams from your installed Stremio add-ons. A TorBox “downloading” result is still being cached: reopen the title after it finishes or choose an instant source from another add-on. Raw torrents, external webpages and streams requiring custom headers cannot play here. Unsupported codecs may not play on iPhone.'))},
 ])}
 function readProgress(){try{const value=JSON.parse(localStorage.getItem('ipod.videoProgress')||'[]');return Array.isArray(value)?value.filter(x=>x&&typeof x.id==='string'&&['movie','series'].includes(x.type)&&Number.isFinite(x.time)&&x.time>=0):[]}catch{return []}}
 function remember(item,time,duration,ended=false){
@@ -123,16 +124,16 @@ function sources(item){
  if(!authKey){push(settingsView());return}
  return loading('Finding Streams',async()=>{
   const providers=addons.filter(a=>supports(a,item.type,item.id));
-  if(!providers.length)throw Error('No compatible Torrentio add-on is installed. Check Stremio, then refresh add-ons here.');
+  if(!providers.length)throw Error('No compatible video add-on is installed. Check Stremio, then refresh add-ons here.');
   const results=await Promise.allSettled(providers.map(async a=>{
-   const result=await json(a.base+'/stream/'+item.type+'/'+encodeURIComponent(item.id)+'.json',{},'Torrentio');
-   return (Array.isArray(result.streams)?result.streams:[]).filter(s=>s&&typeof s==='object');
+   const result=await json(a.base+'/stream/'+item.type+'/'+encodeURIComponent(item.id)+'.json',{},a.name);
+   return (Array.isArray(result.streams)?result.streams:[]).filter(s=>s&&typeof s==='object').map(stream=>({stream,addonName:a.name}));
   }));
-  const streams=results.flatMap(r=>r.status==='fulfilled'?r.value:[]),direct=streams.filter(playable);
-  if(!direct.length)throw Error(results.every(r=>r.status==='rejected')?'Torrentio could not be reached. Try again later.':streams.length?'These sources need a torrent server or custom player. Check that Torrentio is connected to Real-Debrid.':'No streams returned for this episode. Try another title or check Torrentio in Stremio.');
-  return list('Choose Stream',direct.slice(0,100).map((s,i)=>({label:clean(s.name||'Source '+(i+1),60),chev:1,action:()=>push(list('Stream Details',[
+  const streams=results.flatMap(r=>r.status==='fulfilled'?r.value:[]),direct=streams.filter(x=>playable(x.stream));
+  if(!direct.length)throw Error(results.every(r=>r.status==='rejected')?'Your video add-ons could not be reached. Try again later.':streams.length?'These results need Stremio’s torrent engine, an external webpage or custom request headers. Try a direct source from another add-on.':'No streams returned for this episode. Try another title or refresh your Stremio add-ons.');
+  return list('Choose Stream',direct.slice(0,100).map(({stream:s,addonName},i)=>({label:clean(s.name||'Source '+(i+1),60),sub:addonName,chev:1,action:()=>push(list('Stream Details',[
    {label:'Play',icon:'play',action:()=>play(s,item)},
-   {label:'Details',icon:'info',action:()=>push(msgView(clean(s.name||'Source'),clean(s.description||s.title,1000)||'Direct HTTPS video.'))},
+   {label:'Details',icon:'info',action:()=>push(msgView(clean(s.name||'Source'),clean(s.description||s.title,1000)||'Direct HTTPS video from '+addonName+'.'))},
   ]))})));
  });
 }
