@@ -3582,7 +3582,7 @@ function openSongFlow(){
 }
 function songFlowView(title,songList,sel=0){
   return {type:'flow',title,songList,sel,
-    albums:songList.map(s=>({album:s.title,artist:s.artist+(known(s.album)?' — '+s.album:''),songs:[s]}))};
+    albums:songList.map(s=>({album:s.title,artist:s.artist||'',songs:[s]}))};   // title over artist; the album would just repeat
 }
 /* ---------- Recommendation Flow: discover music using the existing 3D shelf ---------- */
 function recommendationSeeds(){
