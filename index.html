@@ -2399,7 +2399,10 @@ async function toggleShakeShuffle(){
   if(nativeShake()||!needsMotionAsk())return shakeOn();
   const r=await askMotion();
   if(r==='granted')return shakeOn();
-  if(r==='denied')return push(msgView('Motion Access Off','iOS has blocked motion for this app. In Safari: aA ▸ Website Settings ▸ Motion & Orientation Access, or quit and reopen Safari to be asked again.'));
+  if(r==='denied'){
+    // The iPhone app shakes natively; if we got here inside it, the app is older than the page.
+    if(window.webkit?.messageHandlers?.ipodHaptics)return push(msgView('Rebuild the App','Shake to Shuffle needs the newest version of the iPhone app. On your Mac: git pull, then press Run in Xcode.'));
+    return push(msgView('Motion Access Off','iOS has blocked motion for the iPod. In Safari: aA ▸ Website Settings ▸ Motion & Orientation Access ▸ Allow. On the Home Screen app: remove it, add it again from Safari and allow motion when asked.'))}
   push(msgView('Allow Motion','Tap this screen once to allow Shake to Shuffle.'));
   const once=async()=>{removeEventListener('touchend',once,true);removeEventListener('click',once,true);
     const r2=await askMotion();
