@@ -786,6 +786,13 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .ltg .ltg-lyric{margin-top:10px;min-height:2.6em;font-size:13px;font-weight:600;color:#222;text-align:center;transition:opacity .3s}
 .ltg .ltg-note{margin-top:auto;text-align:center;font-size:10.5px;color:#777}
 .ltg .ltg-miss{display:inline-block;background:#f6d7a8;color:#7a4a05;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700;margin-top:3px}
+#memocard{position:absolute;left:8px;right:8px;bottom:8px;z-index:30;display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:9px;
+  background:rgba(255,250,232,.96);color:#3b3020;box-shadow:0 6px 18px rgba(0,0,0,.28),inset 0 0 0 .5px rgba(0,0,0,.12);
+  transform:translateY(calc(100% + 14px));opacity:0;transition:transform .45s cubic-bezier(.2,1.1,.35,1),opacity .35s;pointer-events:none}
+#memocard.on{transform:none;opacity:1}
+#memocard .mi{font-size:15px;line-height:1;margin-top:1px;color:#b08a3a}
+#memocard b{display:block;font-size:12.5px;font-weight:600;line-height:1.3}
+#memocard small{display:block;font-size:10px;color:#8a7a5a;margin-top:2px}
 </style>
 </head>
 <body>
@@ -1719,6 +1726,7 @@ function musicRootMenu(){return list('Music',()=>[
   {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
   {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
   {label:'DJ Mode',icon:'shuffle',chev:1,action:go(djMenu)},
+  {label:'Song Memories',icon:'heart',chev:1,action:go(memoriesMenu)},
   {label:'Listen Together',icon:'people',val:window.ipodListen?.role==='host'?'Hosting':window.ipodListen?.role==='guest'?'Joined':'',chev:1,action:()=>window.ipodListen?window.ipodListen.open():push(msgView('Listen Together Unavailable','Reload the iPod to load Listen Together.'))},
   {label:'Smart Playlists',icon:'music',chev:1,action:go(smartMenu)},
   {label:'Sessions',icon:'clock',chev:1,action:go(sessionsMenu)},
@@ -2539,6 +2547,36 @@ function djMenu(){return list('DJ Mode',()=>{const src=djSources();return [
     const off=djOff();off.has(x.id)?off.delete(x.id):off.add(x.id);ls.set('ipod.dj.off',[...off]);render()}}))))},
   {label:'How It Works',chev:1,action:go(msgView('DJ Mode','DJ Mode plays one endless mix that takes turns between all your playlists, so each one gets an equal share however long it is. Songs never repeat close together.'))},
 ]})}
+/* ---------- Song Memories: a short note pinned to a song, shown when it plays ---------- */
+const MEMO_KEY='ipod.memories';
+const memoKey=s=>s&&(s.id||((s.title||'')+'|'+(s.artist||'')).toLowerCase());
+const memos=()=>ls.get(MEMO_KEY,{});
+const memoOf=s=>{const m=memos()[memoKey(s)];return m&&m.text?m:null};
+function setMemo(s,text){
+  const all=memos(),k=memoKey(s);text=String(text||'').trim().slice(0,140);
+  if(text)all[k]={text,at:Date.now(),t:s.title,a:s.artist};else delete all[k];
+  ls.set(MEMO_KEY,all);window.ipodAchievements?.event('memory');
+}
+function memoEditor(s){
+  return inputView('Song Memory','A short note for this song…',v=>{setMemo(s,v);triggerHaptic('success');pop();if(top().title==='Song')pop();npToast?.('Memory saved');setTimeout(()=>showMemo(s,true),250)},memoOf(s)?.text||'');
+}
+// The memory slides up over the screen for a few seconds whenever its song starts.
+function showMemo(s,force){
+  const m=memoOf(s);if(!m||(!force&&showMemo.last===memoKey(s)))return;showMemo.last=memoKey(s);
+  document.getElementById('memocard')?.remove();
+  const el=document.createElement('div');el.id='memocard';
+  el.innerHTML=`<span class="mi">✎</span><div><b>${esc(m.text)}</b><small>${new Date(m.at).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</small></div>`;
+  screenEl.appendChild(el);requestAnimationFrame(()=>el.classList.add('on'));
+  setTimeout(()=>{el.classList.remove('on');setTimeout(()=>el.remove(),450)},6000);
+}
+// each time a song starts, its memory (if any) appears once
+onActiveAudio('playing',()=>{const s=cur();if(!s)return;if(showMemo.song!==s){showMemo.song=s;showMemo.last=null}showMemo(s)});
+function memoriesMenu(){return list('Song Memories',()=>{
+  const all=Object.entries(memos()).filter(([,m])=>m.text).sort((a,b)=>b[1].at-a[1].at);
+  if(!all.length)return [{label:'Add one from a song’s options',action:()=>{}}];
+  return all.map(([k,m])=>{const so=songs.find(x=>memoKey(x)===k&&!x.deleted);
+    return {label:m.t||'Song',val:m.text,action:()=>{if(so){playList([so],0);push(nowView());setTimeout(()=>showMemo(so,true),400)}else push(msgView(m.t||'Song',m.text))}}});
+})}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -3966,6 +4004,8 @@ function songOptions(s){return list('Song',()=>[
   {label:'Play Next',action:()=>{queue.splice(qi+1,0,{...s});pop();render();npToast('Playing next')}},
   {label:'Add to Up Next',action:()=>{queue.push({...s});pop();render();npToast('Added to Up Next')}},
   {label:s.favorite?'Remove from Favorites':'Add to Favorites',action:async()=>{await toggleFavorite(s);pop()}},
+  {label:memoOf(s)?'Edit Memory':'Add Memory',val:memoOf(s)?.text||'',chev:1,action:()=>push(memoEditor(s))},
+  ...(memoOf(s)?[{label:'Delete Memory',action:()=>{setMemo(s,'');pop();npToast?.('Memory deleted')}}]:[]),
   {label:'Go to Album',chev:1,action:go(()=>songsMenu(albumSort(songs.filter(x=>x.album===s.album)),s.album))},
   {label:'Go to Artist',chev:1,action:go(()=>{const ss=songs.filter(x=>x.artist===s.artist);return new Set(ss.map(x=>x.album)).size>1?albumsMenu(ss,s.artist,true):songsMenu(albumSort(ss),s.artist)})},
   {label:'Repair Artwork',chev:1,action:go(()=>artworkRepairMenu(s))},
