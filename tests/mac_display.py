@@ -60,6 +60,14 @@ def main():
               (first, mac.inner_text('#cap b')))
         mac.screenshot(path=str(SHOTS / 'mac-flow.png'))
 
+        # the phone goes quiet while playing (asleep/offline): the Mac says so instead of drifting silently
+        C.home(ph); C.choose(ph, 'Music'); C.choose(ph, 'Shuffle Songs'); ph.wait_for_timeout(1200)
+        mac.evaluate("window.__realNow=Date.now; const skew=25000; Date.now=()=>window.__realNow()+skew")
+        mac.wait_for_timeout(600)
+        check('if the phone goes quiet while playing, the Mac shows “Waiting for your phone…”', 'on' in (mac.get_attribute('#stale', 'class') or ''))
+        mac.evaluate("Date.now=window.__realNow")
+        mac.wait_for_timeout(600)
+        check('…and hides it once updates are fresh again', 'on' not in (mac.get_attribute('#stale', 'class') or ''))
         # disconnect from the phone: Mac offers a fresh code
         C.home(ph); C.choose(ph, 'Settings'); C.choose(ph, 'Mac Display')
         check('phone shows the connection', 'Connected' in ph.inner_text('#body'))
@@ -67,6 +75,16 @@ def main():
         mac.wait_for_timeout(600)
         new = mac.evaluate('window.__macDisplay.code')
         check('after Disconnect the Mac shows a new code', 'gone' not in mac.get_attribute('#pair', 'class') and new and new != code, (code, new))
+        # on a computer, the iPod site opens the Mac Display; "?ipod" keeps the iPod
+        comp = ctx.new_page(); comp.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>false})")
+        comp.goto(url); comp.wait_for_timeout(800)
+        check('opening the iPod on a computer goes to the Mac Display', comp.url.endswith('mac.html'), comp.url)
+        comp.goto(url + 'index.html?ipod'); comp.wait_for_timeout(800)
+        check('“?ipod” opens the iPod here instead', 'mac.html' not in comp.url and comp.locator('#wheel').count() == 1, comp.url)
+        comp.goto(url); comp.wait_for_timeout(800)
+        check('…and remembers it', 'mac.html' not in comp.url)
+        comp.goto(url + 'index.html?mac'); comp.wait_for_timeout(800)
+        check('“?mac” goes back to the Mac Display', comp.url.endswith('mac.html'), comp.url)
         check('no page errors', not errors, errors)
     srv.shutdown()
     print(f'\n{sum(results)}/{len(results)} passed'); sys.exit(0 if all(results) else 1)

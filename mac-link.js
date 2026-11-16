@@ -100,7 +100,7 @@ function snapshot(){
 function tick(force){
   if(!pairRef)return;
   const {view,np}=snapshot();
-  const posBucket=np?Math.floor(np.pos/8):0;   // heartbeat every ~8 s keeps the lyrics in time
+  const posBucket=np?Math.floor(np.pos/5):0;   // heartbeat every ~5 s keeps the Mac in time
   const sig=JSON.stringify([view.mode,view.sel,view.items.map(x=>x.id),np&&[np.sk,np.playing,posBucket,np.dur]]);
   const jumped=np&&lastNp&&np.sk===lastNp.sk&&Math.abs(np.pos-(lastNp.pos+(Date.now()-lastNpAt)/1000*(lastNp.playing?1:0)))>1.5;
   if(!force&&sig===lastSig&&!jumped)return;
@@ -160,6 +160,10 @@ function open(){
     catch(e){B.replaceTop(B.msgView('Couldn’t Connect',e.message||'Please try again.'))}
   }));
 }
+// Coming back from the background or a network change: send the full state right away.
+const nudge=()=>{if(pairRef){lastSig='';tick(true)}};
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')nudge()});
+addEventListener('online',nudge);addEventListener('pageshow',nudge);
 window.ipodMac=Object.freeze({open,get status(){return status},get code(){return code},disconnect,_tick:()=>tick(true)});
 resume();
 })();

@@ -62,7 +62,10 @@ main{position:relative;z-index:1;height:100%;display:grid;grid-template-columns:
 .icn{width:64px;height:64px;margin:0 auto 26px;border-radius:15px;background:url(icon-192.png) center/cover;box-shadow:0 10px 30px rgba(0,0,0,.6)}
 #hint{position:fixed;right:18px;bottom:14px;z-index:3;font-size:12px;color:var(--dim);transition:opacity .6s}
 body.idle #hint{opacity:0}
-#hint button{all:unset;cursor:pointer;margin-left:12px;color:var(--ink);opacity:.7}
+#hint button,#hint a{all:unset;cursor:pointer;margin-left:12px;color:var(--ink);opacity:.7}
+#stale{position:fixed;left:50%;top:18px;z-index:4;transform:translate(-50%,-30px);opacity:0;transition:.4s;padding:6px 14px;border-radius:20px;
+  background:rgba(255,255,255,.12);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);font-size:13px;color:var(--ink)}
+#stale.on{transform:translate(-50%,0);opacity:1}
 @media (max-aspect-ratio:1/1){main{grid-template-columns:1fr;grid-template-rows:1.2fr 1fr}:root{--card:min(30vh,50vw)}}
 </style>
 </head>
@@ -78,7 +81,8 @@ body.idle #hint{opacity:0}
 </main>
 <div id="pair"><div><div class="icn"></div><h1>Mac Display</h1><div id="code"></div>
   <p>On your iPod, open <b>Settings ▸ Mac Display</b> and type this code.<br>Your phone keeps playing; this screen shows Cover Flow and the lyrics.</p><p class="err" id="err"></p></div></div>
-<div id="hint">Spin a Flow on your iPod to browse here<button id="fs">Full Screen ⌃⌘F</button><button id="end">Disconnect</button></div>
+<div id="stale">Waiting for your phone…</div>
+<div id="hint">Spin a Flow on your iPod to browse here<a id="useipod" href="index.html?ipod">Use the iPod here</a><button id="fs">Full Screen ⌃⌘F</button><button id="end">Disconnect</button></div>
 <script>
 (()=>{
 'use strict';
@@ -87,7 +91,7 @@ const CONFIG={apiKey:"AIzaSyDSMe2R6QTVd3htWfP7-ScKMZyWd5dePNU",authDomain:"ipod-
 const SDK='13.3.0',ABC='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',KEY='ipod.macdisplay.code';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let db,uid,ref=null,code=null,unsubs=[],refresh=null;
-const art=new Map(),lyrics=new Map();let state=null,stateAt=0;
+const art=new Map(),lyrics=new Map();let state=null,stateAt=0,stateServerAt=0,clockOffset=null,lastSnap=0;
 
 /* ---------- Firebase + pairing ---------- */
 const load=f=>new Promise((ok,no)=>{const s=document.createElement('script');s.src=`https://www.gstatic.com/firebasejs/${SDK}/${f}`;s.onload=ok;s.onerror=()=>no(Error('Could not load '+f));document.head.appendChild(s)});
@@ -125,11 +129,31 @@ function watch(){
     if(!d.exists){reset();return offerCode()}
     const x=d.data();
     if(x.phone){$('#pair').classList.add('gone');clearTimeout(refresh)}
-    if(x.state){state=x.state;stateAt=performance.now();draw()}
+    if(x.state)applyState(x);
   },e=>{$('#err').textContent='Connection lost. Retrying…';setTimeout(watch,3000)}));
   unsubs.push(ref.collection('art').onSnapshot(q=>{q.docChanges().forEach(c=>{const v=c.doc.data();art.set(c.doc.id,v.data||v.url)});paintArt()},()=>{}));
   unsubs.push(ref.collection('lyrics').onSnapshot(q=>{q.docChanges().forEach(c=>lyrics.set(c.doc.id,c.doc.data()));drawLyrics(true)},()=>{}));
 }
+// Keep in time with the phone: positions are measured against the server's clock (the phone stamps each
+// update), not against when this Mac happened to receive it, so slow or batched deliveries don't drift.
+function applyState(x){
+  const now=Date.now(),srv=x.updatedAt&&x.updatedAt.toMillis?x.updatedAt.toMillis():0;
+  if(srv){const est=srv-now;clockOffset=clockOffset==null?est:Math.max(clockOffset,est)}   // the fastest delivery is the best estimate
+  state=x.state;stateAt=performance.now();stateServerAt=srv;lastSnap=now;draw();
+}
+function sinceUpdate(){   // seconds since the phone sent this state
+  if(stateServerAt&&clockOffset!=null)return Math.max(0,(Date.now()+clockOffset-stateServerAt)/1000);
+  return (performance.now()-stateAt)/1000;
+}
+// If the live listener stalls (sleep, Wi-Fi change), fetch the latest state and listen again.
+async function resync(){
+  if(!ref||!code||offering)return;
+  try{const d=await ref.get();if(d.exists&&d.data().state)applyState(d.data())}catch(e){}
+  if(Date.now()-lastSnap>30000)watch();
+}
+setInterval(()=>{if(state&&state.np&&state.np.playing&&Date.now()-lastSnap>12000)resync()},6000);
+addEventListener('online',resync);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resync()});
 function reset(){state=null;art.clear();lyrics.clear();$('#shelf').innerHTML='';$('#lines').innerHTML='';lyrKey=null}
 async function resume(){
   let c=null;try{c=localStorage.getItem(KEY)}catch(e){}
@@ -175,7 +199,7 @@ function setBg(u){if(u===bgCur)return;bgCur=u;const ls=document.querySelectorAll
 
 /* ---------- lyrics ---------- */
 let lyrKey=null,lyrIdx=-2,lrclibTried=new Set();
-const pos=()=>{const np=state&&state.np;if(!np)return 0;return np.pos+(np.playing?(performance.now()-stateAt)/1000+.25:0)};
+const pos=()=>{const np=state&&state.np;if(!np)return 0;return np.pos+(np.playing?sinceUpdate()+.15:0)};
 function drawLyrics(force){
   const np=state&&state.np,box=$('#lyr'),el=$('#lines');
   if(!np){el.innerHTML='';lyrKey=null;return}
@@ -201,7 +225,10 @@ async function fallback(np){
 function fmt(t){t=Math.max(0,t|0);return (t/60|0)+':'+String(t%60).padStart(2,'0')}
 function frame(){
   requestAnimationFrame(frame);
-  const np=state&&state.np;if(!np)return;
+  const np=state&&state.np;
+  // the phone heartbeats every few seconds while playing; a long silence means it's asleep or offline
+  $('#stale').classList.toggle('on',!!(np&&np.playing&&sinceUpdate()>20));
+  if(!np)return;
   const t=Math.min(pos(),np.dur||1e9);$('#tc').textContent=fmt(t);$('#td').textContent=np.dur?'-'+fmt(np.dur-t):'';
   $('#bar .t i').style.width=np.dur?(t/np.dur*100)+'%':'0';
   const L=lyrics.get(np.sk);if(!L||!L.lines.length)return;
