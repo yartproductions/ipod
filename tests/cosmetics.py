@@ -60,7 +60,11 @@ MOVED = {'Offline Music': 'Music', 'Music Home': 'Music', 'Shuffle Songs': 'Musi
          'Album Flow': 'Flows', 'Song Flow': 'Flows', 'Playlist Flow': 'Flows', 'Recommendation Flow': 'Flows',
          'Add Music': 'Library', 'Downloads': 'Library', 'Listening History': 'Library',
          'About': 'Settings', 'Clock': 'Settings', 'Extras': 'Games'}
+# Music's grouped submenus
+MUSIC_SUB = {'Smart Playlists': 'Playlists', 'Sessions': 'Playlists', 'Listen Together': 'Together', 'Shared Playlists': 'Together',
+             'iPod Wrapped': 'Your Story', 'Song Memories': 'Your Story', 'Sleep Timer': 'Sleep & Wake', 'Wake-Up Alarm': 'Sleep & Wake'}
 def choose(pg, label):
+    if pg.text_content('#htitle') == 'Music' and label in MUSIC_SUB: _choose(pg, MUSIC_SUB[label])
     if pg.text_content('#htitle') == 'iPod' and label in MOVED and label not in pg.inner_text('#body'):
         parent = MOVED[label]; _choose(pg, parent)
         if label == 'Extras': return
