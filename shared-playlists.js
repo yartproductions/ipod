@@ -70,7 +70,16 @@ async function load(c){
   if(!d.exists){saveCodes(codes().filter(x=>x!==c));cache.delete(c);return null}
   const q=await ref.collection('tracks').get();
   const tracks=(q.docs||[]).map(x=>({id:x.id,...x.data()})).sort((a,b)=>(a.addedAt?.toMillis?.()||0)-(b.addedAt?.toMillis?.()||0));
-  const v={code:c,meta:d.data(),tracks};cache.set(c,v);return v;
+  const v={code:c,meta:d.data(),tracks};cache.set(c,v);notifyNew(v);return v;
+}
+// Songs friends added since you last looked raise a notification (never for your own, never for the backlog).
+function notifyNew(v){
+  const SK='ipod.shared.seen.'+uid,seen=(()=>{try{return JSON.parse(localStorage.getItem(SK)||'{}')}catch(e){return {}}})();
+  const known=seen[v.code];const newest=Math.max(0,...v.tracks.map(t=>t.addedAt?.toMillis?.()||0));
+  if(known!=null){const fresh=v.tracks.filter(t=>t.by!==uid&&(t.addedAt?.toMillis?.()||0)>known);
+    if(fresh.length)window.ipodNotify?.({id:'sp:'+v.code+':'+fresh.map(t=>t.id).join(','),kind:'shared',title:v.meta.name,
+      body:fresh.length===1?(fresh[0].byName||'A friend')+' added “'+fresh[0].t+'”':fresh.length+' new songs from '+[...new Set(fresh.map(t=>t.byName||'friends'))].join(', ')})}
+  seen[v.code]=Math.max(known||0,newest);try{localStorage.setItem(SK,JSON.stringify(seen))}catch(e){}
 }
 async function addSong(c,s){
   await connect();
