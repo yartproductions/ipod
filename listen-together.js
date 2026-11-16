@@ -152,12 +152,12 @@ function sessionView(){
   const v={type:'custom',title:'Listen Together',
     render(body){
       const x=shown(),who=role==='host'?`Code ${code} · ${listeners} listening`:`Listening with ${B.esc(hostName)}`;
-      if(!x){body.innerHTML=`<div class="lt"><div class="lt-top"><div class="lt-art"></div><div class="lt-meta"><b>${role==='host'?'Play something to share it':'Waiting for '+B.esc(hostName)+'…'}</b><div class="lt-who">${who}</div></div></div><div class="lt-note">Center for options · MENU to go back</div></div>`;v.start();return}
-      body.innerHTML=`<div class="lt"><div class="lt-top"><div class="lt-art" style="background-image:url(&quot;${B.esc(x.art||'')}&quot;)"></div>
-        <div class="lt-meta"><b>${B.esc(x.np.t)}</b><span>${B.esc([x.np.a,x.np.al].filter(Boolean).join(' — '))}</span><div class="lt-who">${who}</div>
-        ${role==='guest'&&!x.song?'<div class="lt-miss">Not in your library</div>':''}</div></div>
-        <div class="lt-bar"><span id="lt-c">0:00</span><div class="t"><i id="lt-i"></i></div><span id="lt-d">0:00</span></div>
-        <div class="lt-lyric" id="lt-l"></div><div class="lt-note">Center for options · MENU to go back</div></div>`;
+      if(!x){body.innerHTML=`<div class="ltg"><div class="ltg-top"><div class="ltg-art"></div><div class="ltg-meta"><b>${role==='host'?'Play something to share it':'Waiting for '+B.esc(hostName)+'…'}</b><div class="ltg-who">${who}</div></div></div><div class="ltg-note">Center for options · MENU to go back</div></div>`;v.start();return}
+      body.innerHTML=`<div class="ltg"><div class="ltg-top"><div class="ltg-art" style="background-image:url(&quot;${B.esc(x.art||'')}&quot;)"></div>
+        <div class="ltg-meta"><b>${B.esc(x.np.t)}</b><span>${B.esc([x.np.a,x.np.al].filter(Boolean).join(' — '))}</span><div class="ltg-who">${who}</div>
+        ${role==='guest'&&!x.song?'<div class="ltg-miss">Not in your library</div>':''}</div></div>
+        <div class="ltg-bar"><span id="lt-c">0:00</span><div class="t"><i id="lt-i"></i></div><span id="lt-d">0:00</span></div>
+        <div class="ltg-lyric" id="lt-l"></div><div class="ltg-note">Center for options · MENU to go back</div></div>`;
       v.update();v.start();
     },
     update(){

@@ -112,6 +112,9 @@ def main():
         pg.add_init_script("if(!localStorage.getItem('ipod.settings'))localStorage.setItem('ipod.settings',JSON.stringify({autoArt:false}))")
         pg.goto(url); pg.wait_for_timeout(1200)
 
+        # ---- menu rows: label sits level with its icon (no stray styles hitting .lt) ----
+        off = pg.evaluate('(()=>{const r=document.querySelector("#body .row"),l=r.querySelector(".lt"),i=r.querySelector("svg");const a=l.getBoundingClientRect(),b=i.getBoundingClientRect();return Math.abs((a.top+a.height/2)-(b.top+b.height/2))})()')
+        check('menu row labels line up with their icons', off < 3, off)
         # ---- colours ----
         choose(pg, 'Settings'); seen = []
         for _ in range(11):
