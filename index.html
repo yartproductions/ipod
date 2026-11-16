@@ -2335,19 +2335,54 @@ function bubblesInput(v,btn,dir){
   if((btn==='next'||btn==='prev')&&!g.shot&&!g.over&&!g.paused){[g.cur,g.next]=[g.next,g.cur];if(settings.haptics)triggerHaptic('selection')}
 }
 /* ---------- Shake to Shuffle: covers tumble around the screen, one pops out and plays ---------- */
-const SHAKE={on:false,last:0,peaks:[]};
-function shakeAllowedHere(){const t=top()?.type;return !holdOn&&!['brick','bubbles','quiz','input','timepick'].includes(t)&&!$('#shakefx')}
-function onMotion(e){
-  const a=e.accelerationIncludingGravity||e.acceleration;if(!a||a.x==null)return;
-  const m=Math.hypot(a.x,a.y,a.z),now=Date.now();
-  if(Math.abs(m-9.81)>14){SHAKE.peaks=SHAKE.peaks.filter(t=>now-t<700);SHAKE.peaks.push(now)}
-  if(SHAKE.peaks.length>=3&&now-SHAKE.last>2500){SHAKE.peaks=[];SHAKE.last=now;if(shakeAllowedHere())shakeShuffle()}
+const SHAKE={on:false,last:-Infinity,peaks:[],gravity:null};
+function shakeAllowedHere(active=false){
+  const type=top()?.type;
+  return !document.hidden&&!holdOn&&!sheet&&!directCarPlayAudio()&&!window.ipodListen?.role&&
+    !['brick','bubbles','quiz','input','timepick'].includes(type)&&(active||!$('#shakefx'));
+}
+function motionVector(sample){
+  if(!sample)return null;
+  const vector=[sample.x,sample.y,sample.z];
+  return vector.every(Number.isFinite)?vector:null;
+}
+function onMotion(event){
+  const now=performance.now();
+  if(!shakeAllowedHere()||now-SHAKE.last<2500){
+    SHAKE.peaks=[];SHAKE.gravity=null;return;
+  }
+  let vector=motionVector(event.acceleration);
+  if(!vector){
+    const sample=motionVector(event.accelerationIncludingGravity);
+    if(!sample)return;
+    const baseline=SHAKE.gravity||sample;
+    vector=sample.map((value,i)=>value-baseline[i]);
+    SHAKE.gravity=baseline.map((value,i)=>value+.12*vector[i]);
+  }
+  const magnitude=Math.hypot(...vector);
+  if(magnitude<13)return;
+  const direction=vector.map(value=>value/magnitude);
+  SHAKE.peaks=SHAKE.peaks.filter(peak=>now-peak.at<=720);
+  const previous=SHAKE.peaks.at(-1);
+  if(previous){
+    if(now-previous.at<75)return;
+    const alignment=direction.reduce((dot,value,i)=>dot+value*previous.direction[i],0);
+    if(alignment>-.45)return;
+  }
+  SHAKE.peaks.push({at:now,direction});
+  if(SHAKE.peaks.length===3){
+    SHAKE.peaks=[];SHAKE.gravity=null;SHAKE.last=now;
+    shakeShuffle();
+  }
 }
 function startShakeListening(){
   if(SHAKE.on||settings.shakeShuffle!=='On')return;
   SHAKE.on=true;addEventListener('devicemotion',onMotion);
 }
-function stopShakeListening(){SHAKE.on=false;removeEventListener('devicemotion',onMotion)}
+function stopShakeListening(){
+  SHAKE.on=false;SHAKE.peaks=[];SHAKE.gravity=null;
+  removeEventListener('devicemotion',onMotion);
+}
 // iOS only grants motion access from a real tap. The wheel's touch handling doesn't always count as
 // one, so if the first ask fails we ask again on your next tap anywhere on the screen.
 const needsMotionAsk=()=>typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function';
@@ -2369,6 +2404,7 @@ async function toggleShakeShuffle(){
 function shakeShuffle(){
   const pool=songs.filter(s=>!s.deleted);if(!pool.length)return;window.ipodAchievements?.event('shake');
   const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const original=cur(),request=latestPlayRequest;
   const pick=pool[Math.random()*pool.length|0];
   const covers=shuffled(pool).slice(0,13);if(!covers.includes(pick))covers[0]=pick;
   const fx=document.createElement('div');fx.id='shakefx';
@@ -2399,7 +2435,7 @@ function shakeShuffle(){
   },reduce?200:1150);
   setTimeout(()=>{
     fx.animate([{opacity:1},{opacity:0}],{duration:300,fill:'forwards'}).onfinish=()=>fx.remove();
-    if(['brick','bubbles','quiz','timepick'].includes(top().type))return;   // you started a game mid-shake: don't yank you out
+    if(!shakeAllowedHere(true)||cur()!==original||latestPlayRequest!==request||pick.deleted)return;
     latestPlayRequest++;importedPlayback=null;queue=[pick,...shuffled(pool.filter(s=>s!==pick))];qi=0;load(true);
     if(top().type!=='now')push(nowView());else render();
   },reduce?900:2250);

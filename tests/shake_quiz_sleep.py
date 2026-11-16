@@ -28,9 +28,20 @@ def main():
         pg.reload(); pg.wait_for_timeout(1500)
         check('the iPod still boots with Shake to Shuffle on', pg.text_content('#htitle') == 'iPod' and 'Music' in pg.inner_text('#body') and not errors, errors)
         C.home(pg)
-        # simulate three hard jolts
-        pg.evaluate("""for(let i=0;i<4;i++){const e=new Event('devicemotion');e.accelerationIncludingGravity={x:25,y:20,z:9.8};dispatchEvent(e)}""")
-        pg.wait_for_timeout(300)
+        pg.evaluate("""async () => {
+          window.sendMotionSamples=async (samples, delay) => {
+            for(const x of samples){
+              const event=new Event('devicemotion');
+              event.acceleration={x,y:0,z:0};
+              dispatchEvent(event);
+              await new Promise(resolve=>setTimeout(resolve,delay));
+            }
+          };
+          await sendMotionSamples([23, 23, 23, 23], 10);
+        }""")
+        check('multiple samples from one bump do not shuffle', pg.locator('#shakefx').count() == 0)
+        pg.wait_for_timeout(750)
+        pg.evaluate("sendMotionSamples([23, -23, 23], 100)")
         check('a shake opens the tumbling covers', pg.locator('#shakefx i').count() >= 9)
         pg.evaluate("ipodShake()")
         check('a second shake mid-effect is ignored', pg.locator('#shakefx').count() == 1)
