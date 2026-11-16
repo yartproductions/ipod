@@ -3833,7 +3833,7 @@ function flowUpdate(v){
     el.style.transform=tf;el.style.zIndex=String(200-ad);el.style.opacity=ad>6?'0':'1';
     el.style.filter=d===0?'none':`brightness(${Math.max(.45,.85-ad*.06)})`});
   const a=v.albums[v.sel];$('#fal').textContent=a.album;$('#far').textContent=a.artist;$('#fcnt').textContent=`${v.sel+1} OF ${v.albums.length}`;
-  flowPanel(v);
+  try{flowPanel(v)}catch(e){}   // the track list is a nicety: never let it break the shelf
 }
 /* Flow track list: when you settle on an album, its songs slide in on the right and the shelf
    moves over; as soon as you spin again it slides away so the covers have the whole screen. */
