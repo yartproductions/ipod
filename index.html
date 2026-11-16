@@ -810,6 +810,15 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 .nbanner span{display:block;font-size:11px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #nbell{display:none;width:6px;height:6px;border-radius:50%;background:#e8473a;margin-left:4px;vertical-align:middle;box-shadow:0 0 0 1px rgba(255,255,255,.6)}
 #nbell.on{display:inline-block}
+.meta .stars,.mnp .meta .stars{font-size:10px;letter-spacing:1px;color:#e2a12b;margin-top:2px;line-height:1}
+.meta .stars span{color:rgba(128,128,128,.35)}
+.rate{position:relative;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#111;text-align:center;padding:0 12px}
+.rate b{font-size:14px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rate span{font-size:11px;color:#666}
+.rate .big{font-size:30px;letter-spacing:4px;margin:8px 0 4px;color:#cfcfd4}
+.rate .big i{font-style:normal;display:inline-block;transition:color .15s,transform .2s cubic-bezier(.2,1.6,.4,1)}
+.rate .big i.on{color:#f0a91f;transform:scale(1.12)}
+.rate small{font-size:10.5px;color:#777}
 </style>
 </head>
 <body>
@@ -2502,6 +2511,8 @@ function smartLists(){
     {name:'After Dark',icon:'clock',hint:'what you play 10 PM – 4 AM',songs:byCount(night).slice(0,50)},
     {name:'Forgotten Favorites',icon:'heart',hint:'loved, not played in a month',songs:all.filter(x=>x.favorite&&now-(last.get(x.id)||0)>30*DAY)},
     {name:'Never Played',icon:'library',songs:all.filter(x=>!last.has(x.id))},
+    {name:'Top Rated',icon:'heart',hint:'4 and 5 stars',songs:all.filter(x=>ratingOf(x)>=4).sort((a,b)=>ratingOf(b)-ratingOf(a))},
+    {name:'5 Stars',icon:'heart',songs:all.filter(x=>ratingOf(x)===5)},
   ].filter(l=>l.songs.length);
 }
 function smartMenu(){return list('Smart Playlists',()=>{const ls_=smartLists();
@@ -2708,6 +2719,8 @@ const ACHIEVEMENTS=[
   ['join','Plus One','Join a friend’s Listen Together',()=>[ev('join'),1]],
   ['shared','Mixtape','Create a shared playlist',()=>[ev('sharedCreate'),1]],
   ['shared10','Contributor','Add 10 songs to shared playlists',()=>[ev('sharedAdd'),10]],
+  ['rate1','Critic','Rate a song',()=>[songs.filter(x=>ratingOf(x)).length,1]],
+  ['rate50','Tastemaker','Rate 50 songs',()=>[songs.filter(x=>ratingOf(x)).length,50]],
   ['memory','Memory Lane','Pin a memory to a song',()=>[ev('memory'),1]],
   ['memory10','Scrapbook','Pin 10 memories',()=>[Object.values(ls.get('ipod.memories',{})).filter(m=>m.text).length,10]],
   ['edition','Limited Edition','Try a special-edition body',()=>[ev('edition'),1]],
@@ -2748,6 +2761,23 @@ function achievementsMenu(){return list('Achievements',()=>{
   ];
 })}
 setTimeout(()=>checkAchievements(true),1500);   // quietly credit what you'd already done
+/* ---------- Star ratings (1–5) with the wheel, like the classic iPod ---------- */
+const ratingOf=s=>{const lib=s&&songs.find(x=>x.id===s.id);return +(lib?.rating||s?.rating||0)};
+const starsHTML=s=>{const n=ratingOf(s);return n?`<div class="stars" aria-label="${n} stars">${'★'.repeat(n)}<span>${'★'.repeat(5-n)}</span></div>`:''};
+async function setRating(s,n){
+  n=Math.max(0,Math.min(5,n|0));const lib=songs.find(x=>x.id===s.id)||s;s.rating=lib.rating=n;
+  if(lib.blob)try{await dbPut(songRecord(lib))}catch(e){}
+  if(n)window.ipodAchievements?.event('rate');
+}
+function ratingView(s){
+  const v={type:'custom',title:'Rate',n:ratingOf(s),
+    render(body){body.innerHTML=`<div class="rate"><b>${esc(s.title)}</b><span>${esc(s.artist||'')}</span>
+      <div class="big">${[1,2,3,4,5].map(i=>`<i class="${i<=v.n?'on':''}">★</i>`).join('')}</div>
+      <small>${v.n?v.n+(v.n===1?' star':' stars'):'No rating'} · Spin to rate · Center to save</small></div>`},
+    input(btn,dir){if(dir){const n=Math.max(0,Math.min(5,v.n+dir));if(n!==v.n){v.n=n;click();render()}return}
+      if(btn==='select'){setRating(s,v.n).then(()=>{triggerHaptic('success');pop();if(top().title==='Song')pop();render();npToast?.(v.n?'Rated '+'★'.repeat(v.n):'Rating cleared')})}}};
+  return v;
+}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -3088,7 +3118,7 @@ function renderView(){
       <div class="modern-jacket vinyl-jacket" aria-hidden="true">${vinylDisc(s)}<div class="sleeve" style="background-image:url(&quot;${esc(art)}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div>
       <div class="cnt">${qi+1} of ${queue.length}</div>
-      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div></div>
+      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}</div><div class="al">${esc(s.album)}</div>${starsHTML(s)}</div>
       <div class="row2"><span class="fmt"><svg viewBox="0 0 13 10"><rect x=".5" y=".5" width="12" height="9" rx="2" fill="none" stroke="currentColor"/><path d="M3 3v4M5.5 2v6M8 3.5v3M10.5 4.5v1" stroke="currentColor" stroke-linecap="round"/></svg>${fmtOf(s)}</span>
         <span class="sp"></span>
         <svg class="ic${s.favorite?' on':''}" data-act="fav" viewBox="0 0 20 20"><path d="M10 2.5l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14.3l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z"/></svg>
@@ -3111,7 +3141,7 @@ function renderView(){
     body.innerHTML=`<div class="np lyrics-np${hasNowLyrics(s)?' lyrics-on':''}" id="np" style="--np-art:url(&quot;${esc(nowPlayingArt(s))}&quot;)">${nowPlayingNeighbors()}<div class="cnt">${qi+1} of ${queue.length}</div>
       <div class="top"><div class="artcol vinyl-jacket">${vinylDisc(s)}<div class="art${showOfflineMark(s)?' offline-cover':''}" style="background-image:url(&quot;${esc(nowPlayingArt(s))}&quot;)"></div></div>
       <div class="np-lyrics"><div class="lyric-lines" id="np-lyric-lines">${nowLyricsHTML(s)}</div></div></div>
-      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}${s.album?`<span class="alx"> — ${esc(s.album)}</span>`:''}</div><div class="al">${esc(s.album)}</div></div>
+      <div class="meta"><div class="t">${esc(s.title)}</div><div class="a">${esc(s.artist)}${s.album?`<span class="alx"> — ${esc(s.album)}</span>`:''}</div><div class="al">${esc(s.album)}</div>${starsHTML(s)}</div>
       <div class="bar${scrub?' scrub':''}" id="bar"><i id="prog"></i></div>
       <div class="times"><span id="el">0:00</span><span id="rem">-0:00</span></div>
       <div class="vol"><svg viewBox="0 0 12 12"><path d="M1 4h2.5L7 1v10L3.5 8H1z" fill="#333"/></svg><div class="vb"><i id="vbi"></i></div>
@@ -4175,6 +4205,7 @@ function songOptions(s){return list('Song',()=>[
   {label:'Play Next',action:()=>{queue.splice(qi+1,0,{...s});pop();render();npToast('Playing next')}},
   {label:'Add to Up Next',action:()=>{queue.push({...s});pop();render();npToast('Added to Up Next')}},
   {label:s.favorite?'Remove from Favorites':'Add to Favorites',action:async()=>{await toggleFavorite(s);pop()}},
+  {label:'Rating',val:ratingOf(s)?'★'.repeat(ratingOf(s)):'None',chev:1,action:()=>push(ratingView(s))},
   {label:memoOf(s)?'Edit Memory':'Add Memory',val:memoOf(s)?.text||'',chev:1,action:()=>push(memoEditor(s))},
   ...(memoOf(s)?[{label:'Delete Memory',action:()=>{setMemo(s,'');pop();npToast?.('Memory deleted')}}]:[]),
   {label:'Go to Album',chev:1,action:go(()=>songsMenu(albumSort(songs.filter(x=>x.album===s.album)),s.album))},
