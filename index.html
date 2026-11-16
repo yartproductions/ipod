@@ -1718,6 +1718,7 @@ function musicRootMenu(){return list('Music',()=>[
   {label:'Offline Music',icon:'library',action:go(musicMenu),chev:1},
   {label:'Music Home',icon:'music',action:go(musicHome),chev:1},
   {label:'Shuffle Songs',icon:'shuffle',action:()=>shuffleAll()},
+  {label:'DJ Mode',icon:'shuffle',chev:1,action:go(djMenu)},
   {label:'Listen Together',icon:'people',val:window.ipodListen?.role==='host'?'Hosting':window.ipodListen?.role==='guest'?'Joined':'',chev:1,action:()=>window.ipodListen?window.ipodListen.open():push(msgView('Listen Together Unavailable','Reload the iPod to load Listen Together.'))},
   {label:'Smart Playlists',icon:'music',chev:1,action:go(smartMenu)},
   {label:'Sessions',icon:'clock',chev:1,action:go(sessionsMenu)},
@@ -2492,6 +2493,51 @@ function sessionsMenu(){return list('Sessions',()=>{const ss=listeningSessions()
   if(!ss.length)return [{label:'Sessions appear after you listen',action:()=>{}}];
   return ss.map(x=>{const name=sessionName(x.start),when=new Date(x.start).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
     return {label:name,val:x.songs.length+(x.songs.length===1?' song':' songs'),chev:1,action:go(()=>songListView(name,x.songs,when))}})})}
+/* ---------- DJ Mode: one endless mix that takes an equal share from every playlist ---------- */
+const djOff=()=>new Set(ls.get('ipod.dj.off',[]));
+function djSources(){
+  const off=djOff(),src=savedPlaylists().map(p=>({id:'playlist:'+p.id,name:p.name,songs:playlistSongs(p)}));
+  // with fewer than two playlists, the smart lists join in so there's still something to mix
+  if(src.filter(x=>x.songs.length).length<2)smartLists().forEach(l=>src.push({id:'smart:'+l.name,name:l.name,songs:l.songs}));
+  return src.filter(x=>x.songs.length).map(x=>({...x,on:!off.has(x.id)}));
+}
+// Round-robin across the lists (order reshuffled every round), shuffled inside each list,
+// never repeating a song within the last dozen picks. A list that runs out is reshuffled.
+function djMix(lists,n){
+  const pools=lists.map(l=>({all:l,left:shuffled(l)})),out=[],recent=[];
+  const ids=new Set(lists.flat().map(x=>x.id)),minSize=Math.min(...lists.map(l=>l.length)),
+    window_=Math.max(Math.min(1,ids.size-1),Math.min(12,ids.size-1,(minSize-1)*lists.length));   // small lists still get their equal turn
+  while(out.length<n){
+    let added=false;
+    for(const p of shuffled(pools)){
+      if(out.length>=n)break;
+      let tries=p.all.length;
+      while(tries-->0){
+        if(!p.left.length)p.left=shuffled(p.all);
+        const song=p.left.pop();
+        if(!recent.includes(song.id)){out.push(song);recent.push(song.id);if(recent.length>window_)recent.shift();added=true;break}
+        p.left.unshift(song);
+      }
+    }
+    if(!added)break;
+  }
+  return out;
+}
+function djStart(){
+  const src=djSources().filter(x=>x.on);
+  if(!src.length)return push(msgView('DJ Mode','Save or import a playlist first, or turn a source back on in DJ Mode ▸ Sources.'));
+  const total=new Set(src.flatMap(x=>x.songs.map(s=>s.id))).size;
+  const mix=djMix(src.map(x=>x.songs),Math.min(800,Math.max(60,total*4)));
+  latestPlayRequest++;importedPlayback=null;queue=mix;qi=0;load(true);
+  if(top().type!=='now')push(nowView());
+  setHdrTask('DJ Mode · mixing '+src.length+(src.length===1?' list':' lists'),1,true);triggerHaptic('success');
+}
+function djMenu(){return list('DJ Mode',()=>{const src=djSources();return [
+  {label:'Start DJ',icon:'shuffle',val:src.filter(x=>x.on).length+' lists',action:djStart},
+  {label:'Sources',icon:'playlist',chev:1,action:go(()=>list('DJ Sources',()=>djSources().map(x=>({label:x.name,val:x.on?'On':'Off',action:()=>{
+    const off=djOff();off.has(x.id)?off.delete(x.id):off.add(x.id);ls.set('ipod.dj.off',[...off]);render()}}))))},
+  {label:'How It Works',chev:1,action:go(msgView('DJ Mode','DJ Mode plays one endless mix that takes turns between all your playlists, so each one gets an equal share however long it is. Songs never repeat close together.'))},
+]})}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
