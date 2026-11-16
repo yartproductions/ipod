@@ -117,17 +117,22 @@ struct IPodWebView: UIViewRepresentable {
         }
 
         private func sendAudioRoute() {
-            let isCarPlay = AVAudioSession.sharedInstance().currentRoute.outputs.contains {
-                $0.portType == .carAudio
-            }
+            let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+            let isCarPlay = outputs.contains { $0.portType == .carAudio }
+            // Wired EarPods report as headphones (Lightning / 3.5 mm adapter) or USB audio (USB-C).
+            let wiredPorts: [AVAudioSession.Port] = [.headphones, .usbAudio]
+            let bluetoothPorts: [AVAudioSession.Port] = [.bluetoothA2DP, .bluetoothLE, .bluetoothHFP]
+            let headphones = outputs.contains { wiredPorts.contains($0.portType) } ? "wired"
+                : outputs.contains { bluetoothPorts.contains($0.portType) } ? "bluetooth" : ""
             let script = """
                 const port = location.port || (location.protocol === 'https:' ? '443' : '80');
                 if (location.protocol === scheme + ':' && location.hostname === host && port === expectedPort) {
                     window.ipodSetCarPlayRoute?.(isCarPlay);
+                    window.ipodSetHeadphones?.(headphones);
                 }
                 """
             deviceWebView?.callAsyncJavaScript(script, arguments: [
-                "isCarPlay": isCarPlay, "scheme": trustedScheme,
+                "isCarPlay": isCarPlay, "headphones": headphones, "scheme": trustedScheme,
                 "host": trustedHost, "expectedPort": String(trustedPort)
             ], in: nil, in: .page, completionHandler: nil)
         }
