@@ -205,6 +205,38 @@ service cloud.firestore {
         allow delete: if signedIn() && (request.auth.uid == guest || get(roomDoc(code)).data.host == request.auth.uid);
       }
     }
+    // Shared Playlists: anyone signed in who knows the code can read it and add songs;
+    // you can remove songs you added, and the owner can remove any song or delete the playlist.
+    function sharedDoc(code) { return /databases/$(database)/documents/sharedPlaylists/$(code); }
+    match /sharedPlaylists/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && code.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && request.resource.data.keys().hasOnly(['owner', 'ownerName', 'name', 'createdAt', 'updatedAt'])
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.ownerName is string && request.resource.data.ownerName.size() <= 32
+        && request.resource.data.name is string && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 60
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time;
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt', 'name'])
+        && request.resource.data.updatedAt == request.time
+        && (resource.data.owner == request.auth.uid || request.resource.data.name == resource.data.name);
+      allow delete: if signedIn() && resource.data.owner == request.auth.uid;
+      match /tracks/{track} {
+        allow read: if signedIn() && exists(sharedDoc(code));
+        allow create: if signedIn() && exists(sharedDoc(code))
+          && request.resource.data.keys().hasOnly(['t', 'a', 'al', 'by', 'byName', 'addedAt'])
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.t is string && request.resource.data.t.size() >= 1 && request.resource.data.t.size() <= 140
+          && request.resource.data.a is string && request.resource.data.a.size() <= 140
+          && request.resource.data.al is string && request.resource.data.al.size() <= 140
+          && request.resource.data.byName is string && request.resource.data.byName.size() <= 32
+          && request.resource.data.addedAt == request.time;
+        allow update: if false;
+        allow delete: if signedIn() && (resource.data.by == request.auth.uid
+          || get(sharedDoc(code)).data.owner == request.auth.uid);
+      }
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }
