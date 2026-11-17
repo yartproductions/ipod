@@ -13,6 +13,9 @@ struct IPodApp: App {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
         IPodAlarm.shared.install()   // wake-up alarm notifications start the music
+        // Shaking is Shake to Shuffle here: never pop up iOS's "Undo Typing" alert. Shake events
+        // still reach the window (UIWindow.motionEnded), so shuffling keeps working.
+        UIApplication.shared.applicationSupportsShakeToEdit = false
     }
 
     var body: some Scene {
