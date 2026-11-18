@@ -598,7 +598,7 @@ html.hdr .screen.dim #hdrboost{opacity:0}
 canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:block;background:#0e1420}
 .bezel{width:280px;height:220px;margin:0 auto;border-radius:8px;background:#0b0b0c;padding:5px;box-shadow:inset 0 1px 3px rgba(0,0,0,.9),0 1px 0 rgba(255,255,255,.6)}
 .black .bezel{box-shadow:inset 0 1px 3px #000,0 1px 0 rgba(255,255,255,.08)}
-.screen{position:relative;width:270px;height:210px;background:#fff;border-radius:3px;overflow:hidden;animation:on 1.2s .55s ease-out both}
+.screen{position:relative;width:270px;height:210px;background:#fff;border-radius:3px;overflow:hidden;animation:on 1.2s .55s ease-out backwards}
 @keyframes on{0%{filter:brightness(0)}40%{filter:brightness(1.4)}100%{filter:none}}
 .screen::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:9;background:linear-gradient(135deg,rgba(255,255,255,.3) 0%,rgba(255,255,255,0) 38%);mix-blend-mode:screen}
 .screen.video{background:#000}
@@ -936,6 +936,73 @@ html.landscape .flow.withpanel .stage{left:32%}
 .split .sfeed .mq>span{font-size:inherit}
 .split.npmode .np{padding-top:48px}
 .modern .split .sfeed{background:rgba(20,26,36,.88);color:#f2f5f9}.modern .split .sfeed .mq{color:#9aa8bb}
+
+/* ===== Hold switch positions ===== */
+html.hold-tl .hold{top:-7px;bottom:auto;left:44px;right:auto;transform:rotate(180deg)}
+html.hold-tr .hold{top:-7px;bottom:auto;right:44px;left:auto;transform:rotate(180deg)}
+html.hold-ls .hold{left:-19px;right:auto;top:145px;bottom:auto;transform:rotate(90deg)}
+html.hold-rs .hold{right:-19px;left:auto;top:145px;bottom:auto;transform:rotate(-90deg)}
+html.landscape.hold-ls .hold,html.landscape.hold-rs .hold{top:118px}
+/* ===== Lock screen (Hold on): clock, date, what's playing; dimmer, lights up when touched ===== */
+.lockscr{position:absolute;inset:0;z-index:9;opacity:0;pointer-events:none;transition:opacity .35s;color:#fff;overflow:hidden;background:#0d1117}
+.lockscr.on{opacity:1}
+.lockscr .lbg{position:absolute;inset:-30px;background:#1b2330 center/cover;filter:blur(18px) saturate(1.3) brightness(.55);transform:scale(1.1)}
+.lockscr .lin{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:10px;text-shadow:0 1px 6px rgba(0,0,0,.45)}
+.lockscr .llk{width:13px;height:16px;color:#ffb366;margin-bottom:2px}
+.lockscr .llk.nudge{animation:lkNudge .45s ease}
+@keyframes lkNudge{20%{transform:translateX(-3px) rotate(-8deg)}45%{transform:translateX(3px) rotate(8deg)}70%{transform:translateX(-2px)}}
+.lockscr .ltime{font-size:46px;font-weight:700;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+.lockscr .ldate{font-size:11px;font-weight:600;opacity:.85;margin-bottom:8px}
+.lockscr .lsong{display:flex;gap:7px;align-items:center;max-width:92%;padding:5px 9px 5px 5px;border-radius:9px;background:rgba(255,255,255,.14);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.lockscr .lsong.none{display:none}
+.lockscr .lart{flex:none;width:30px;height:30px;border-radius:5px;background:#333 center/cover;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.lockscr .lsong div{min-width:0}
+.lockscr .lsong b{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lockscr .lsong span{display:block;font-size:9.5px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lockscr .lhint{position:absolute;bottom:7px;font-size:8.5px;opacity:.6;font-weight:600}
+html.landscape .lockscr .ltime{font-size:56px}
+.screen.held{filter:brightness(.74) saturate(.92)}
+.screen.held.lit{filter:none}
+html.hdr .screen.held #hdrboost.playing{opacity:calc(var(--hdr,1) * .42)}
+html.hdr .screen.held.lit #hdrboost.playing{opacity:var(--hdr,1)}
+/* ===== Screen glare: a soft reflection that shifts as you tilt the phone ===== */
+.glare{position:absolute;inset:0;z-index:20;pointer-events:none;opacity:0;transition:opacity .4s;
+  background:linear-gradient(118deg,transparent 30%,rgba(255,255,255,.2) 44%,rgba(255,255,255,.07) 52%,transparent 62%),
+             radial-gradient(120% 70% at calc(30% + var(--gx,0) * 40%) calc(-10% + var(--gy,0) * 30%),rgba(255,255,255,.16),transparent 60%);
+  background-size:260% 260%,100% 100%;background-position:calc(50% - var(--gx,0) * 45%) calc(50% - var(--gy,0) * 25%),0 0;mix-blend-mode:screen}
+html.glare-on .glare{opacity:1}
+.screen.dim .glare{opacity:.35}
+/* ===== Boot animation ===== */
+.boot{position:absolute;inset:0;z-index:30;background:#000;display:none;flex-direction:column;align-items:center;justify-content:center;gap:9px;color:#fff;pointer-events:none}
+.boot.on{display:flex;animation:bootOut .45s ease-in 2.15s both}
+.boot svg{width:58px;height:58px;fill:none;stroke:#e9edf3;stroke-width:3;stroke-linecap:round}
+.boot .br{stroke-dasharray:151;stroke-dashoffset:151;animation:bootDraw .8s .15s cubic-bezier(.5,0,.2,1) forwards}
+.boot .bc{stroke-dasharray:51;stroke-dashoffset:51;animation:bootDraw .45s .75s ease-out forwards}
+.boot .bn{stroke-width:2.2;opacity:0;animation:bootFade .3s 1.05s forwards}
+.boot .bw{font-size:19px;font-weight:600;letter-spacing:.04em;opacity:0;animation:bootUp .5s .95s ease-out forwards}
+.boot .bbar{width:90px;height:4px;border-radius:2px;background:rgba(255,255,255,.18);overflow:hidden;opacity:0;animation:bootFade .2s 1.2s forwards}
+.boot .bbar i{display:block;height:100%;width:0;background:#e9edf3;border-radius:2px;animation:bootBar .9s 1.25s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes bootDraw{to{stroke-dashoffset:0}}
+@keyframes bootFade{to{opacity:1}}
+@keyframes bootUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes bootBar{to{width:100%}}
+@keyframes bootOut{to{opacity:0}}
+/* ===== Wear & scratches, polishing ===== */
+.wear{position:absolute;left:0;top:0;width:100%;height:100%;border-radius:inherit;pointer-events:none;z-index:4;transition:opacity .6s}
+.wear.fade{opacity:0}
+.polish{position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:5;overflow:hidden;opacity:0}
+.polish.go{opacity:1}
+.polish.go::before{content:"";position:absolute;top:-20%;bottom:-20%;width:45%;left:-60%;transform:skewX(-18deg);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);animation:polishSweep 1.1s ease-in-out 2}
+@keyframes polishSweep{to{left:120%}}
+/* ===== Touch ripples on the click wheel ===== */
+.riplayer{position:absolute;inset:0;z-index:6;pointer-events:none;contain:strict;will-change:transform;transform:translateZ(0)}
+.rip{position:absolute;pointer-events:none;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;
+  background:radial-gradient(circle,rgba(120,185,255,.75),rgba(120,185,255,.25) 45%,transparent 70%);animation:ripTrail .65s ease-out forwards}
+.rip.ring{width:46px;height:46px;margin:-23px 0 0 -23px;background:none;border:2px solid rgba(120,185,255,.7);animation:ripRing .55s ease-out forwards}
+@keyframes ripTrail{from{opacity:.95;transform:scale(1)}to{opacity:0;transform:scale(.35)}}
+@keyframes ripRing{from{opacity:.9;transform:scale(.35)}to{opacity:0;transform:scale(1.25)}}
+@media (prefers-reduced-motion:reduce){.boot.on{animation:bootOut .3s .6s both}.boot *{animation-duration:.01s!important;animation-delay:0s!important}.rip{display:none}.lockscr .llk.nudge{animation:none}}
 </style>
 </head>
 <body>
@@ -966,6 +1033,13 @@ html.landscape .flow.withpanel .stage{left:32%}
       <div class="hdr"><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><i id="nbell"></i><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="status"><span id="hclock"></span><span class="bat" role="img"><i id="batlvl"></i></span></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
+      <div class="lockscr" id="lockscr" aria-hidden="true"><div class="lbg" id="lockbg"></div><div class="lin">
+        <svg class="llk" id="locklk" viewBox="0 0 20 24"><rect x="2" y="10" width="16" height="13" rx="3" fill="currentColor"/><path d="M6 10V7a4 4 0 018 0v3" stroke="currentColor" stroke-width="2.4" fill="none"/></svg>
+        <div class="ltime" id="locktime"></div><div class="ldate" id="lockdate"></div>
+        <div class="lsong" id="locksong"><i class="lart" id="lockart"></i><div><b id="locktitle"></b><span id="lockartist"></span></div></div>
+        <div class="lhint">Hold is on · slide to unlock</div></div></div>
+      <div class="glare" id="glare"></div>
+      <div class="boot" id="boot"><svg viewBox="0 0 60 60"><circle class="br" cx="30" cy="30" r="24"/><circle class="bc" cx="30" cy="30" r="8"/><path class="bn" d="M30 9v6M51 30h-6M30 51v-6M9 30h6"/></svg><div class="bw">iPod</div><div class="bbar"><i></i></div></div>
       <div id="body"></div><div class="sheet" id="sheet"><div class="card"><div class="st" id="sheetT"></div><div class="sbody" id="sheetB"><div class="in" id="sheetIn"></div></div><div class="btns" id="sheetBtns"></div></div></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div><div class="np" id="splitnp"></div><div class="sfeed" id="splitfeed"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
       
       <div class="vo" id="vo">
@@ -989,6 +1063,7 @@ html.landscape .flow.withpanel .stage{left:32%}
       <svg class="ic b classic" viewBox="0 0 22 14"><path d="M2 1l8 6-8 6zM13 1h3v12h-3zM18 1h3v12h-3z"/></svg>
       <div class="center" id="center"></div>
     </div>
+    <canvas class="wear" id="wear" aria-hidden="true"></canvas><div class="riplayer" id="riplayer"></div><div class="polish" id="polish"></div>
   </div>
 </div></div>
 <input type="file" id="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg" multiple style="display:none">
@@ -1005,7 +1080,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -1048,6 +1123,7 @@ function fit(){
     document.documentElement.classList.toggle('landscape',land);VIS=land?8:7;
     if(land&&!first)setTimeout(()=>window.ipodAchievements?.event('landscape'),0);
     if(typeof drawInternals==='function')requestAnimationFrame(drawInternals);
+    if(lookReady)requestAnimationFrame(drawWear);
     if(!first){
       const w=$('#wrap');w.style.animation='none';void w.offsetWidth;w.style.animation='turn .55s cubic-bezier(.2,1.1,.35,1) both';
       if(typeof render==='function'&&stack.length)render();
@@ -1779,6 +1855,7 @@ function recordListening(){
   listened=[{id:song.id,at:Date.now()},...listened].slice(0,500);
   ls.set('ipod.listeningHistory',listened);
   try{achPlay(song)}catch(e){}
+  try{addWear()}catch(e){}
   try{seedStats();statPlay(song.id,song,Date.now(),Math.round(song.duration||audio.duration||210));ls.set(STATS_KEY,statsM)}catch(e){}
 }
 onActiveAudio('playing',recordListening);
@@ -2091,6 +2168,7 @@ function settingsMenu(){
     ...(settings.style==='Modern'?[{label:'Appearance',val:settings.appearance,action:tog('appearance',['Light','Dark','Auto'])}]:[]),
     ...(settings.style==='Classic'?[{label:'Color',val:settings.theme,action:tog('theme',COLORS)}]:[]),
     {label:'Backlight',val:settings.backlight,action:tog('backlight',['10 sec','20 sec','1 min','Always On'])},
+    {label:'Look & Feel',icon:'sparkle',chev:1,action:go(lookFeelMenu)},
     {label:'Fast Scroll',val:settings.accel?'On':'Off',action:tog('accel',[true,false])},
     {label:'Menu Style',val:settings.menuStyle,action:tog('menuStyle',['List','Flow'])},
     {label:'Now Playing Style',val:settings.npStyle,action:tog('npStyle',['Standard','Flow'])},
@@ -3209,7 +3287,7 @@ function wrappedMenu(){seedStats();return list('iPod Wrapped',()=>{
 const TOUR_VERSION=2;
 // menu label -> shown with a NEW tag until you open it once
 const NEW_ITEMS=['Feedback & Ideas','Flows','Playlists','Together','Your Story','Sleep & Wake','DJ Mode','Smart Playlists','Sessions','Listen Together','Shared Playlists',
-  'iPod Wrapped','Song Memories','Wake-Up Alarm','Achievements','Music Quiz','Mac Display','Shake to Shuffle','Backup & Restore','Notifications','Flow Track List','Rating'];
+  'iPod Wrapped','Song Memories','Wake-Up Alarm','Achievements','Music Quiz','Mac Display','Shake to Shuffle','Backup & Restore','Notifications','Flow Track List','Rating','Look & Feel'];
 const newSeen=new Set(ls.get('ipod.new.seen',[]));
 function isNew(label){return NEW_ITEMS.includes(label)&&!newSeen.has(label)&&ls.get('ipod.tour.v',0)>=1}
 function seenNew(label){if(NEW_ITEMS.includes(label)&&!newSeen.has(label)){newSeen.add(label);ls.set('ipod.new.seen',[...newSeen])}}
@@ -3280,6 +3358,106 @@ async function refreshFeed(){
 }
 // while the main menu's split screen is showing: refresh every minute, rotate friends every 5 s
 setInterval(()=>{if(screenEl.classList.contains('splitmode')&&top()?.title==='iPod'){refreshFeed();if(feedItems.length&&Date.now()>=feedHold&&(feedItems.length>1||feedHold)){if(feedItems.length>1)feedIdx++;renderFeed()}}},5000);
+/* ---------- Look & Feel: hold switch position, boot animation, wear & scratches, touch ripples, screen glare ---------- */
+const HOLD_POS={Bottom:'','Top Left':'hold-tl','Top Right':'hold-tr','Left Side':'hold-ls','Right Side':'hold-rs'};
+function applyLook(){
+  const root=document.documentElement;
+  for(const c of Object.values(HOLD_POS))if(c)root.classList.remove(c);
+  const hc=HOLD_POS[settings.holdPos];if(hc)root.classList.add(hc);
+  root.classList.toggle('glare-on',settings.glare!=='Off');
+  setTilt(settings.glare!=='Off'&&!document.hidden);
+  if(holdOn)setHold(true);
+  drawWear();
+}
+// --- glare: follows the phone's tilt (iPhone app: native motion; browsers: device orientation; otherwise it drifts as you scroll)
+let tiltSeen=false,gx=0,gy=0,glareRaf=0;
+function setGlare(x,y){gx=Math.max(-1,Math.min(1,x));gy=Math.max(-1,Math.min(1,y));
+  if(glareRaf)return;glareRaf=requestAnimationFrame(()=>{glareRaf=0;const g=document.getElementById('glare');if(g){g.style.setProperty('--gx',gx.toFixed(3));g.style.setProperty('--gy',gy.toFixed(3))}})}
+window.ipodTilt=(x,y)=>{tiltSeen=true;clearTimeout(driftT);const land=document.documentElement.classList.contains('landscape');setGlare(land?y:x,land?-x:(y+.6))};
+addEventListener('deviceorientation',e=>{if(e.gamma==null||globalThis.webkit?.messageHandlers?.ipodTilt)return;tiltSeen=true;setGlare(e.gamma/35,((e.beta||0)-45)/35)});
+function setTilt(on){try{globalThis.webkit?.messageHandlers?.ipodTilt?.postMessage({on})}catch(e){}}
+document.addEventListener('visibilitychange',()=>setTilt(settings.glare!=='Off'&&!document.hidden));
+let driftT=null;
+function glareNudge(dir){if(tiltSeen||settings.glare==='Off')return;setGlare(gx+dir*.06,gy);clearTimeout(driftT);driftT=setTimeout(()=>setGlare(0,0),1400)}
+// --- touch ripples: light trails under your thumb on the wheel, a ring on presses
+let ripLast=0,ripAlive=0,ripBox=null;
+function ripple(e,ring){
+  if(settings.ripples==='Off'||ripAlive>10)return;
+  const now=performance.now();if(!ring&&now-ripLast<60)return;ripLast=now;
+  const ip=document.getElementById('ipod');
+  if(ring||!ripBox){const r=ip.getBoundingClientRect();ripBox={l:r.left,t:r.top,k:r.width/ip.offsetWidth||1}}   // measured once per touch
+  const el=document.createElement('i');el.className='rip'+(ring?' ring':'');
+  el.style.left=((e.clientX-ripBox.l)/ripBox.k)+'px';el.style.top=((e.clientY-ripBox.t)/ripBox.k)+'px';
+  document.getElementById('riplayer').appendChild(el);ripAlive++;const done=()=>{if(el.isConnected){el.remove();ripAlive--}};el.addEventListener('animationend',done);setTimeout(done,900);
+}
+{const w=document.getElementById('wheel');let down=false;
+  w.addEventListener('pointerdown',e=>{down=true;ripple(e,true)});
+  w.addEventListener('pointermove',e=>{if(down)ripple(e,false)});
+  for(const t of ['pointerup','pointercancel','lostpointercapture'])w.addEventListener(t,()=>{down=false});}
+// --- wear & scratches: builds up the more you play; Polish to start fresh
+function wearState(){return Object.assign({plays:0,base:0,seed:(Math.random()*1e9)|0},ls.get('ipod.wear',{}))}
+let wear=wearState();if(!ls.get('ipod.wear',null))ls.set('ipod.wear',wear);
+function wearLevel(){if(settings.wear==='Off')return 0;if(settings.wear==='Heavy')return 1;return Math.max(0,Math.min(1,(wear.plays-wear.base)/350))}
+function addWear(){wear.plays++;ls.set('ipod.wear',wear);if((wear.plays-wear.base)%7===0)drawWear()}
+function rng(seed){let a=seed>>>0;return()=>{a=(a+0x6D2B79F5)>>>0;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}}
+function drawWear(){
+  const cv=document.getElementById('wear'),ip=document.getElementById('ipod');if(!cv||!ip)return;
+  const W=ip.offsetWidth,H=ip.offsetHeight,dpr=Math.min(3,(window.devicePixelRatio||1)*1.5),lvl=wearLevel();
+  cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+  const c=cv.getContext('2d');if(!c)return;c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,W,H);
+  cv.dataset.level=lvl.toFixed(2);if(lvl<=0)return;
+  const rel=el=>{const a=el.getBoundingClientRect(),b=ip.getBoundingClientRect(),k=b.width/W||1;return{x:(a.left-b.left)/k,y:(a.top-b.top)/k,w:a.width/k,h:a.height/k}};
+  const scr=rel(document.querySelector('.bezel')),wh=rel(document.getElementById('wheel'));
+  const wc={x:wh.x+wh.w/2,y:wh.y+wh.h/2,r:wh.w/2};
+  const inScr=(x,y)=>x>scr.x&&x<scr.x+scr.w&&y>scr.y&&y<scr.y+scr.h,inWheel=(x,y)=>Math.hypot(x-wc.x,y-wc.y)<wc.r;
+  const R=rng(wear.seed),pick=n=>Math.round(n*lvl);
+  // hairline scratches on the shell (light and dark)
+  const shell=[];for(let i=0;i<90;i++)shell.push([R()*W,R()*H,R()*Math.PI,3+R()*20,R(),R()]);
+  for(const [x,y,a,len,s1,s2] of shell.slice(0,pick(90))){
+    if(inScr(x,y)||inWheel(x,y))continue;
+    c.beginPath();c.moveTo(x,y);c.quadraticCurveTo(x+Math.cos(a)*len/2+(s2-.5)*1.5,y+Math.sin(a)*len/2+(s1-.5)*1.5,x+Math.cos(a)*len,y+Math.sin(a)*len);
+    c.lineWidth=.3+s1*.35;c.strokeStyle=s2>.4?`rgba(255,255,255,${.35+s1*.4})`:`rgba(0,0,0,${.07+s1*.1})`;c.stroke();
+  }
+  // dings near the edges and corners
+  const dings=[];for(let i=0;i<16;i++){const side=R(),t=R();dings.push([side<.25?[t*W,4+R()*10]:side<.5?[t*W,H-4-R()*10]:side<.75?[4+R()*10,t*H]:[W-4-R()*10,t*H],1+R()*1.8])}
+  for(const [[x,y],rr] of dings.slice(0,pick(16))){c.beginPath();c.arc(x,y,rr,0,Math.PI*2);c.fillStyle='rgba(0,0,0,.22)';c.fill();
+    c.beginPath();c.arc(x-rr*.3,y-rr*.3,rr*.55,0,Math.PI*2);c.fillStyle='rgba(255,255,255,.45)';c.fill()}
+  // circular rub marks on the wheel where your thumb goes round
+  for(let i=0;i<pick(30);i++){const rr=wc.r*(.62+R()*.32),a0=R()*Math.PI*2,sw=.3+R()*1.1;
+    c.beginPath();c.arc(wc.x,wc.y,rr,a0,a0+sw);c.lineWidth=.3+R()*.4;c.strokeStyle=`rgba(${R()>.4?'255,255,255':'0,0,0'},${.04+R()*.07})`;c.stroke()}
+  // faint micro-scratches on the screen's plastic
+  c.save();c.beginPath();c.rect(scr.x+3,scr.y+3,scr.w-6,scr.h-6);c.clip();
+  for(let i=0;i<pick(26);i++){const x=scr.x+R()*scr.w,y=scr.y+R()*scr.h,a=R()*Math.PI,len=3+R()*12;
+    c.beginPath();c.moveTo(x,y);c.lineTo(x+Math.cos(a)*len,y+Math.sin(a)*len);c.lineWidth=.25;c.strokeStyle=`rgba(255,255,255,${.05+R()*.07})`;c.stroke()}
+  c.restore();
+}
+function polishIPod(){
+  const cv=document.getElementById('wear'),p=document.getElementById('polish');
+  p.classList.remove('go');void p.offsetWidth;p.classList.add('go');cv.classList.add('fade');
+  setTimeout(()=>{wear.base=wear.plays;ls.set('ipod.wear',wear);if(settings.wear==='Heavy')settings.wear='Natural',saveSettings();drawWear();cv.classList.remove('fade')},1300);
+  setTimeout(()=>p.classList.remove('go'),2400);
+  triggerHaptic?.('success');setHdrTask('Polished ✨',1,true);
+}
+// --- boot animation when the iPod starts
+function bootAnim(){
+  if(settings.boot==='Off'||(navigator.webdriver&&!ls.get('ipod.boot.force',false)))return;
+  const b=document.getElementById('boot');b.classList.add('on');setTimeout(()=>b.classList.remove('on'),2700);
+}
+var lookReady=false;
+function lookFeelMenu(){
+  const cyc=(k,opts,after)=>()=>{const i=opts.indexOf(settings[k]);settings[k]=opts[(i+1)%opts.length];saveSettings();after?.();applyLook();render()};
+  const pct=Math.round(wearLevel()*100);
+  return list('Look & Feel',()=>[
+    {label:'Hold Switch',val:settings.holdPos,action:cyc('holdPos',Object.keys(HOLD_POS))},
+    {label:'Lock Screen',val:settings.lockScreen,action:cyc('lockScreen',['On','Off'])},
+    {label:'Boot Animation',val:settings.boot,action:cyc('boot',['On','Off'],()=>{if(settings.boot==='On'){ls.set('ipod.boot.force',true);bootAnim();ls.set('ipod.boot.force',false)}})},
+    {label:'Wear & Scratches',val:settings.wear,action:cyc('wear',['Natural','Heavy','Off'])},
+    {label:'Polish iPod',val:settings.wear==='Off'?'':Math.round(wearLevel()*100)+'% worn',action:()=>polishIPod()},
+    {label:'Touch Ripples',val:settings.ripples,action:cyc('ripples',['On','Off'])},
+    {label:'Screen Glare',val:settings.glare,action:cyc('glare',['On','Off'],()=>{if(settings.glare==='On'&&typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission&&!globalThis.webkit?.messageHandlers?.ipodTilt)DeviceOrientationEvent.requestPermission().catch(()=>{})})},
+  ]);
+}
+lookReady=true;setTimeout(()=>{bootAnim();try{applyLook()}catch(e){console.warn(e)}},0);addEventListener('load',()=>drawWear());
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -4982,11 +5160,38 @@ function setHold(on){
   holdOn=on;
   $('#hold').classList.toggle('on',on);
   $('#lk').classList.toggle('on',on);
-  if(on)showLock();else $('#lockpop').classList.remove('on');
+  const ls_=lockScreenOn();
+  screenEl.classList.toggle('held',on&&ls_);$('#lockscr').classList.toggle('on',on&&ls_);
+  if(!on){screenEl.classList.remove('lit');clearTimeout(litTimer)}
+  if(on&&ls_)updateLockScreen(true);
+  if(on&&!ls_)showLock();else $('#lockpop').classList.remove('on');
   wake();
   syncHoldDisplayLock();
 }
-function showLock(){$('#lockpop').classList.add('on');clearTimeout(lockTimer);lockTimer=setTimeout(()=>$('#lockpop').classList.remove('on'),1100)}
+function lockScreenOn(){return settings.lockScreen!=='Off'}
+function showLock(){
+  if(lockScreenOn()){const k=$('#locklk');k.classList.remove('nudge');void k.offsetWidth;k.classList.add('nudge');return}
+  $('#lockpop').classList.add('on');clearTimeout(lockTimer);lockTimer=setTimeout(()=>$('#lockpop').classList.remove('on'),1100)}
+// While Hold is on the screen rests a little dimmer (Bright Screen turned down, not off); any touch lights it up for a few seconds.
+let litTimer=null;
+function lightUp(){if(!holdOn||!lockScreenOn())return;screenEl.classList.add('lit');clearTimeout(litTimer);litTimer=setTimeout(()=>screenEl.classList.remove('lit'),5000)}
+let lockSongId=null;
+function updateLockScreen(force){
+  if(!holdOn||!lockScreenOn())return;
+  const d=new Date();
+  $('#locktime').textContent=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}).replace(/\s?[AP]M$/i,'');
+  $('#lockdate').textContent=d.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
+  const s=cur(),id=s?(s.id||s.title):null;
+  if(!force&&id===lockSongId)return;lockSongId=id;
+  $('#locksong').classList.toggle('none',!s);
+  if(!s){$('#lockbg').style.backgroundImage='';return}
+  let art='';try{art=nowPlayingArt(s)||''}catch(e){}
+  const url=art?`url("${String(art).replace(/"/g,'%22')}")`:'';
+  $('#lockart').style.backgroundImage=url;$('#lockbg').style.backgroundImage=url;
+  $('#locktitle').textContent=s.title||'';$('#lockartist').textContent=s.artist||'';
+}
+setInterval(()=>updateLockScreen(false),1000);
+screenEl.addEventListener('pointerdown',()=>{if(holdOn){lightUp();showLock()}});
 $('#hold').addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();setHold(!holdOn);click()});
 document.addEventListener('visibilitychange',syncHoldDisplayLock);
 // ----- Backlight -----
@@ -4994,7 +5199,7 @@ let lightTimer=null;
 function wake(){
   screenEl.classList.remove('dim');
   clearTimeout(lightTimer);
-  if(holdOn)return;
+  if(holdOn){lightUp();return}
   const ms={'10 sec':1e4,'20 sec':2e4,'1 min':6e4}[settings.backlight];
   if(ms&&!(top()&&(top().type==='brick'||top().type==='bubbles')))lightTimer=setTimeout(()=>screenEl.classList.add('dim'),ms);
 }
@@ -5010,7 +5215,7 @@ function showLetter(v){const x=itemsOf(v)[v.sel];if(!x)return;const ch=(String(x
   const el=$('#letter');el.textContent=/[A-Z]/.test(ch)?ch:'#';el.classList.add('on');clearTimeout(letterTimer);letterTimer=setTimeout(()=>el.classList.remove('on'),550)}
 function scroll(dir){
   if(window.ipodVideos?.playing)return;
-  wake();
+  wake();glareNudge(dir);
   if(holdOn){showLock();return}
   if(sheet){sheetScroll(dir);return}
   const v=top();
