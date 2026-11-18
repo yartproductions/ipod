@@ -546,7 +546,11 @@ html.landscape .fnp.lyrics-flow .stage{left:24%}
 /* Bright Screen (HDR): a tiny looping HDR-white video multiplied over the display. On HDR iPhones the
    screen's whites go brighter than the rest of the page (the same extended-brightness trick HDR photos use). */
 #hdrboost{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;z-index:8;pointer-events:none;mix-blend-mode:multiply;display:none;opacity:0;transition:opacity .8s ease}
-html.hdr #hdrboost{display:block;opacity:var(--hdr,1)}
+html.hdr #hdrboost{display:block;opacity:0}
+html.hdr #hdrboost.playing{opacity:var(--hdr,1)}
+/* iOS draws a big play button on a video it refuses to start (e.g. Low Power Mode): never show it */
+#hdrboost::-webkit-media-controls,#hdrboost::-webkit-media-controls-start-playback-button,#hdrboost::-webkit-media-controls-overlay-play-button{display:none!important;-webkit-appearance:none;opacity:0}
+html.hdr #hdrboost:not(.playing){visibility:hidden}
 html.hdr .screen.dim #hdrboost{opacity:0}
 .screen.dim{filter:brightness(.32) saturate(.7)}
 /* fast-scroll letter */
@@ -1023,6 +1027,8 @@ function applyHDR(){
   if(!v)return;
   if(on){v.play?.().catch(()=>{})}else v.pause?.();
 }
+{const v=document.getElementById('hdrboost');if(v){const on=()=>v.classList.add('playing'),off=()=>v.classList.remove('playing');
+  v.addEventListener('playing',on);for(const e of ['pause','ended','emptied','stalled','error'])v.addEventListener(e,off)}}
 HDR_MQ.addEventListener?.('change',applyHDR);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)applyHDR()});
 let VIS=7;
