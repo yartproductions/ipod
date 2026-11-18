@@ -906,18 +906,32 @@ html.landscape .flow.withpanel .stage{left:32%}
 .chost{background:#fff}
 .modern .chost{background:transparent}
 /* friends feed on the split screen */
-.split .sfeed{position:absolute;left:6px;right:6px;top:6px;z-index:3;display:flex;gap:6px;align-items:center;padding:5px 7px;border-radius:9px;
+.split .sfeed{position:absolute;left:6px;right:6px;top:6px;z-index:3;display:flex;gap:5px;align-items:center;padding:4px 6px;border-radius:9px;
   background:rgba(255,255,255,.9);color:#111;box-shadow:0 3px 10px rgba(0,0,0,.25);opacity:0;transform:translateY(-8px);transition:opacity .35s,transform .35s;pointer-events:none}
 .split .sfeed.on{opacity:1;transform:none}
 .split .sfeed.flip div{animation:sfIn .4s ease-out}
 @keyframes sfIn{from{opacity:0;transform:translateY(5px)}}
-.split .sfeed .fav{flex:none;width:22px;height:22px;border-radius:50%;background:#cdd3db center/cover;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.split .sfeed .fav{flex:none;width:18px;height:18px;border-radius:50%;background:#cdd3db center/cover;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
 .split .sfeed div{min-width:0;flex:1}
-.split .sfeed>em{flex:none;align-self:flex-start;font-style:normal;font-weight:700;font-size:8.5px;color:#2d7fd8}
+/* name line: "Listening now" with a pulsing dot, or how long ago */
+.split .sfeed div>em{display:block;font-style:normal;font-weight:700;font-size:7px;line-height:1.25;color:#2d7fd8;text-transform:uppercase;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.split .sfeed div>em.live{color:#1f9d55}
+.split .sfeed div>em.live i{display:inline-block;width:4px;height:4px;border-radius:50%;background:#22c55e;margin-right:2px;vertical-align:1px;animation:sfPulse 1.4s ease-in-out infinite}
+@keyframes sfPulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.6)}50%{box-shadow:0 0 0 3px rgba(34,197,94,0)}}
+.split .sfeed.islive{box-shadow:0 3px 10px rgba(0,0,0,.25),inset 0 0 0 1px rgba(34,197,94,.45)}
+/* sliding song name */
+.split .sfeed .mq{display:block;overflow:hidden;white-space:nowrap;text-overflow:clip}
+.split .sfeed .mq.go{-webkit-mask-image:linear-gradient(90deg,transparent,#000 6px,#000 calc(100% - 10px),transparent);mask-image:linear-gradient(90deg,transparent,#000 6px,#000 calc(100% - 10px),transparent)}
+.split .sfeed .mq>span{display:inline-block;color:inherit}
+.split .sfeed .mq.go>span{animation:sfMq linear 1 .9s both}
+.split .sfeed .mq .gap{display:inline-block;width:28px}
+@keyframes sfMq{to{transform:translateX(calc(-1 * var(--mqd)))}}
+@media (prefers-reduced-motion:reduce){.split .sfeed .mq.go>span{animation:none}.split .sfeed div>em.live i{animation:none}}
 .split .sfeed b{display:block;font-size:9.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.split .sfeed span{display:block;font-size:9px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.split.npmode .np{padding-top:40px}
-.modern .split .sfeed{background:rgba(20,26,36,.88);color:#f2f5f9}.modern .split .sfeed span{color:#9aa8bb}
+.split .sfeed .mq{font-size:9px;color:#555}
+.split .sfeed .mq>span{font-size:inherit}
+.split.npmode .np{padding-top:48px}
+.modern .split .sfeed{background:rgba(20,26,36,.88);color:#f2f5f9}.modern .split .sfeed .mq{color:#9aa8bb}
 </style>
 </head>
 <body>
@@ -3239,16 +3253,27 @@ function renderFeed(){
   const el=document.getElementById('splitfeed');if(!el)return;
   if(!feedItems.length){el.classList.remove('on');return}
   const x=feedItems[feedIdx%feedItems.length];
-  el.innerHTML=`<i class="fav" style="background-image:url(&quot;${esc(x.photo||'')}&quot;)"></i><div><b>@${esc(x.username)}</b><span>${esc(x.title)}${x.artist?' — '+esc(x.artist):''}</span></div><em>${feedAgo(x.at)}</em>`;
+  const live=Date.now()-x.at<10*60000,song=esc(x.title)+(x.artist?' — '+esc(x.artist):'');
+  el.innerHTML=`<i class="fav" style="background-image:url(&quot;${esc(x.photo||'')}&quot;)"></i><div>${live?'<em class="live"><i></i>Listening now</em>':`<em>Played ${feedAgo(x.at)} ago</em>`}<b>@${esc(x.username)}</b><span class="mq"><span>${song}</span></span></div>`;
+  el.classList.toggle('islive',live);
   el.classList.add('on');el.classList.remove('flip');void el.offsetWidth;el.classList.add('flip');
+  // slide the song name when it doesn't fit; keep this friend up until it has gone round once
+  feedHold=0;
+  requestAnimationFrame(()=>{const box=el.querySelector('.mq'),t=box&&box.firstElementChild;if(!t)return;
+    const over=t.scrollWidth-box.clientWidth;if(over<=2)return;
+    t.innerHTML=song+'<b class="gap"></b>'+song;
+    const g=t.querySelector('.gap'),dist=(t.offsetWidth+g.offsetWidth)/2,dur=Math.max(4,dist/28);
+    t.style.setProperty('--mqd',dist+'px');t.style.animationDuration=dur+'s';box.classList.add('go');
+    feedHold=Date.now()+dur*1000+1200});
 }
+let feedHold=0;
 async function refreshFeed(){
   if(!window.ipodFriends?.feed||Date.now()-feedAt<45000)return;feedAt=Date.now();
   try{feedItems=(await window.ipodFriends.feed()).filter(x=>Date.now()-x.at<3*864e5).slice(0,6)}catch(e){}
   renderFeed();
 }
 // while the main menu's split screen is showing: refresh every minute, rotate friends every 5 s
-setInterval(()=>{if(screenEl.classList.contains('splitmode')&&top()?.title==='iPod'){refreshFeed();if(feedItems.length>1){feedIdx++;renderFeed()}}},5000);
+setInterval(()=>{if(screenEl.classList.contains('splitmode')&&top()?.title==='iPod'){refreshFeed();if(feedItems.length&&Date.now()>=feedHold&&(feedItems.length>1||feedHold)){if(feedItems.length>1)feedIdx++;renderFeed()}}},5000);
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
