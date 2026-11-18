@@ -4,6 +4,7 @@
 const bridge=window.ipodFriendsBridge;
 if(!bridge){console.error('iPod Friends: player bridge unavailable');return}
 const {audio,cur,list,go,push,replaceTop,top,msgView,loadingView,inputView}=bridge;
+const esc_=s=>String(s??'');
 const CONFIG={
   apiKey:"AIzaSyDSMe2R6QTVd3htWfP7-ScKMZyWd5dePNU",
   authDomain:"ipod-friends.firebaseapp.com",
@@ -195,6 +196,7 @@ function friendsMenu(){
     {label:'Find Friends',chev:1,action:()=>push(inputView('Find Username','Exact @username',findFriend))},
     {label:'Friend Requests',chev:1,action:()=>runView('Loading requests…',requestMenu)},
     {label:'My Friends',chev:1,action:()=>runView('Loading friends…',friendsList)},
+    {label:'Songs for You',chev:1,action:()=>runView('Loading songs…',inbox)},
     {label:'Share Listening',val:profile.sharing?'On':'Off',action:()=>runView('Updating privacy…',toggleSharing)},
     {label:'Identity Notice',chev:1,action:()=>push(msgView('Anonymous Identity','No login or recovery is available. Clearing browser storage may permanently lose your profile.'))}
   ]);
@@ -301,6 +303,7 @@ async function friendCard(uid){
       return msgView('Request Sent','Waiting for @'+p.username+' to accept.');
     })}]:[]),
     ...(state==='accepted'?[{label:'Latest 3 Songs',chev:1,action:()=>runView('Loading Listening…',()=>friendListening(uid,p))}]:[]),
+    ...(state==='accepted'?await socialRows(uid,p):[]),
     ...(state==='pending'&&inbound.exists?[{label:'Accept Request',chev:1,action:()=>runView('Accepting…',async()=>{
       await inbound.ref.update({status:'accepted',updatedAt:serverTime()});
       return friendCard(uid);
@@ -404,9 +407,109 @@ async function publishPlay(song){
     artworkUrl:artwork.startsWith('https://')?artwork.slice(0,500):'',
     listenedAt:new Date()
   };
-  await ref.set({uid,recent:[entry,...previous].slice(0,3),updatedAt:serverTime()});
+  const st=bridge.stats?bridge.stats():null;   // your top songs this week + top artists, for friends' cards and taste match
+  await ref.set({uid,recent:[entry,...previous].slice(0,3),...(st?{week:st.week,artists:st.artists}:{}),updatedAt:serverTime()});
 }
 audio.addEventListener('timeupdate',recordTime);
+
+/* ================= social: activity feed, top songs, taste match, sending songs ================= */
+async function friendUids(){
+  const db=api.db,uid=account.uid;
+  const [incoming,outgoing]=await Promise.all([
+    db.collection('friendRequests').where('to','==',uid).get(),
+    db.collection('friendRequests').where('from','==',uid).get()
+  ]);
+  return [...new Set([
+    ...incoming.docs.filter(x=>x.data().status==='accepted').map(x=>x.data().from),
+    ...outgoing.docs.filter(x=>x.data().status==='accepted').map(x=>x.data().to)
+  ])];
+}
+const toMs=t=>t&&t.toMillis?t.toMillis():t instanceof Date?+t:+new Date(t)||0;
+async function activityOf(uid,p){
+  if(!p||!p.sharing)return null;
+  try{const a=await api.db.collection('activity').doc(uid).get();return a.exists?a.data():null}catch(e){return null}
+}
+// What your friends are listening to, newest first (only friends who share their listening).
+async function friendFeed(){
+  let cached=null;try{cached=JSON.parse(localStorage.getItem(PKEY)||'null')}catch(e){}
+  if(!cached)return [];
+  try{await connect()}catch(e){return []}
+  if(!profile)return [];
+  const out=[];
+  await Promise.all((await friendUids()).map(async u=>{try{
+    const p=(await api.db.collection('profiles').doc(u).get()).data();const a=await activityOf(u,p);const x=a&&a.recent&&a.recent[0];if(!x)return;
+    out.push({uid:u,username:p.username,photo:avatarOf(p),title:x.title,artist:x.artist,artworkUrl:x.artworkUrl||'',at:toMs(x.listenedAt)});
+  }catch(e){}}));
+  return out.sort((a,b)=>b.at-a.at);
+}
+function tasteMatch(mine,theirs){
+  const a=(mine||[]).map(x=>x.toLowerCase()),b=new Set((theirs||[]).map(x=>x.toLowerCase()));
+  if(!a.length||!b.size)return null;
+  const shared=a.filter(x=>b.has(x));
+  return {pct:Math.round(200*shared.length/(a.length+b.size)),shared:(mine||[]).filter(x=>b.has(x.toLowerCase()))};
+}
+async function socialRows(uid,p){
+  const a=await activityOf(uid,p),rows=[];
+  if(a&&a.week&&a.week.length)rows.push({label:'Top This Week',chev:1,action:()=>push(list('@'+p.username+' · This Week',
+    a.week.map((x,i)=>({label:(i+1)+'. '+x.title,val:x.plays+(x.plays===1?' play':' plays'),action:()=>push(msgView(x.title,x.artist))}))))});
+  const st=bridge.stats?bridge.stats():null,m=a&&st?tasteMatch(st.artists,a.artists):null;
+  if(m)rows.push({label:'Taste Match',val:m.pct+'%',chev:1,action:()=>push(msgView('Taste Match · '+m.pct+'%',
+    m.shared.length?'You both listen to: '+m.shared.slice(0,8).join(', ')+(m.shared.length>8?'…':''):'No artists in common yet. Send each other something!'))});
+  if(cur())rows.push({label:'Send Now Playing',val:cur().title,chev:1,action:()=>push(sendOptions(uid,p.username,cur()))});
+  return rows;
+}
+// ---- sending a song ----
+function sendOptions(toUid,username,song){
+  const go_=async note=>{replaceTop(loadingView('Sending…'));
+    try{await withRetry('Sending song',()=>sendSong(toUid,song,note));replaceTop(msgView('Sent to @'+username,'“'+song.title+'” is on its way.'))}
+    catch(e){replaceTop(msgView('Couldn’t Send',maybeError(e)))}};
+  return list('Send to @'+username,[
+    {label:song.title,val:song.artist||''},
+    {label:'Send',action:()=>go_('')},
+    {label:'Send with a Note',chev:1,action:()=>push(inputView('Add a Note','e.g. this reminded me of you',note=>go_(note)))},
+  ]);
+}
+async function sendSong(toUid,song,note){
+  await connect();
+  const art=String(song.artworkUrl||song.artUrl||'');
+  await api.db.collection('sends').add({from:account.uid,to:toUid,title:String(song.title||'Untitled').slice(0,140),artist:String(song.artist||'').slice(0,140),
+    album:String(song.album||'').slice(0,140),artworkUrl:art.startsWith('https://')?art.slice(0,500):'',note:String(note||'').trim().slice(0,140),createdAt:serverTime()});
+  window.ipodAchievements?.event('sendSong');
+}
+async function pickFriendToSend(song){
+  await connect();
+  if(!profile)return msgView('Friends','Create your Friends profile first (main menu ▸ Friends).');
+  const uids=await friendUids();
+  if(!uids.length)return msgView('No Friends Yet','Add a friend first, then you can send them songs.');
+  const rows=await Promise.all(uids.map(async u=>{const p=(await api.db.collection('profiles').doc(u).get()).data();
+    return {label:p?'@'+p.username:'Unknown user',chev:1,thumb:avatarOf(p),avatar:1,action:()=>push(sendOptions(u,p?p.username:'friend',song))}}));
+  return list('Send “'+song.title+'”',rows);
+}
+// ---- songs friends sent you ----
+async function inbox(){
+  await connect();
+  const q=await api.db.collection('sends').where('to','==',account.uid).get();
+  const items=(q.docs||[]).map(d=>({id:d.id,ref:d.ref||api.db.collection('sends').doc(d.id),...d.data()})).sort((a,b)=>toMs(b.createdAt)-toMs(a.createdAt));
+  if(!items.length)return msgView('Songs for You','When friends send you songs, they show up here.');
+  const names=new Map();
+  for(const x of items)if(!names.has(x.from)){try{const p=(await api.db.collection('profiles').doc(x.from).get()).data();names.set(x.from,p?'@'+p.username:'A friend')}catch(e){names.set(x.from,'A friend')}}
+  return list('Songs for You',items.map(x=>({label:x.title,val:names.get(x.from),chev:1,action:()=>{
+    const local=bridge.findSong?bridge.findSong(x.title,x.artist):null;
+    push(list(x.title,[
+      {label:'From',val:names.get(x.from)},
+      ...(x.note?[{label:'“'+x.note+'”',action:()=>push(msgView('Note',x.note))}]:[]),
+      {label:'Artist',val:x.artist||'—'},
+      local?{label:'Play It',action:()=>bridge.playSong(local)}:{label:'Not in your library',val:'add it to play'},
+      {label:'Remove',action:()=>runView('Removing…',async()=>{await x.ref.delete();return inbox()})},
+    ]));
+  }})));
+}
+function watchSends(db,uid,nameOf){
+  try{db.collection('sends').where('to','==',uid).onSnapshot(async q=>{for(const ch of (q.docChanges?q.docChanges():[])){
+    if(ch.type!=='added')continue;const x=ch.doc.data();if(!x)continue;
+    window.ipodNotify?.({id:'send:'+ch.doc.id,kind:'friendsong',title:(await nameOf(x.from))+' sent you a song',body:x.title+(x.artist?' — '+x.artist:'')+(x.note?' · “'+x.note+'”':'')});
+  }},()=>{})}catch(e){}
+}
 /* Notifications: watch for friend requests to you, and for your requests being accepted. */
 async function watchNotifications(){
   if(!window.ipodNotify)return;
@@ -428,7 +531,8 @@ async function watchNotifications(){
     db.collection('friendRequests').where('to','==',uid).onSnapshot(handle,()=>{});
     db.collection('friendRequests').where('from','==',uid).onSnapshot(handle,()=>{});
   }catch(e){}
+  watchSends(db,uid,nameOf);
 }
 setTimeout(()=>watchNotifications().catch(()=>{}),3000);
-window.ipodFriends={open};
+window.ipodFriends={open,feed:friendFeed,send:song=>runView('Loading friends…',()=>pickFriendToSend(song)),inbox:()=>runView('Loading songs…',inbox)};
 })();

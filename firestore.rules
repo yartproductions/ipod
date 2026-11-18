@@ -41,7 +41,9 @@ service cloud.firestore {
         && song.listenedAt is timestamp;
     }
     function validActivity(d, owner) {
-      return d.keys().hasOnly(['uid', 'recent', 'updatedAt'])
+      return d.keys().hasOnly(['uid', 'recent', 'updatedAt', 'week', 'artists'])
+        && (!('week' in d) || (d.week is list && d.week.size() <= 5))
+        && (!('artists' in d) || (d.artists is list && d.artists.size() <= 12))
         && d.keys().hasAll(['uid', 'recent', 'updatedAt'])
         && d.uid == owner && d.recent is list && d.recent.size() <= 3
         && (d.recent.size() < 1 || validSong(d.recent[0]))
@@ -258,6 +260,21 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time;
         allow delete: if signedIn() && voter == request.auth.uid;
       }
+    }
+    // Sending songs: only to a friend; readable by the sender and the recipient; never edited.
+    match /sends/{id} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['from', 'to', 'title', 'artist', 'album', 'artworkUrl', 'note', 'createdAt'])
+        && request.resource.data.from == request.auth.uid && friend(request.resource.data.to)
+        && request.resource.data.title is string && request.resource.data.title.size() >= 1 && request.resource.data.title.size() <= 140
+        && request.resource.data.artist is string && request.resource.data.artist.size() <= 140
+        && request.resource.data.album is string && request.resource.data.album.size() <= 140
+        && request.resource.data.artworkUrl is string && request.resource.data.artworkUrl.size() <= 500
+        && request.resource.data.note is string && request.resource.data.note.size() <= 140
+        && request.resource.data.createdAt == request.time;
+      allow get, list: if signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+      allow update: if false;
+      allow delete: if signedIn() && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
     }
     match /{document=**} { allow read, write: if false; }
   }
