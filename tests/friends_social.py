@@ -17,7 +17,7 @@ SEED = """(()=>{if(sessionStorage.getItem('seeded'))return;sessionStorage.setIte
  put('profiles/me',{uid:'me',username:'me_1',displayName:'Me',sharing:true});
  put('profiles/alex',{uid:'alex',username:'alex_k',displayName:'Alex',sharing:true});
  put('friendRequests/alex_me',{from:'alex',to:'me',status:'accepted'});
- put('activity/alex',{uid:'alex',recent:[{title:'Golden Hour',artist:'Sunny Days',album:'',artworkUrl:'',listenedAt:{__ts:%d}}],
+ put('activity/alex',{uid:'alex',recent:[{title:'Golden Hour (Extended Sunrise Version)',artist:'Sunny Days',album:'',artworkUrl:'',listenedAt:{__ts:%d}}],
    week:[{title:'Golden Hour',artist:'Sunny Days',plays:7},{title:'Late Train',artist:'Night Bus',plays:3}],artists:['Fixture Artist','Sunny Days','Night Bus'],updatedAt:{__ts:%d}});
  localStorage.setItem('ipod.friends.profile',JSON.stringify({uid:'me',username:'me_1',displayName:'Me',sharing:true}));
  localStorage.setItem('ipod.settings',JSON.stringify({autoArt:false,split:'Now Playing',repeat:'One'}));})()""" % (NOW - 2 * 60000, NOW)
@@ -38,7 +38,12 @@ def main():
         C.home(pg); pg.wait_for_timeout(6500)
         feed = pg.locator('#splitfeed')
         check('the main menu split screen shows what a friend is playing', 'on' in (feed.get_attribute('class') or '') and '@alex_k' in feed.inner_text() and 'Golden Hour' in feed.inner_text(), feed.inner_text() if feed.count() else '')
-        check('…with how long ago', 'now' in feed.inner_text())
+        check('a friend who just played shows “Listening now”', 'Listening now' in feed.text_content() and 'islive' in feed.get_attribute('class'), feed.inner_text())
+        pg.wait_for_timeout(300); pg.screenshot(path='/tmp/shots/friend-feed.png', clip=pg.locator('#screen').bounding_box())
+        x1 = pg.evaluate("getComputedStyle(document.querySelector('#splitfeed .mq>span')).transform"); pg.wait_for_timeout(1500)
+        x2 = pg.evaluate("getComputedStyle(document.querySelector('#splitfeed .mq>span')).transform")
+        check('a long song name slides across', pg.locator('#splitfeed .mq.go').count() == 1 and x1 != x2, (x1, x2))
+        pg.wait_for_timeout(1200); pg.screenshot(path='/tmp/shots/friend-feed-slide.png', clip=pg.locator('#screen').bounding_box())
         pg.screenshot(path='/tmp/shots/friend-feed.png', clip=pg.locator('#screen').bounding_box())
         # bridge stats: what you'd share
         st = pg.evaluate("ipodFriendsBridge.stats()")
