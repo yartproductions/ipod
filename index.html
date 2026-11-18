@@ -905,6 +905,19 @@ html.landscape .flow.withpanel .stage{left:32%}
 .tour small{font-size:9.5px;color:#888}
 .chost{background:#fff}
 .modern .chost{background:transparent}
+/* friends feed on the split screen */
+.split .sfeed{position:absolute;left:6px;right:6px;top:6px;z-index:3;display:flex;gap:6px;align-items:center;padding:5px 7px;border-radius:9px;
+  background:rgba(255,255,255,.9);color:#111;box-shadow:0 3px 10px rgba(0,0,0,.25);opacity:0;transform:translateY(-8px);transition:opacity .35s,transform .35s;pointer-events:none}
+.split .sfeed.on{opacity:1;transform:none}
+.split .sfeed.flip div{animation:sfIn .4s ease-out}
+@keyframes sfIn{from{opacity:0;transform:translateY(5px)}}
+.split .sfeed .fav{flex:none;width:22px;height:22px;border-radius:50%;background:#cdd3db center/cover;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.split .sfeed div{min-width:0;flex:1}
+.split .sfeed>em{flex:none;align-self:flex-start;font-style:normal;font-weight:700;font-size:8.5px;color:#2d7fd8}
+.split .sfeed b{display:block;font-size:9.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.split .sfeed span{display:block;font-size:9px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.split.npmode .np{padding-top:40px}
+.modern .split .sfeed{background:rgba(20,26,36,.88);color:#f2f5f9}.modern .split .sfeed span{color:#9aa8bb}
 </style>
 </head>
 <body>
@@ -935,7 +948,7 @@ html.landscape .flow.withpanel .stage{left:32%}
       <div class="hdr"><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><i id="nbell"></i><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="status"><span id="hclock"></span><span class="bat" role="img"><i id="batlvl"></i></span></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
-      <div id="body"></div><div class="sheet" id="sheet"><div class="card"><div class="st" id="sheetT"></div><div class="sbody" id="sheetB"><div class="in" id="sheetIn"></div></div><div class="btns" id="sheetBtns"></div></div></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div><div class="np" id="splitnp"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
+      <div id="body"></div><div class="sheet" id="sheet"><div class="card"><div class="st" id="sheetT"></div><div class="sbody" id="sheetB"><div class="in" id="sheetIn"></div></div><div class="btns" id="sheetBtns"></div></div></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div><div class="np" id="splitnp"></div><div class="sfeed" id="splitfeed"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
       
       <div class="vo" id="vo">
         <div class="vt" id="vot"></div>
@@ -2771,7 +2784,7 @@ function memoriesMenu(){return list('Song Memories',()=>{
 const NKEY='ipod.notifications',NSEEN='ipod.notifications.seen';
 let notes_=ls.get(NKEY,[]);
 const unread=()=>notes_.filter(n=>!n.read).length;
-const NICON={friends:'people',listen:'people',shared:'playlist',download:'download',achievement:'heart',alarm:'clock',info:'info'};
+const NICON={friendsong:'music',friends:'people',listen:'people',shared:'playlist',download:'download',achievement:'heart',alarm:'clock',info:'info'};
 // window.ipodNotify({id, kind, title, body}) — the id makes it show only once, ever.
 window.ipodNotify=n=>{
   if(!n||!n.title)return;const seen=new Set(ls.get(NSEEN,[]));if(n.id&&seen.has(n.id))return;
@@ -2797,6 +2810,7 @@ setTimeout(updateBell,0);
 function openNotification(n){
   n.read=true;ls.set(NKEY,notes_);updateBell();
   if(n.kind==='friends'&&window.ipodFriends)return window.ipodFriends.open();
+  if(n.kind==='friendsong'&&window.ipodFriends)return window.ipodFriends.inbox();
   if(n.kind==='listen'&&window.ipodListen)return window.ipodListen.open();
   if(n.kind==='shared'&&window.ipodShared)return window.ipodShared.open();
   push(msgView(n.title,n.body));
@@ -2872,6 +2886,7 @@ const ACHIEVEMENTS=[
   ['rate1','Critic','Rate a song',()=>[songs.filter(x=>ratingOf(x)).length,1]],
   ['rate50','Tastemaker','Rate 50 songs',()=>[songs.filter(x=>ratingOf(x)).length,50]],
   ['wrapped','Year in Review','Open iPod Wrapped',()=>[ev('wrapped'),1]],
+  ['send','Mixtape Messenger','Send a song to a friend',()=>[ev('sendSong'),1]],
   ['bug','Bug Hunter','Report a bug',()=>[ev('bugReport'),1]],
   ['idea','Big Ideas','Suggest an idea',()=>[ev('idea'),1]],
   ['memory','Memory Lane','Pin a memory to a song',()=>[ev('memory'),1]],
@@ -3208,6 +3223,32 @@ function tourView(){
 // Show the tour once per version, after the iPod has started.
 setTimeout(()=>{if(navigator.webdriver&&!ls.get('ipod.tour.force',false))return;   // automated test runs
   if(ls.get('ipod.tour.v',0)<TOUR_VERSION&&top()?.title==='iPod'){ls.set('ipod.tour.v',TOUR_VERSION);push(tourView())}},1800);
+/* ---------- Friends: what you share (top songs this week, top artists) and the feed on the split screen ---------- */
+function friendsStats(){
+  const by=new Map(songs.map(x=>[x.id,x])),since=Date.now()-7*864e5,c=new Map();
+  for(const e of listened)if(e.at>=since)c.set(e.id,(c.get(e.id)||0)+1);
+  const week=[...c.entries()].sort((a,b)=>b[1]-a[1]).map(([id,n])=>{const x=by.get(id);return x?{title:String(x.title||'').slice(0,140),artist:String(x.artist||'').slice(0,140),plays:n}:null}).filter(Boolean).slice(0,5);
+  const art=new Map();
+  try{const keys=Object.keys(statsM).sort().slice(-2);for(const k of keys)for(const [a,n] of Object.entries(statsM[k].artists||{}))art.set(a,(art.get(a)||0)+n)}catch(e){}
+  for(const e of listened){const x=by.get(e.id);if(x&&x.artist&&!art.has(x.artist))art.set(x.artist,1)}
+  return {week,artists:[...art.entries()].sort((a,b)=>b[1]-a[1]).map(([a])=>String(a).slice(0,80)).slice(0,12)};
+}
+let feedItems=[],feedIdx=0,feedAt=0;
+function feedAgo(t){const m=Math.round((Date.now()-t)/60000);return m<10?'now':m<60?m+'m':m<1440?Math.round(m/60)+'h':Math.round(m/1440)+'d'}
+function renderFeed(){
+  const el=document.getElementById('splitfeed');if(!el)return;
+  if(!feedItems.length){el.classList.remove('on');return}
+  const x=feedItems[feedIdx%feedItems.length];
+  el.innerHTML=`<i class="fav" style="background-image:url(&quot;${esc(x.photo||'')}&quot;)"></i><div><b>@${esc(x.username)}</b><span>${esc(x.title)}${x.artist?' — '+esc(x.artist):''}</span></div><em>${feedAgo(x.at)}</em>`;
+  el.classList.add('on');el.classList.remove('flip');void el.offsetWidth;el.classList.add('flip');
+}
+async function refreshFeed(){
+  if(!window.ipodFriends?.feed||Date.now()-feedAt<45000)return;feedAt=Date.now();
+  try{feedItems=(await window.ipodFriends.feed()).filter(x=>Date.now()-x.at<3*864e5).slice(0,6)}catch(e){}
+  renderFeed();
+}
+// while the main menu's split screen is showing: refresh every minute, rotate friends every 5 s
+setInterval(()=>{if(screenEl.classList.contains('splitmode')&&top()?.title==='iPod'){refreshFeed();if(feedItems.length>1){feedIdx++;renderFeed()}}},5000);
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -4686,6 +4727,7 @@ function songOptions(s){return list('Song',()=>[
   {label:'Play Next',action:()=>{queue.splice(qi+1,0,{...s});pop();render();npToast('Playing next')}},
   {label:'Add to Up Next',action:()=>{queue.push({...s});pop();render();npToast('Added to Up Next')}},
   {label:s.favorite?'Remove from Favorites':'Add to Favorites',action:async()=>{await toggleFavorite(s);pop()}},
+  {label:'Send to a Friend',chev:1,action:()=>window.ipodFriends?window.ipodFriends.send(s):push(msgView('Friends Unavailable','Reload the iPod to load Friends.'))},
   {label:'Rating',val:ratingOf(s)?'★'.repeat(ratingOf(s)):'None',chev:1,action:()=>push(ratingView(s))},
   {label:memoOf(s)?'Edit Memory':'Add Memory',val:memoOf(s)?.text||'',chev:1,action:()=>push(memoEditor(s))},
   ...(memoOf(s)?[{label:'Delete Memory',action:()=>{setMemo(s,'');pop();npToast?.('Memory deleted')}}]:[]),
@@ -5411,7 +5453,9 @@ window.ipodVideoBridge=Object.freeze({list,push,pop,replaceTop,top,msgView,loadi
       try{navigator.mediaSession.setPositionState?.()}catch{}}
   }
 });
-window.ipodFriendsBridge=Object.freeze({audio:{get paused(){return audio.paused},get currentTime(){return audio.currentTime},addEventListener:onActiveAudio},cur,list,go,push,replaceTop,top,msgView,loadingView,inputView});
+window.ipodFriendsBridge=Object.freeze({audio:{get paused(){return audio.paused},get currentTime(){return audio.currentTime},addEventListener:onActiveAudio},cur,list,go,push,replaceTop,top,msgView,loadingView,inputView,
+  stats:friendsStats,findSong:(t,a)=>{const n=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();return songs.find(x=>!x.deleted&&n(x.title)===n(t)&&(!a||n(x.artist)===n(a)))||null},
+  playSong:x=>{playList([x],0);push(nowView())}});
 // Restricted adapter for exact metadata matching against existing YouTube search and playback.
 window.ipodMacBridge=Object.freeze({top,cur,queue:()=>queue,qi:()=>qi,time:curTime,duration:()=>audio.duration,paused:()=>audio.paused,
   artFor,nowPlayingArt,lyrics:populateLyrics,push,pop,list,go,msgView,inputView,loadingView,replaceTop,render,toast:t=>setHdrTask(t,1,true)});
