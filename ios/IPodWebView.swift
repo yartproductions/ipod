@@ -4,6 +4,7 @@ import UIKit
 import CoreHaptics
 import AVFoundation
 import MediaPlayer
+import CoreMotion
 
 // Root view of the native wrapper. Loads the hosted iPod page in a WKWebView and turns
 // `window.webkit.messageHandlers.ipodHaptics.postMessage(...)` calls into Taptic Engine feedback.
@@ -56,6 +57,7 @@ struct IPodWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: Coordinator.shareFileHandlerName)
         controller.add(context.coordinator, name: Coordinator.keepAwakeHandlerName)
         controller.add(context.coordinator, name: Coordinator.shakeHandlerName)
+        controller.add(context.coordinator, name: Coordinator.tiltHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -91,6 +93,8 @@ struct IPodWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.shareFileHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.keepAwakeHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.shakeHandlerName)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.tiltHandlerName)
+        coordinator.setTilt(false)
         coordinator.stopMonitoringDevice()
     }
 
@@ -103,6 +107,22 @@ struct IPodWebView: UIViewRepresentable {
         static let shareFileHandlerName = "ipodShareFile"
         static let keepAwakeHandlerName = "ipodKeepAwake"
         static let shakeHandlerName = "ipodShake"
+        static let tiltHandlerName = "ipodTilt"
+        /// Screen Glare: how the phone is tilted, sent to the page ~20 times a second while it asks for it.
+        private let motion = CMMotionManager()
+        func setTilt(_ on: Bool) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if !on { self.motion.stopDeviceMotionUpdates(); return }
+                guard self.motion.isDeviceMotionAvailable, !self.motion.isDeviceMotionActive else { return }
+                self.motion.deviceMotionUpdateInterval = 1.0 / 20.0
+                self.motion.startDeviceMotionUpdates(to: .main) { [weak self] data, _ in
+                    guard let g = data?.gravity, let web = self?.deviceWebView else { return }
+                    let js = String(format: "window.ipodTilt&&window.ipodTilt(%.3f,%.3f)", g.x, g.y)
+                    web.evaluateJavaScript(js, completionHandler: nil)
+                }
+            }
+        }
         /// Shake to Shuffle is on in the iPod's settings.
         private var shakeEnabled = false
         /// A nearly invisible system volume view: lets the click wheel set the real iPhone volume
@@ -274,6 +294,10 @@ struct IPodWebView: UIViewRepresentable {
             }
             if message.name == Self.audioRouteHandlerName {
                 sendAudioRoute()
+                return
+            }
+            if message.name == Self.tiltHandlerName {
+                setTilt(((message.body as? [String: Any])?["on"] as? Bool) ?? false)
                 return
             }
             if message.name == Self.shakeHandlerName {

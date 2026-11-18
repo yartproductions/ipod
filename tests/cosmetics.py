@@ -134,7 +134,7 @@ def main():
         pg.click('#hold'); pg.wait_for_timeout(100)
         key(pg, 'ArrowDown'); key(pg, 'Enter', wait=150)
         check('Hold blocks the wheel and buttons', sel(pg) == before and pg.text_content('#htitle') == 'iPod')
-        check('Hold shows the lock message + header lock', 'on' in pg.get_attribute('#lockpop', 'class') and 'on' in pg.get_attribute('#lk', 'class'))
+        check('Hold shows the lock screen + header lock', 'on' in pg.get_attribute('#lockscr', 'class') and 'on' in pg.get_attribute('#lk', 'class'))
         pg.click('#hold'); pg.wait_for_timeout(100); key(pg, 'ArrowUp')   # Settings is now the last item
         check('releasing Hold restores control', sel(pg) != before)
 
@@ -163,7 +163,7 @@ def main():
         box = pg.locator('#wheel').bounding_box(); cx, cy, r = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2, box['width'] * .4
         a = -90; pg.mouse.move(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a))); pg.mouse.down()
         for _ in range(140):
-            a += 5; pg.mouse.move(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a))); pg.wait_for_timeout(8)
+            a += 6; pg.mouse.move(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a))); pg.wait_for_timeout(4)
         pg.mouse.up()
         idx = pg.evaluate('[...document.querySelectorAll("#body .row")].findIndex(r=>r.classList.contains("sel"))')
         pos = pg.evaluate('(()=>{const t=document.querySelector("#body .sb i");return t?parseFloat(t.style.top):0})()')
