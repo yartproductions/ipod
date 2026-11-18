@@ -943,24 +943,85 @@ html.hold-tr .hold{top:-7px;bottom:auto;right:44px;left:auto;transform:rotate(18
 html.hold-ls .hold{left:-19px;right:auto;top:145px;bottom:auto;transform:rotate(90deg)}
 html.hold-rs .hold{right:-19px;left:auto;top:145px;bottom:auto;transform:rotate(-90deg)}
 html.landscape.hold-ls .hold,html.landscape.hold-rs .hold{top:118px}
-/* ===== Lock screen (Hold on): clock, date, what's playing; dimmer, lights up when touched ===== */
+/* ===== Lock screen (Hold on): six styles; dimmer while held, lights up when touched ===== */
 .lockscr{position:absolute;inset:0;z-index:9;opacity:0;pointer-events:none;transition:opacity .35s;color:#fff;overflow:hidden;background:#0d1117}
 .lockscr.on{opacity:1}
 .lockscr .lbg{position:absolute;inset:-30px;background:#1b2330 center/cover;filter:blur(18px) saturate(1.3) brightness(.55);transform:scale(1.1)}
-.lockscr .lin{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:10px;text-shadow:0 1px 6px rgba(0,0,0,.45)}
-.lockscr .llk{width:13px;height:16px;color:#ffb366;margin-bottom:2px}
+.lockscr .lshade{position:absolute;inset:0;display:none}
+.lockscr .lin{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:10px;box-sizing:border-box;text-shadow:0 1px 6px rgba(0,0,0,.45)}
+.lockscr .llk{width:13px;height:16px;color:#ffb366;margin-bottom:2px;flex:none}
 .lockscr .llk.nudge{animation:lkNudge .45s ease}
 @keyframes lkNudge{20%{transform:translateX(-3px) rotate(-8deg)}45%{transform:translateX(3px) rotate(8deg)}70%{transform:translateX(-2px)}}
 .lockscr .ltime{font-size:46px;font-weight:700;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
 .lockscr .ldate{font-size:11px;font-weight:600;opacity:.85;margin-bottom:8px}
 .lockscr .lsong{display:flex;gap:7px;align-items:center;max-width:92%;padding:5px 9px 5px 5px;border-radius:9px;background:rgba(255,255,255,.14);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
-.lockscr .lsong.none{display:none}
-.lockscr .lart{flex:none;width:30px;height:30px;border-radius:5px;background:#333 center/cover;box-shadow:0 2px 6px rgba(0,0,0,.35)}
+.lockscr .lart{display:block;flex:none;width:30px;height:30px;border-radius:5px;background:#555 center/cover;box-shadow:0 2px 6px rgba(0,0,0,.35)}
 .lockscr .lsong div{min-width:0}
 .lockscr .lsong b{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lockscr .lsong span{display:block;font-size:9.5px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lockscr .lhint{position:absolute;bottom:7px;font-size:8.5px;opacity:.6;font-weight:600}
-html.landscape .lockscr .ltime{font-size:56px}
+.lockscr .lhint{position:absolute;bottom:7px;left:0;right:0;text-align:center;font-size:8.5px;opacity:.6;font-weight:600}
+.lockscr .lkrow{display:flex;align-items:center;gap:4px}
+.lockscr .lkrow .llk{margin:0;width:8px;height:10px}
+.lockscr .lbar{height:3px;border-radius:2px;background:rgba(255,255,255,.22);overflow:hidden}
+.lockscr .lbar i{display:block;height:100%;width:0;background:#fff;border-radius:2px;transition:width .9s linear}
+.lockscr .none{display:none!important}
+html.landscape .lockscr .lin{zoom:1.15}
+/* 2 · Big Art */
+.ls-bigart{background:#14161b}.ls-bigart .lbg{filter:blur(26px) saturate(1.4) brightness(.38)}
+.ls-bigart .lin{flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;padding:12px 14px;text-shadow:none}
+.ls-bigart .bart{flex:none}.ls-bigart .bart .lart{width:116px;height:116px;border-radius:8px;box-shadow:0 9px 20px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.08)}
+.ls-bigart .bcol{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ls-bigart .lkrow{font-size:8px;font-weight:600;color:#ffb366}
+.ls-bigart .ltime{font-size:38px}.ls-bigart .ldate{font-size:9px;color:#c3c9d3;opacity:1;margin-bottom:9px}
+.ls-bigart .bt{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ls-bigart .ba{font-size:9.5px;color:#c3c9d3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px}
+.ls-bigart .ltimes{display:flex;justify-content:space-between;font-size:7.5px;color:#aab2be;font-variant-numeric:tabular-nums;margin-top:2px}
+/* 3 · Night Stand */
+.ls-night{background:#000}.ls-night .lbg{display:none}
+.ls-night .lin{color:#c9d1dd;text-shadow:none}
+.ls-night .ltime{font-size:84px;font-weight:200;letter-spacing:-.04em;line-height:.9}
+.ls-night .nsong{margin-top:9px;font-size:8.5px;font-weight:500;color:#8a93a3;max-width:90%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ls-night .ncorner{position:absolute;top:9px;display:flex;align-items:center;gap:4px;font-size:7.5px;font-weight:600;color:#8a93a3}
+.ls-night .ncorner.l{left:11px}.ls-night .ncorner.r{right:11px}
+.ls-night .ncorner .llk{width:6px;height:8px;margin:0;color:#8a93a3}
+.ls-night .lhint{color:#6f7886;opacity:1}
+/* 4 · Classic LCD */
+.ls-lcd{background:#b9c7a2;color:#1f2618}.ls-lcd .lbg{display:none}
+.ls-lcd .lin{justify-content:flex-start;align-items:stretch;padding:0;gap:0;text-shadow:none;color:#1f2618}
+.ls-lcd .lcdh{display:flex;align-items:center;justify-content:space-between;height:20px;padding:0 8px;border-bottom:1.5px solid #1f2618;font-size:9px}
+.ls-lcd .lcdh .llk{width:7px;height:9px;margin:0;color:#1f2618}
+.ls-lcd .lcdbat{width:15px;height:7px;border:1px solid #1f2618;position:relative;padding:1px;box-sizing:border-box}.ls-lcd .lcdbat i{display:block;width:55%;height:100%;background:#1f2618}
+.ls-lcd .lcdbat::after{content:"";position:absolute;right:-3px;top:1.5px;width:1.5px;height:3px;background:#1f2618}
+.ls-lcd .lcdmid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.ls-lcd .ltime{font-family:"Courier New",ui-monospace,monospace;font-weight:700;font-size:58px;letter-spacing:0}
+.ls-lcd .ldate{font-family:"Courier New",ui-monospace,monospace;font-weight:700;font-size:10px;opacity:1;margin:0;letter-spacing:.06em}
+.ls-lcd .lcdsong{display:flex;justify-content:space-between;gap:8px;padding:0 11px 4px;font-size:8.5px;font-weight:700}
+.ls-lcd .lcdsong b,.ls-lcd .lcdsong span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ls-lcd .lcdsong span{font-weight:600}
+.ls-lcd .lcdbar{margin:0 11px 11px;height:7px;border:1px solid #1f2618;padding:1px;box-sizing:border-box}
+.ls-lcd .lcdbar i{display:block;height:100%;width:0;background:repeating-linear-gradient(90deg,#1f2618 0 4px,transparent 4px 5px)}
+/* 5 · Flip Clock */
+.ls-flip{background:linear-gradient(180deg,#24262b,#15161a)}.ls-flip .lbg{display:none}
+.ls-flip .lin{gap:11px;text-shadow:none}
+.ls-flip .lkrow{font-size:8px;font-weight:600;color:#ffb366}
+.ls-flip .flip{display:flex;gap:9px}
+.ls-flip .fc{position:relative;width:85px;height:95px;border-radius:7px;background:linear-gradient(180deg,#3a3d44 0%,#2d3036 50%,#24272c 50%,#1d1f24 100%);box-shadow:0 5px 12px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:70px;font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums;color:#f2f3f5}
+.ls-flip .fc.w{width:105px}
+.ls-flip .fc i{position:absolute;left:0;right:0;top:47px;height:1px;background:#0c0d10}
+.ls-flip .fc em{position:absolute;left:5px;bottom:4px;font-style:normal;font-size:7px;font-weight:700;letter-spacing:.06em;color:#a3abb7}
+.ls-flip .lsong{background:none;backdrop-filter:none;-webkit-backdrop-filter:none;padding:0}.ls-flip .lart{width:20px;height:20px;border-radius:4px}
+/* 6 · Live Lyrics: the cover itself, softly blurred, behind the words */
+.ls-lyrics{background:#111}
+.ls-lyrics .lbg{inset:-14px;filter:blur(7px) saturate(1.15) brightness(.82);transform:scale(1.06)}
+.ls-lyrics .lshade{display:block;background:linear-gradient(180deg,rgba(0,0,0,.45) 0%,rgba(0,0,0,.2) 45%,rgba(0,0,0,.5) 100%)}
+.ls-lyrics .lin{align-items:stretch;justify-content:space-between;padding:11px 14px;text-shadow:0 1px 5px rgba(0,0,0,.4)}
+.ls-lyrics .lytop{display:flex;align-items:center;justify-content:space-between;font-size:7.5px;font-weight:600;opacity:.9}
+.ls-lyrics .lytop .lkrow{font-size:13px;font-weight:800;opacity:1;font-variant-numeric:tabular-nums}.ls-lyrics .lytop .llk{width:7px;height:9px;color:#ffb366}
+.ls-lyrics .lylines{flex:1;display:flex;flex-direction:column;justify-content:center;gap:6px;min-height:0}
+.ls-lyrics .lyp,.ls-lyrics .lyn{font-size:11px;font-weight:700;color:rgba(255,255,255,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ls-lyrics .lyn{color:rgba(255,255,255,.6)}
+.ls-lyrics .lyc{font-size:19px;font-weight:800;line-height:1.15;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.ls-lyrics .lybot{display:flex;align-items:center;gap:7px}.ls-lyrics .lybot>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.ls-lyrics .lybot .lart{width:22px;height:22px;border-radius:4px;box-shadow:0 2px 6px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.15)}
+.ls-lyrics .lyt{display:flex;justify-content:space-between;gap:8px;font-size:8.5px}.ls-lyrics .lyt b,.ls-lyrics .lyt span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ls-lyrics .lyt span{opacity:.85}
 .screen.held{filter:brightness(.74) saturate(.92)}
 .screen.held.lit{filter:none}
 html.hdr .screen.held #hdrboost.playing{opacity:calc(var(--hdr,1) * .42)}
@@ -1033,11 +1094,7 @@ html.glare-on .glare{opacity:1}
       <div class="hdr"><span class="pi" id="pi"></span><svg class="lk" id="lk" viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="#e8873a"/><path d="M3 5V3.5a2 2 0 014 0V5" stroke="#e8873a" stroke-width="1.4" fill="none"/></svg><span id="htitle">iPod</span><i id="nbell"></i><span class="task" id="task"><span class="tl" id="tasktl"></span><span class="tb"><i id="taskbar"></i></span></span><span class="status"><span id="hclock"></span><span class="bat" role="img"><i id="batlvl"></i></span></span></div>
       <div class="letter" id="letter"></div>
       <div class="lockpop" id="lockpop"><svg viewBox="0 0 34 34"><rect x="7" y="15" width="20" height="16" rx="3" fill="#e8873a"/><path d="M11 15V10a6 6 0 0112 0v5" stroke="#e8873a" stroke-width="3" fill="none"/></svg>Hold switch is on</div>
-      <div class="lockscr" id="lockscr" aria-hidden="true"><div class="lbg" id="lockbg"></div><div class="lin">
-        <svg class="llk" id="locklk" viewBox="0 0 20 24"><rect x="2" y="10" width="16" height="13" rx="3" fill="currentColor"/><path d="M6 10V7a4 4 0 018 0v3" stroke="currentColor" stroke-width="2.4" fill="none"/></svg>
-        <div class="ltime" id="locktime"></div><div class="ldate" id="lockdate"></div>
-        <div class="lsong" id="locksong"><i class="lart" id="lockart"></i><div><b id="locktitle"></b><span id="lockartist"></span></div></div>
-        <div class="lhint">Hold is on · slide to unlock</div></div></div>
+      <div class="lockscr ls-glass" id="lockscr" aria-hidden="true"><div class="lbg" id="lockbg"></div><div class="lshade"></div><div class="lin" id="lockin"></div></div>
       <div class="glare" id="glare"></div>
       <div class="boot" id="boot"><svg viewBox="0 0 60 60"><circle class="br" cx="30" cy="30" r="24"/><circle class="bc" cx="30" cy="30" r="8"/><path class="bn" d="M30 9v6M51 30h-6M30 51v-6M9 30h6"/></svg><div class="bw">iPod</div><div class="bbar"><i></i></div></div>
       <div id="body"></div><div class="sheet" id="sheet"><div class="card"><div class="st" id="sheetT"></div><div class="sbody" id="sheetB"><div class="in" id="sheetIn"></div></div><div class="btns" id="sheetBtns"></div></div></div><div class="split" id="split"><div class="ken v0"></div><div class="ken v1"></div><div class="np" id="splitnp"></div><div class="sfeed" id="splitfeed"></div></div><div id="download-toast" class="download-toast" style="display:none"></div>
@@ -1080,7 +1137,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -3450,6 +3507,7 @@ function lookFeelMenu(){
   return list('Look & Feel',()=>[
     {label:'Hold Switch',val:settings.holdPos,action:cyc('holdPos',Object.keys(HOLD_POS))},
     {label:'Lock Screen',val:settings.lockScreen,action:cyc('lockScreen',['On','Off'])},
+    ...(settings.lockScreen!=='Off'?[{label:'Lock Screen Style',val:lockStyle(),action:()=>{const i=LOCK_STYLES.indexOf(lockStyle());settings.lockStyle=LOCK_STYLES[(i+1)%LOCK_STYLES.length];saveSettings();render();previewLockScreen()}}]:[]),
     {label:'Boot Animation',val:settings.boot,action:cyc('boot',['On','Off'],()=>{if(settings.boot==='On'){ls.set('ipod.boot.force',true);bootAnim();ls.set('ipod.boot.force',false)}})},
     {label:'Wear & Scratches',val:settings.wear,action:cyc('wear',['Natural','Heavy','Off'])},
     {label:'Polish iPod',val:settings.wear==='Off'?'':Math.round(wearLevel()*100)+'% worn',action:()=>polishIPod()},
@@ -5163,7 +5221,7 @@ function setHold(on){
   const ls_=lockScreenOn();
   screenEl.classList.toggle('held',on&&ls_);$('#lockscr').classList.toggle('on',on&&ls_);
   if(!on){screenEl.classList.remove('lit');clearTimeout(litTimer)}
-  if(on&&ls_)updateLockScreen(true);
+  if(on&&ls_){clearTimeout(lockPreviewT);lockPreviewT=null;updateLockScreen(true)}
   if(on&&!ls_)showLock();else $('#lockpop').classList.remove('on');
   wake();
   syncHoldDisplayLock();
@@ -5175,22 +5233,72 @@ function showLock(){
 // While Hold is on the screen rests a little dimmer (Bright Screen turned down, not off); any touch lights it up for a few seconds.
 let litTimer=null;
 function lightUp(){if(!holdOn||!lockScreenOn())return;screenEl.classList.add('lit');clearTimeout(litTimer);litTimer=setTimeout(()=>screenEl.classList.remove('lit'),5000)}
-let lockSongId=null;
+// Lock screen styles. Each is built once per song/style; the clock, progress and lyric lines tick in place.
+const LOCK_STYLES=['Glass','Big Art','Night Stand','Classic LCD','Flip Clock','Live Lyrics'];
+const LOCK_CLASS={'Glass':'ls-glass','Big Art':'ls-bigart','Night Stand':'ls-night','Classic LCD':'ls-lcd','Flip Clock':'ls-flip','Live Lyrics':'ls-lyrics'};
+let lockKey=null,lockPreviewT=null;
+const LKSVG='<svg class="llk" id="locklk" viewBox="0 0 20 24" aria-hidden="true"><rect x="2" y="10" width="16" height="13" rx="3" fill="currentColor"/><path d="M6 10V7a4 4 0 018 0v3" stroke="currentColor" stroke-width="2.4" fill="none"/></svg>';
+function lockStyle(){return LOCK_STYLES.includes(settings.lockStyle)?settings.lockStyle:'Glass'}
+function lockSkeleton(st,s,art){
+  const A=art?` style="background-image:url(&quot;${esc(art)}&quot;)"`:'',T=esc(s?.title||''),R=esc(s?.artist||'');
+  const song=s?`<div class="lsong" id="locksong"><i class="lart" id="lockart"${A}></i><div><b id="locktitle">${T}</b><span id="lockartist">${R}</span></div></div>`:'';
+  const bar='<div class="lbar"><i data-k="bar"></i></div>';
+  switch(st){
+    case 'Big Art':return `<div class="bart"><i class="lart"${A}></i></div><div class="bcol"><div class="lkrow">${LKSVG}<span>Locked</span></div>
+      <div class="ltime" id="locktime" data-k="time"></div><div class="ldate" data-k="dshort"></div>
+      ${s?`<b class="bt" id="locktitle">${T}</b><span class="ba">${R}</span>${bar}<div class="ltimes"><span data-k="el"></span><span data-k="rem"></span></div>`:''}</div>`;
+    case 'Night Stand':return `<div class="ncorner l">${LKSVG}<span data-k="dnight"></span></div><div class="ncorner r" data-k="alarm"></div>
+      <div class="ltime" id="locktime" data-k="time"></div>${s?`<div class="nsong">▶︎ <span id="locktitle">${T}</span>${R?' · '+R:''}</div>`:''}<div class="lhint">Touch to light up</div>`;
+    case 'Classic LCD':return `<div class="lcdh">${LKSVG}<b>Hold</b><span class="lcdbat"><i></i></span></div>
+      <div class="lcdmid"><div class="ltime" id="locktime" data-k="time"></div><div class="ldate" data-k="dlcd"></div></div>
+      ${s?`<div class="lcdsong"><b id="locktitle">${T}</b><span>${R}</span></div><div class="lcdbar"><i data-k="bar"></i></div>`:''}`;
+    case 'Flip Clock':return `<div class="lkrow">${LKSVG}<span data-k="date"></span></div>
+      <div class="flip" id="locktime"><div class="fc"><span data-k="fh"></span><i></i></div><div class="fc w"><span data-k="fm"></span><i></i><em data-k="ap"></em></div></div>${song}`;
+    case 'Live Lyrics':return `<div class="lytop"><div class="lkrow">${LKSVG}<b id="locktime" data-k="time"></b></div><span data-k="dshort"></span></div>
+      <div class="lylines"><div class="lyp" data-k="lp"></div><div class="lyc" data-k="lc"></div><div class="lyn" data-k="ln"></div></div>
+      ${s?`<div class="lybot"><i class="lart"${A}></i><div><div class="lyt"><b id="locktitle">${T}</b><span>${R}</span></div>${bar}</div></div>`:''}`;
+    default:return `${LKSVG}<div class="ltime" id="locktime" data-k="time"></div><div class="ldate" id="lockdate" data-k="date"></div>${song}<div class="lhint">Hold is on · slide to unlock</div>`;
+  }
+}
+function lockLyrics(s){
+  const L=s?.onlineLyrics?.lines;
+  if(!s)return ['','',''];
+  if(!L||!L.length){if(s&&!s.onlineLyrics&&!s._lockLyrTried){s._lockLyrTried=1;try{fetchOnlineLyrics(s)?.catch?.(()=>{})}catch(e){}}return ['',s.title||'',s.artist||'']}
+  const t=curTime()+.25;let i=-1;for(let k=0;k<L.length;k++){if(L[k].at<=t)i=k;else break}
+  return [i>0?L[i-1].text:'',i>=0?L[i].text:'♪',L[i+1]?.text||''];
+}
+function lockVisible(){return (holdOn&&lockScreenOn())||!!lockPreviewT}
 function updateLockScreen(force){
-  if(!holdOn||!lockScreenOn())return;
-  const d=new Date();
-  $('#locktime').textContent=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}).replace(/\s?[AP]M$/i,'');
-  $('#lockdate').textContent=d.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'});
-  const s=cur(),id=s?(s.id||s.title):null;
-  if(!force&&id===lockSongId)return;lockSongId=id;
-  $('#locksong').classList.toggle('none',!s);
-  if(!s){$('#lockbg').style.backgroundImage='';return}
-  let art='';try{art=nowPlayingArt(s)||''}catch(e){}
-  const url=art?`url("${String(art).replace(/"/g,'%22')}")`:'';
-  $('#lockart').style.backgroundImage=url;$('#lockbg').style.backgroundImage=url;
-  $('#locktitle').textContent=s.title||'';$('#lockartist').textContent=s.artist||'';
+  if(!lockVisible())return;
+  const st=lockStyle(),s=cur(),box=$('#lockin'),scr=$('#lockscr');
+  const key=st+'|'+(s?(s.id||s.title):'');
+  if(force||key!==lockKey){
+    lockKey=key;let art='';if(s){try{art=nowPlayingArt(s)||''}catch(e){}}
+    for(const c of Object.values(LOCK_CLASS))scr.classList.remove(c);scr.classList.add(LOCK_CLASS[st]);
+    $('#lockbg').style.backgroundImage=art?`url("${String(art).replace(/"/g,'%22')}")`:'';
+    box.innerHTML=lockSkeleton(st,s,art);
+  }
+  const d=new Date(),q=k=>box.querySelector(`[data-k="${k}"]`),set=(k,v)=>{const e=q(k);if(e&&e.textContent!==v)e.textContent=v};
+  const hm=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),ap=(hm.match(/[AP]M/i)||[''])[0].toUpperCase(),clock=hm.replace(/\s?[AP]M$/i,'');
+  set('time',clock);set('fh',clock.split(':')[0]);set('fm',clock.split(':')[1]||'');set('ap',ap);
+  set('date',d.toLocaleDateString([],{weekday:'long',month:'long',day:'numeric'}));
+  set('dshort',d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}));
+  set('dnight',d.toLocaleDateString([],{weekday:'short'})+' '+d.getDate());
+  set('dlcd',d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}).toUpperCase().replace(/,/g,' ·'));
+  const al=q('alarm');if(al){const on=typeof alarm!=='undefined'&&alarm.on;al.classList.toggle('none',!on);
+    if(on){const h=alarm.hour%12||12;al.textContent='⏰ '+h+':'+String(alarm.minute).padStart(2,'0')+(alarm.hour<12?' AM':' PM')}}
+  const D=dur(),T=curTime(),b=q('bar');if(b)b.style.width=(D?Math.min(100,T/D*100):0).toFixed(1)+'%';
+  if(q('el')){set('el',fmt(T));set('rem','-'+fmt(Math.max(0,D-T)))}
+  if(st==='Live Lyrics'){const [a,c,n]=lockLyrics(s);set('lp',a);set('lc',c);set('ln',n)}
 }
 setInterval(()=>updateLockScreen(false),1000);
+setInterval(()=>{if(lockVisible()&&lockStyle()==='Live Lyrics')updateLockScreen(false)},250);
+// Look & Feel ▸ Lock Screen Style shows a short preview
+function previewLockScreen(){
+  if(holdOn)return updateLockScreen(true);
+  clearTimeout(lockPreviewT);lockPreviewT=setTimeout(()=>{lockPreviewT=null;if(!holdOn)$('#lockscr').classList.remove('on')},2600);
+  $('#lockscr').classList.add('on');updateLockScreen(true);
+}
 screenEl.addEventListener('pointerdown',()=>{if(holdOn){lightUp();showLock()}});
 $('#hold').addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();setHold(!holdOn);click()});
 document.addEventListener('visibilitychange',syncHoldDisplayLock);

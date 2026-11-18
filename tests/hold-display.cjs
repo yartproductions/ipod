@@ -4,14 +4,14 @@ const fs=require('node:fs');
 const html=fs.readFileSync(require.resolve('../index.html'),'utf8');
 let visibility='visible',requests=0,releases=0,finishRequest;
 const timers=new Map(),classes=new Set();
-const node={style:{},textContent:'',classList:{toggle(){},add:name=>classes.add(name),remove:name=>classes.delete(name)},addEventListener(){}};
+const node={style:{},textContent:'',innerHTML:'',querySelector:()=>null,classList:{toggle(){},add:name=>classes.add(name),remove:name=>classes.delete(name)},addEventListener(){}};
 const section=html.slice(html.indexOf('// ----- Hold switch'),html.indexOf('// ----- Fast scroll'));
 const lock=()=>({released:false,async release(){this.released=true;releases++}});
-const {setHold,wake,syncHoldDisplayLock}=new Function('$','screenEl','document','navigator','settings','top','setTimeout','clearTimeout','setInterval','cur','nowPlayingArt',
+const {setHold,wake,syncHoldDisplayLock}=new Function('$','screenEl','document','navigator','settings','top','setTimeout','clearTimeout','setInterval','cur','nowPlayingArt','esc','fmt','curTime','dur',
  section+'return {setHold,wake,syncHoldDisplayLock};')(
  ()=>node,node,{get visibilityState(){return visibility},addEventListener(){}},
  {wakeLock:{request:()=>{requests++;return new Promise(resolve=>{finishRequest=()=>resolve(lock())})}}},
- {backlight:'20 sec'},()=>({}), (fn,delay)=>{const id=Symbol();timers.set(id,{fn,delay});return id},id=>timers.delete(id),()=>0,()=>null,()=>'');
+ {backlight:'20 sec'},()=>({}), (fn,delay)=>{const id=Symbol();timers.set(id,{fn,delay});return id},id=>timers.delete(id),()=>0,()=>null,()=>'',x=>String(x),()=>'0:00',()=>0,()=>0);
 (async()=>{
  const backlight=()=>[...timers.values()].find(timer=>timer.delay===20000);
  wake();
