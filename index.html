@@ -1705,15 +1705,31 @@ function safeMediaAction(name,callback){
     callback(event);
   })}catch(e){}
 }
+// Lock Screen / Control Center / CarPlay artwork. iOS's player can't always open the page's in-memory (blob:)
+// covers, so every cover is redrawn into a 512px JPEG data URL first, and re-sent whenever the cover changes.
+const sessionArtCache=new Map();let sessionArtKey='',sessionArtSent='';
+function sessionArtwork(url,cb){
+  if(!url)return cb('');if(url.startsWith('data:image/jpeg'))return cb(url);if(sessionArtCache.has(url))return cb(sessionArtCache.get(url));
+  const im=new Image();if(/^https?:/i.test(url))im.crossOrigin='anonymous';
+  im.onload=()=>{try{const c=document.createElement('canvas');c.width=c.height=512;const g=c.getContext('2d');
+    const w=im.naturalWidth||512,h=im.naturalHeight||512,k=Math.max(512/w,512/h);g.drawImage(im,(512-w*k)/2,(512-h*k)/2,w*k,h*k);
+    const d=c.toDataURL('image/jpeg',.88);if(sessionArtCache.size>40)sessionArtCache.clear();sessionArtCache.set(url,d);cb(d)}catch(e){cb(url)}};
+  im.onerror=()=>cb(url);im.src=url;
+}
+function sessionMeta(t,art){
+  try{navigator.mediaSession.metadata=new MediaMetadata({
+    title:t.title||'Unknown Song',artist:t.artist||'Unknown Artist',album:t.album||'',
+    artwork:art?[{src:art,sizes:'512x512',type:art.startsWith('data:image/jpeg')?'image/jpeg':undefined}]:[]})}catch(e){}
+  // new song details can reset iOS's play/pause and progress, so state them again right away
+  syncMediaPlaybackState();syncMediaPosition();
+}
+function currentSessionArt(t){try{return nowPlayingArt(t)}catch(e){return artFor(t)}}
 function setSession(){
   if(!('mediaSession' in navigator))return;
   const t=cur();if(!t)return;
-  try{
-    navigator.mediaSession.metadata=new MediaMetadata({
-      title:t.title||'Unknown Song',artist:t.artist||'Unknown Artist',album:t.album||'',
-      artwork:[{src:artFor(t),sizes:'512x512'}]
-    });
-  }catch(e){}
+  const src=currentSessionArt(t),key=(t.id||t.title)+'|'+src;sessionArtKey=key;
+  sessionMeta(t,sessionArtCache.get(src)||src);
+  sessionArtwork(src,art=>{if(sessionArtKey!==key)return;sessionArtSent=key;sessionMeta(t,art)});
   safeMediaAction('play',()=>resumeAudio());
   safeMediaAction('pause',()=>audio.pause());
   safeMediaAction('stop',()=>{audio.pause();seekTo(0)});
@@ -3686,7 +3702,7 @@ function nativeNowPlaying(force){
   const sig=JSON.stringify([base.title,base.artist,base.playing,base.lyric,base.tone,base.live]);
   if(!force&&sig===nativeSent)return;nativeSent=sig;
   const send=extra=>{try{h.postMessage(Object.assign({},base,extra))}catch(e){}};
-  const art=s?artFor(s):'',artKey=art+'|'+(s?.id||'');
+  const art=s?currentSessionArt(s):'',artKey=art+'|'+(s?.id||'');
   const albums=flowAlbums(),ci=s?Math.max(0,albums.findIndex(a=>a.songs.some(x=>x.id===s.id))):0,win=albums.slice(Math.max(0,ci-3),ci+4),off=Math.max(0,ci-3);
   const flowKey=win.map(a=>a.album+a.artist).join('|');
   const needArt=artKey!==nativeArtKey,needFlow=flowKey!==nativeFlowKey;
@@ -3699,6 +3715,10 @@ function nativeNowPlaying(force){
 }
 onActiveAudio('play',()=>nativeNowPlaying(false));onActiveAudio('pause',()=>nativeNowPlaying(false));
 setInterval(()=>nativeNowPlaying(false),1000);
+setInterval(()=>{const t=cur();if(!t||!('mediaSession' in navigator))return;const key=(t.id||t.title)+'|'+currentSessionArt(t);if(key!==sessionArtKey)setSession()},1000);
+// keep the Lock Screen's play/pause button and progress honest while music plays (iOS can drift after interruptions)
+let sessionTick=0;setInterval(()=>{if(!cur()||!('mediaSession' in navigator))return;const want=audio.paused?'paused':'playing';
+  if(navigator.mediaSession.playbackState!==want||++sessionTick%5===0){syncMediaPlaybackState();if(!audio.paused)syncMediaPosition()}},1000);
 // commands from the CarPlay widget / Live Activity buttons
 window.ipodRemote=(cmd,arg)=>{
   if(cmd==='next')next(true);else if(cmd==='prev')prev();else if(cmd==='toggle')playPause();
