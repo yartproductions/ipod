@@ -58,6 +58,7 @@ struct IPodWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: Coordinator.keepAwakeHandlerName)
         controller.add(context.coordinator, name: Coordinator.shakeHandlerName)
         controller.add(context.coordinator, name: Coordinator.tiltHandlerName)
+        controller.add(context.coordinator, name: Coordinator.nowPlayingHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -94,6 +95,7 @@ struct IPodWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.keepAwakeHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.shakeHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.tiltHandlerName)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.nowPlayingHandlerName)
         coordinator.setTilt(false)
         coordinator.stopMonitoringDevice()
     }
@@ -108,6 +110,7 @@ struct IPodWebView: UIViewRepresentable {
         static let keepAwakeHandlerName = "ipodKeepAwake"
         static let shakeHandlerName = "ipodShake"
         static let tiltHandlerName = "ipodTilt"
+        static let nowPlayingHandlerName = "ipodNowPlaying"
         /// Screen Glare: how the phone is tilted, sent to the page ~20 times a second while it asks for it.
         private let motion = CMMotionManager()
         func setTilt(_ on: Bool) {
@@ -161,6 +164,7 @@ struct IPodWebView: UIViewRepresentable {
             }
             NotificationCenter.default.addObserver(self, selector: #selector(wakeRequested(_:)), name: .ipodWakeUp, object: nil)
             NotificationCenter.default.addObserver(self, selector: #selector(deviceShaken(_:)), name: .ipodDeviceShaken, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(remoteCommand(_:)), name: .ipodRemote, object: nil)
             if IPodAlarm.shared.pendingWake { deliverWake(attempt: 0) }   // launched by tapping the alarm
             for name in [AVAudioSession.routeChangeNotification, UIApplication.didBecomeActiveNotification] {
                 NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)),
@@ -169,6 +173,16 @@ struct IPodWebView: UIViewRepresentable {
         }
 
         @objc private func wakeRequested(_ note: Notification) { deliverWake(attempt: 0) }
+
+        /// A tap on the CarPlay widget or Live Activity (next, previous, play/pause, play an album).
+        @objc private func remoteCommand(_ note: Notification) {
+            let cmd = (note.userInfo?["cmd"] as? String) ?? ""
+            let arg = (note.userInfo?["arg"] as? Int) ?? 0
+            guard ["next", "prev", "toggle", "album"].contains(cmd) else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.deviceWebView?.evaluateJavaScript("window.ipodRemote && window.ipodRemote('\(cmd)', \(arg))", completionHandler: nil)
+            }
+        }
 
         /// iOS's shake gesture (same as shake-to-undo): no motion permission needed.
         @objc private func deviceShaken(_ note: Notification) {
@@ -294,6 +308,12 @@ struct IPodWebView: UIViewRepresentable {
             }
             if message.name == Self.audioRouteHandlerName {
                 sendAudioRoute()
+                return
+            }
+            if message.name == Self.nowPlayingHandlerName {
+                // CarPlay widget + Live Activity
+                guard let d = message.body as? [String: Any] else { return }
+                Task { @MainActor in IPodLive.shared.update(from: d) }
                 return
             }
             if message.name == Self.tiltHandlerName {

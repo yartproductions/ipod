@@ -2,3 +2,6 @@ ios/IPod.xcodeproj/
 ios/Info.plist
 .DS_Store
 __pycache__/
+ios/IPodWidget/Info.plist
+ios/*.entitlements
+ios/IPodWidget/*.entitlements
