@@ -1221,7 +1221,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',carView:'Auto',carLive:'On',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',carView:'Auto',carLiveMode:'In Car',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -1566,6 +1566,7 @@ function setCarPlayRoute(connected){
   if(typeof connected!=='boolean'||nativeCarPlayRoute===connected)return;
   nativeCarPlayRoute=connected;
   try{carViewAuto(connected)}catch(e){}
+  try{nativeNowPlaying(true)}catch(e){}
   notePlayback(connected?'CarPlay connected':'CarPlay disconnected');
   if(connected)useDirectAudio();
   if(top()?.title==='Settings')render();
@@ -1719,8 +1720,8 @@ function setSession(){
   safeMediaAction('nexttrack',()=>next(true));
   safeMediaAction('previoustrack',()=>prev());
   safeMediaAction('seekto',d=>{if(d&&Number.isFinite(d.seekTime)){seekTo(d.seekTime);syncMediaPosition()}});
-  safeMediaAction('seekbackward',d=>{seekTo(Math.max(0,curTime()-(d.seekOffset||10)));syncMediaPosition()});
-  safeMediaAction('seekforward',d=>{seekTo(Math.min(dur()||Infinity,curTime()+(d.seekOffset||10)));syncMediaPosition()});
+  // No skip-10s handlers: with them, iOS shows ⟲10 / 10⟳ on the Lock Screen instead of previous / next.
+  try{navigator.mediaSession.setActionHandler('seekbackward',null);navigator.mediaSession.setActionHandler('seekforward',null)}catch(e){}
   syncMediaPlaybackState();
   syncMediaPosition();
 }
@@ -3599,7 +3600,7 @@ function lookFeelMenu(){
     {label:'Wear & Scratches',val:settings.wear,action:cyc('wear',['Natural','Heavy','Off'])},
     {label:'Polish iPod',val:settings.wear==='Off'?'':Math.round(wearLevel()*100)+'% worn',action:()=>polishIPod()},
     {label:'Car View on CarPlay',val:settings.carView,action:cyc('carView',['Auto','Off'])},
-    {label:'CarPlay Live Activity',val:settings.carLive,action:cyc('carLive',['On','Off'],()=>nativeNowPlaying(true))},
+    {label:'Lyrics Live Activity',val:settings.carLiveMode,action:cyc('carLiveMode',['In Car','Always','Off'],()=>nativeNowPlaying(true))},
     {label:'Touch Ripples',val:settings.ripples,action:cyc('ripples',['On','Off'])},
     {label:'Screen Glare',val:settings.glare,action:cyc('glare',['On','Off'],()=>{if(settings.glare==='On'&&typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission&&!globalThis.webkit?.messageHandlers?.ipodTilt)DeviceOrientationEvent.requestPermission().catch(()=>{})})},
   ]);
@@ -3681,7 +3682,7 @@ function smallJpeg(url,px,cb){if(!url)return cb('');const im=new Image();im.cros
 function nativeNowPlaying(force){
   const h=globalThis.webkit?.messageHandlers?.ipodNowPlaying;if(!h)return;
   const s=cur();let lyric='';if(s){try{const L=lockLyrics(s);lyric=L[3]?L[1]:''}catch(e){}}
-  const base={title:s?.title||'',artist:s?.artist||'',album:s?.album||'',playing:!!s&&!audio.paused,duration:dur()||0,elapsed:curTime()||0,tone:cvTone,lyric,live:settings.carLive!=='Off'};
+  const base={title:s?.title||'',artist:s?.artist||'',album:s?.album||'',playing:!!s&&!audio.paused,duration:dur()||0,elapsed:curTime()||0,tone:cvTone,lyric,live:settings.carLiveMode==='Always'||(settings.carLiveMode!=='Off'&&directCarPlayAudio())};
   const sig=JSON.stringify([base.title,base.artist,base.playing,base.lyric,base.tone,base.live]);
   if(!force&&sig===nativeSent)return;nativeSent=sig;
   const send=extra=>{try{h.postMessage(Object.assign({},base,extra))}catch(e){}};
