@@ -1075,6 +1075,63 @@ html.glare-on .glare{opacity:1}
 @keyframes ripTrail{from{opacity:.95;transform:scale(1)}to{opacity:0;transform:scale(.35)}}
 @keyframes ripRing{from{opacity:.9;transform:scale(.35)}to{opacity:0;transform:scale(1.25)}}
 @media (prefers-reduced-motion:reduce){.boot.on{animation:bootOut .3s .6s both}.boot *{animation-duration:.01s!important;animation-delay:0s!important}.rip{display:none}.lockscr .llk.nudge{animation:none}}
+
+/* ===== Car View: full-screen player for a phone mounted sideways (cover + spinning record, Car Flow) ===== */
+.carview{position:fixed;inset:0;z-index:2000;display:none;background:linear-gradient(160deg,#f7f8fa,#e9ebef);color:#111318;font-family:-apple-system,BlinkMacSystemFont,"Inter","Helvetica Neue",sans-serif;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;
+  --S:min(72vh,36vw);padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.carview.on{display:block}
+.carview button{font:inherit;border:0;background:none;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.carview svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.cvnp,.cvflow{position:absolute;inset:0;transition:opacity .35s}
+.carview[data-mode="np"] .cvflow,.carview[data-mode="flow"] .cvnp{opacity:0;pointer-events:none}
+.cvnp{display:flex;align-items:center;justify-content:flex-start;gap:4vw;padding:0 5vw;box-sizing:border-box}
+.cvstage{position:relative;flex:none;width:calc(var(--S) * 1.85);height:var(--S)}
+.cvcover{position:absolute;left:0;top:0;width:var(--S);height:var(--S);border-radius:calc(var(--S) * .035);background:#c9ced6 center/cover;box-shadow:0 2.2vh 4.6vh rgba(0,0,0,.3);transition:transform .35s}
+.cvcover.bump{animation:cvBump .45s ease}
+@keyframes cvBump{40%{transform:scale(.97)}}
+.cvrecwrap{position:absolute;top:3%;height:94%;aspect-ratio:1;left:calc(var(--S) * .82);transition:left .6s cubic-bezier(.2,.8,.2,1)}
+.carview.paused .cvrecwrap{left:calc(var(--S) * .62)}
+.cvrec{position:absolute;inset:0;border-radius:50%;box-shadow:0 1.6vh 3.4vh rgba(0,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.4);animation:cvSpin 1.8s linear infinite;
+  background:repeating-radial-gradient(circle at 50% 50%,rgba(255,255,255,.10) 0 1px,rgba(0,0,0,0) 1px 3px),conic-gradient(from 10deg,var(--v1),var(--v2) 8%,var(--v1) 14%,var(--v3) 22%,var(--v1) 30%,#eef3fa 37%,var(--v2) 45%,var(--v1) 52%,var(--v3) 61%,var(--v1) 70%,#eef3fa 78%,var(--v2) 86%,var(--v1))}
+.carview.paused .cvrec{animation-play-state:paused}
+@keyframes cvSpin{to{transform:rotate(360deg)}}
+.cvlabel{position:absolute;left:50%;top:50%;width:36%;height:36%;transform:translate(-50%,-50%);border-radius:50%;background:var(--vl);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:4%;box-sizing:border-box}
+.cvlabel b{font-size:calc(var(--S) * .034);font-weight:800;letter-spacing:.04em;text-transform:uppercase;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cvlabel span{font-size:calc(var(--S) * .027);font-weight:600;opacity:.85;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cvlabel i{margin-top:6%;width:7%;height:7%;border-radius:50%;background:#e9ebef}
+.cvarm{position:absolute;right:-9%;top:-3%;width:24%;height:86%;transform-origin:68% 8%;transition:transform .6s ease}
+.carview.paused .cvarm{transform:rotate(14deg)}
+.cvinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:.8vh}
+.cvk{font-size:max(11px,2.2vh);font-weight:700;letter-spacing:.08em;color:#5b6270}
+.cvt{font-size:max(20px,5.8vh);font-weight:800;line-height:1.1;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.cva{font-size:max(15px,3.8vh);font-weight:600;color:#4b5260;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cvbar{margin-top:2.4vh;height:6px;border-radius:3px;background:#d3d7de;overflow:hidden}.cvbar i{display:block;height:100%;width:0;background:#111318;border-radius:3px}
+.cvtimes{display:flex;justify-content:space-between;font-size:max(11px,2.3vh);font-weight:600;color:#5b6270;font-variant-numeric:tabular-nums}
+.cvctl{margin-top:2vh;display:flex;align-items:center;justify-content:space-between;max-width:330px}
+.cvctl button{width:max(48px,11vh);height:max(48px,11vh);border-radius:50%;display:flex;align-items:center;justify-content:center}
+.cvctl button svg{width:46%;height:46%;fill:currentColor}
+.cvctl button.big{width:max(60px,15vh);height:max(60px,15vh);background:#111318;color:#fff}
+.cvctl button:active{transform:scale(.92)}
+/* Car Flow: album spines */
+.cvflow{display:flex;flex-direction:column;align-items:center;justify-content:center;padding-bottom:58px;box-sizing:border-box}
+.cvstrip{position:relative;width:100%;height:calc(var(--S) * .86)}
+.cvsp{position:absolute;top:0;height:100%;display:flex;perspective:520px;transition:left .38s cubic-bezier(.2,.8,.2,1),opacity .3s;cursor:pointer}
+.cvsp .spn{flex:none;width:calc(var(--S) * .1);height:100%;background:#16181d;color:#f3f4f6;display:flex;align-items:center;justify-content:center;overflow:hidden;transition:width .38s}
+.cvsp:nth-child(even) .spn{background:#f4f5f7;color:#16181d}
+.cvsp .spn span{writing-mode:vertical-rl;transform:rotate(180deg);font-size:calc(var(--S) * .036);font-weight:700;white-space:nowrap;max-height:94%;overflow:hidden;text-overflow:ellipsis}
+.cvsp .spn em{font-style:normal;font-weight:500;opacity:.7;margin-top:6px}
+.cvsp .fc{flex:none;height:100%;background:#9aa3b0 center/cover;transition:width .38s,transform .38s,box-shadow .38s}
+.cvsp.l .fc{width:calc(var(--S) * .17);transform:rotateY(58deg);transform-origin:left center;box-shadow:6px 0 14px rgba(0,0,0,.25)}
+.cvsp.r{flex-direction:row-reverse}.cvsp.r .fc{width:calc(var(--S) * .17);transform:rotateY(-58deg);transform-origin:right center;box-shadow:-6px 0 14px rgba(0,0,0,.25)}
+.cvsp.c .spn{width:0}.cvsp.c .fc{width:var(--S);border-radius:4px;box-shadow:0 2vh 4.4vh rgba(0,0,0,.3)}
+.cvcap{margin-top:1.8vh;text-align:center;min-height:7vh}.cvcap b{display:block;font-size:max(15px,3.6vh);font-weight:800}.cvcap span{display:block;font-size:max(12px,2.6vh);font-weight:600;color:#4b5260}
+.cvdock{position:absolute;left:50%;bottom:max(10px,calc(env(safe-area-inset-bottom) + 8px));transform:translateX(-50%);display:flex;gap:6px;padding:5px;border-radius:24px;background:rgba(17,19,24,.82);z-index:3}
+.cvdock button{width:44px;height:34px;border-radius:17px;color:#fff;display:flex;align-items:center;justify-content:center}
+.cvdock button svg{width:18px;height:18px}.cvdock button svg .f{fill:#fff}
+.cvdock button.on{background:rgba(255,255,255,.18)}
+.carview[data-mode="np"] .cvnp{padding-bottom:6vh}
+@media (orientation:portrait){.carview{--S:min(44vh,62vw)}.cvnp{flex-direction:column;justify-content:center;gap:3vh;padding:6vh 6vw 10vh}.cvstage{width:calc(var(--S) * 1.55)}.cvinfo{width:100%;max-width:520px;flex:none}.cvctl{margin:1vh auto 0;width:100%}}
+@media (prefers-reduced-motion:reduce){.cvrec{animation-duration:6s}}
 </style>
 </head>
 <body>
@@ -1134,6 +1191,22 @@ html.glare-on .glare{opacity:1}
     <canvas class="wear" id="wear" aria-hidden="true"></canvas><div class="riplayer" id="riplayer"></div><div class="polish" id="polish"></div>
   </div>
 </div></div>
+<div class="carview" id="carview" aria-hidden="true">
+  <div class="cvnp" id="cvnp">
+    <div class="cvstage"><div class="cvrecwrap"><div class="cvrec" id="cvrec"><div class="cvlabel" id="cvlabel"><b id="cvlt"></b><span id="cvla"></span><i></i></div></div>
+      <svg class="cvarm" viewBox="0 0 70 250" aria-hidden="true"><circle cx="48" cy="20" r="14" fill="#d9dce2" stroke="#b7bcc5" stroke-width="2"/><path d="M48 20 L52 190 L30 226" stroke="#c9cdd4" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><rect x="16" y="218" width="26" height="16" rx="3" transform="rotate(-30 29 226)" fill="#e6e8ec" stroke="#b7bcc5" stroke-width="1.5"/></svg></div>
+      <div class="cvcover" id="cvcover"></div></div>
+    <div class="cvinfo"><div class="cvk">NOW PLAYING</div><div class="cvt" id="cvt"></div><div class="cva" id="cva"></div>
+      <div class="cvbar"><i id="cvbar"></i></div><div class="cvtimes"><span id="cvel">0:00</span><span id="cvrem">-0:00</span></div>
+      <div class="cvctl"><button id="cvprev" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5L9 12l10 7z"/></svg></button>
+        <button id="cvplay" class="big" aria-label="Play or pause"><svg viewBox="0 0 24 24" id="cvplayic"></svg></button>
+        <button id="cvnext" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l10 7-10 7z"/></svg></button></div></div>
+  </div>
+  <div class="cvflow" id="cvflow"><div class="cvstrip" id="cvstrip"></div><div class="cvcap"><b id="cvft"></b><span id="cvfa"></span></div></div>
+  <div class="cvdock"><button data-cv="flow" aria-label="Car Flow"><svg viewBox="0 0 24 24"><path d="M4 5v14M8 5v14M12 4h7v16h-7z"/></svg></button>
+    <button data-cv="np" aria-label="Now Playing"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2" class="f"/></svg></button>
+    <button data-cv="close" aria-label="Close Car View"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+</div>
 <input type="file" id="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg" multiple style="display:none">
 
 <script>
@@ -1148,7 +1221,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',carView:'Auto',carLive:'On',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -1492,6 +1565,7 @@ function crossfadeEnabled(){return !directCarPlayAudio()&&settings.crossfade>0}
 function setCarPlayRoute(connected){
   if(typeof connected!=='boolean'||nativeCarPlayRoute===connected)return;
   nativeCarPlayRoute=connected;
+  try{carViewAuto(connected)}catch(e){}
   notePlayback(connected?'CarPlay connected':'CarPlay disconnected');
   if(connected)useDirectAudio();
   if(top()?.title==='Settings')render();
@@ -2024,6 +2098,7 @@ function musicRootMenu(){return list('Music',()=>[
   {label:'Together',icon:'people',val:window.ipodListen?.role==='host'?'Hosting':window.ipodListen?.role==='guest'?'Joined':'',chev:1,action:go(musicTogetherMenu)},
   {label:'Your Story',icon:'album',chev:1,action:go(musicStoryMenu)},
   {label:'Sleep & Wake',icon:'clock',val:sleep.mode?sleepLeft():alarm.on?alarmTime():'',chev:1,action:go(musicSleepMenu)},
+  {label:'Car View',icon:'album',action:()=>openCarView('np')},
 ])}
 // Music's grouped submenus
 function musicPlaylistsMenu(){return list('Playlists',()=>[
@@ -3355,7 +3430,7 @@ function wrappedMenu(){seedStats();return list('iPod Wrapped',()=>{
 const TOUR_VERSION=2;
 // menu label -> shown with a NEW tag until you open it once
 const NEW_ITEMS=['Feedback & Ideas','Flows','Playlists','Together','Your Story','Sleep & Wake','DJ Mode','Smart Playlists','Sessions','Listen Together','Shared Playlists',
-  'iPod Wrapped','Song Memories','Wake-Up Alarm','Achievements','Music Quiz','Mac Display','Shake to Shuffle','Backup & Restore','Notifications','Flow Track List','Rating','Look & Feel'];
+  'iPod Wrapped','Song Memories','Wake-Up Alarm','Achievements','Music Quiz','Mac Display','Shake to Shuffle','Backup & Restore','Notifications','Flow Track List','Rating','Look & Feel','Car View'];
 const newSeen=new Set(ls.get('ipod.new.seen',[]));
 function isNew(label){return NEW_ITEMS.includes(label)&&!newSeen.has(label)&&ls.get('ipod.tour.v',0)>=1}
 function seenNew(label){if(NEW_ITEMS.includes(label)&&!newSeen.has(label)){newSeen.add(label);ls.set('ipod.new.seen',[...newSeen])}}
@@ -3523,11 +3598,113 @@ function lookFeelMenu(){
     {label:'Boot Animation',val:settings.boot,action:cyc('boot',['On','Off'],()=>{if(settings.boot==='On'){ls.set('ipod.boot.force',true);bootAnim();ls.set('ipod.boot.force',false)}})},
     {label:'Wear & Scratches',val:settings.wear,action:cyc('wear',['Natural','Heavy','Off'])},
     {label:'Polish iPod',val:settings.wear==='Off'?'':Math.round(wearLevel()*100)+'% worn',action:()=>polishIPod()},
+    {label:'Car View on CarPlay',val:settings.carView,action:cyc('carView',['Auto','Off'])},
+    {label:'CarPlay Live Activity',val:settings.carLive,action:cyc('carLive',['On','Off'],()=>nativeNowPlaying(true))},
     {label:'Touch Ripples',val:settings.ripples,action:cyc('ripples',['On','Off'])},
     {label:'Screen Glare',val:settings.glare,action:cyc('glare',['On','Off'],()=>{if(settings.glare==='On'&&typeof DeviceOrientationEvent!=='undefined'&&DeviceOrientationEvent.requestPermission&&!globalThis.webkit?.messageHandlers?.ipodTilt)DeviceOrientationEvent.requestPermission().catch(()=>{})})},
   ]);
 }
 lookReady=true;setTimeout(()=>{bootAnim();try{applyLook()}catch(e){console.warn(e)}},0);addEventListener('load',()=>drawWear());
+/* ---------- Car View: full-screen player for a phone mounted sideways; also feeds the CarPlay widget and Live Activity ---------- */
+let cvMode='np',cvOpen=false,cvFlowIdx=0,cvAlbums=[],cvKey='',cvAutoOpened=false;
+const CV=id=>document.getElementById(id);
+function vinylTone(url,cb){
+  if(!url)return cb(null);
+  const im=new Image();im.crossOrigin='anonymous';im.onload=()=>{try{const c=document.createElement('canvas');c.width=c.height=16;const g=c.getContext('2d');g.drawImage(im,0,0,16,16);
+    const d=g.getImageData(0,0,16,16).data;let R=0,G=0,B=0,W=0;for(let i=0;i<d.length;i+=4){const mx=Math.max(d[i],d[i+1],d[i+2]),mn=Math.min(d[i],d[i+1],d[i+2]),w=1+(mx-mn)/30;R+=d[i]*w;G+=d[i+1]*w;B+=d[i+2]*w;W+=w}
+    cb([R/W,G/W,B/W].map(Math.round))}catch(e){cb(null)}};im.onerror=()=>cb(null);im.src=url;
+}
+function cvColors(rgb){
+  const [r,g,b]=rgb||[143,179,227],mix=(c,t,w)=>Math.round(c+(t-c)*w),hex=a=>'#'+a.map(x=>Math.max(0,Math.min(255,x)).toString(16).padStart(2,'0')).join('');
+  const light=[mix(r,255,.45),mix(g,255,.45),mix(b,255,.45)],soft=[mix(b,255,.55),mix(r,255,.6),mix(g,255,.55)];
+  const lum=.2126*r+.7152*g+.0722*b,k=lum>150?150/lum:1,label=[r*k,g*k,b*k].map(Math.round);
+  return {v1:hex(light),v2:hex(soft),v3:hex([mix(r,255,.75),mix(g,255,.75),mix(b,255,.75)]),vl:hex(label)};
+}
+function cvPlayIcon(){CV('cvplayic').innerHTML=audio.paused?'<path d="M7 4l13 8-13 8z"/>':'<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>'}
+function cvRenderNP(force){
+  const s=cur(),key=s?(s.id||s.title):'';
+  if(force||key!==cvKey){
+    cvKey=key;const art=s?artFor(s):'';
+    CV('cvcover').style.backgroundImage=art?`url("${String(art).replace(/"/g,'%22')}")`:'';
+    CV('cvt').textContent=s?.title||'Not Playing';CV('cva').textContent=s?.artist||'';
+    CV('cvlt').textContent=s?.album||s?.title||'';CV('cvla').textContent=s?.artist||'';
+    vinylTone(art,rgb=>{const c=cvColors(rgb),v=CV('carview');for(const k in c)v.style.setProperty('--'+k,c[k]);cvTone=c.vl;nativeNowPlaying(true)});
+    const cvc=CV('cvcover');cvc.classList.remove('bump');void cvc.offsetWidth;cvc.classList.add('bump');
+  }
+  const D=dur(),T=curTime();CV('cvbar').style.width=(D?Math.min(100,T/D*100):0)+'%';
+  CV('cvel').textContent=fmt(T);CV('cvrem').textContent='-'+fmt(Math.max(0,D-T));
+  CV('carview').classList.toggle('paused',audio.paused||!s);cvPlayIcon();
+}
+function cvRenderFlow(){
+  const strip=CV('cvstrip');if(!cvAlbums.length){strip.innerHTML='';CV('cvft').textContent='No albums yet';CV('cvfa').textContent='';return}
+  cvFlowIdx=Math.max(0,Math.min(cvAlbums.length-1,cvFlowIdx));
+  const W=strip.clientWidth,S=strip.clientHeight,spine=S*.1,sl=S*.17,step=spine+sl-6,gap=S*.08;
+  const keep=new Set();
+  for(let i=Math.max(0,cvFlowIdx-7);i<=Math.min(cvAlbums.length-1,cvFlowIdx+7);i++){
+    const a=cvAlbums[i],d=i-cvFlowIdx,id='cvsp'+i;keep.add(id);
+    let el=document.getElementById(id);
+    if(!el){el=document.createElement('div');el.id=id;el.className='cvsp';el.dataset.i=i;
+      el.innerHTML=`<i class="spn"><span>${esc(a.album||'Unknown Album')}<em> ${esc(a.artist||'')}</em></span></i><i class="fc" style="background-image:url(&quot;${esc(a.art||'')}&quot;)"></i>`;
+      el.style.left=(W/2+(d<0?-1:1)*W)+'px';strip.appendChild(el);void el.offsetWidth}
+    el.classList.toggle('c',d===0);el.classList.toggle('l',d<0);el.classList.toggle('r',d>0);
+    const x=d===0?W/2-S/2:d<0?W/2-S/2-gap-(-d)*step:W/2+S/2+gap+(d-1)*step;
+    el.style.left=x+'px';el.style.zIndex=String(100-Math.abs(d));
+  }
+  for(const el of [...strip.children])if(!keep.has(el.id))el.remove();
+  const a=cvAlbums[cvFlowIdx];CV('cvft').textContent=a.album||'Unknown Album';CV('cvfa').textContent=a.artist||'';
+}
+function cvSetMode(m){cvMode=m;CV('carview').dataset.mode=m;for(const b of document.querySelectorAll('.cvdock button'))b.classList.toggle('on',b.dataset.cv===m);
+  if(m==='flow'){cvAlbums=flowAlbums();const p=cur();if(p){const i=cvAlbums.findIndex(a=>a.songs.some(x=>x.id===p.id));if(i>=0)cvFlowIdx=i}requestAnimationFrame(cvRenderFlow)}else cvRenderNP(true)}
+function openCarView(mode){cvOpen=true;const v=CV('carview');v.classList.add('on');v.setAttribute('aria-hidden','false');cvSetMode(mode||cvMode||'np');triggerHaptic?.('select')}
+function closeCarView(){cvOpen=false;const v=CV('carview');v.classList.remove('on');v.setAttribute('aria-hidden','true')}
+function cvPlayAlbum(i){const a=cvAlbums[i];if(!a)return;playList(a.songs,0);cvSetMode('np')}
+// controls and gestures: swipe the player for next / previous; drag Car Flow to browse, tap the middle album to play it
+{
+  CV('cvprev').addEventListener('click',()=>{prev();cvRenderNP(true)});
+  CV('cvnext').addEventListener('click',()=>{next(true);cvRenderNP(true)});
+  CV('cvplay').addEventListener('click',()=>{playPause();setTimeout(()=>cvRenderNP(),60)});
+  for(const b of document.querySelectorAll('.cvdock button'))b.addEventListener('click',()=>{const m=b.dataset.cv;if(m==='close')closeCarView();else cvSetMode(m)});
+  let sx=0,sy=0,st=0,lastStep=0,down=false;
+  CV('carview').addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;down=true;sx=e.clientX;sy=e.clientY;st=Date.now();lastStep=0});
+  CV('carview').addEventListener('pointermove',e=>{if(!down||cvMode!=='flow')return;const steps=Math.trunc((sx-e.clientX)/70);if(steps!==lastStep){cvFlowIdx+=steps-lastStep;lastStep=steps;cvRenderFlow();click?.()}});
+  CV('carview').addEventListener('pointerup',e=>{if(!down)return;down=false;const dx=e.clientX-sx,dy=e.clientY-sy,quick=Date.now()-st<600;
+    if(cvMode==='np'){if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.3&&quick){dx<0?next(true):prev();triggerHaptic?.('select');cvRenderNP(true)}
+      else if(Math.abs(dx)<10&&Math.abs(dy)<10&&e.target.closest('.cvcover,.cvrecwrap')){playPause();setTimeout(()=>cvRenderNP(),60)}return}
+    if(Math.abs(dx)<10&&Math.abs(dy)<10){const sp=e.target.closest('.cvsp');if(!sp)return;const i=+sp.dataset.i;if(i===cvFlowIdx)cvPlayAlbum(i);else{cvFlowIdx=i;cvRenderFlow()}}});
+  CV('carview').addEventListener('pointercancel',()=>{down=false});
+  addEventListener('resize',()=>{if(cvOpen&&cvMode==='flow')cvRenderFlow()});
+}
+setInterval(()=>{if(cvOpen&&cvMode==='np')cvRenderNP(false)},500);
+// Native side (iPhone app): CarPlay widget (record + Car Flow) and the Live Activity with the current lyric line
+let cvTone='#3a78c9',nativeSent='',nativeArtKey='',nativeFlowKey='';
+function smallJpeg(url,px,cb){if(!url)return cb('');const im=new Image();im.crossOrigin='anonymous';im.onload=()=>{try{const c=document.createElement('canvas');c.width=c.height=px;c.getContext('2d').drawImage(im,0,0,px,px);cb(c.toDataURL('image/jpeg',.82))}catch(e){cb('')}};im.onerror=()=>cb('');im.src=url}
+function nativeNowPlaying(force){
+  const h=globalThis.webkit?.messageHandlers?.ipodNowPlaying;if(!h)return;
+  const s=cur();let lyric='';if(s){try{const L=lockLyrics(s);lyric=L[3]?L[1]:''}catch(e){}}
+  const base={title:s?.title||'',artist:s?.artist||'',album:s?.album||'',playing:!!s&&!audio.paused,duration:dur()||0,elapsed:curTime()||0,tone:cvTone,lyric,live:settings.carLive!=='Off'};
+  const sig=JSON.stringify([base.title,base.artist,base.playing,base.lyric,base.tone,base.live]);
+  if(!force&&sig===nativeSent)return;nativeSent=sig;
+  const send=extra=>{try{h.postMessage(Object.assign({},base,extra))}catch(e){}};
+  const art=s?artFor(s):'',artKey=art+'|'+(s?.id||'');
+  const albums=flowAlbums(),ci=s?Math.max(0,albums.findIndex(a=>a.songs.some(x=>x.id===s.id))):0,win=albums.slice(Math.max(0,ci-3),ci+4),off=Math.max(0,ci-3);
+  const flowKey=win.map(a=>a.album+a.artist).join('|');
+  const needArt=artKey!==nativeArtKey,needFlow=flowKey!==nativeFlowKey;
+  if(!needArt&&!needFlow)return send({});
+  nativeArtKey=artKey;nativeFlowKey=flowKey;
+  smallJpeg(art,320,artData=>{
+    const flow=[];let left=win.length;if(!left)return send({art:artData||undefined,flow});
+    win.forEach((a,k)=>smallJpeg(a.art,140,fd=>{flow[k]={album:a.album||'',artist:a.artist||'',art:fd,current:off+k===ci,index:off+k};if(--left===0)send({art:artData||undefined,flow})}));
+  });
+}
+onActiveAudio('play',()=>nativeNowPlaying(false));onActiveAudio('pause',()=>nativeNowPlaying(false));
+setInterval(()=>nativeNowPlaying(false),1000);
+// commands from the CarPlay widget / Live Activity buttons
+window.ipodRemote=(cmd,arg)=>{
+  if(cmd==='next')next(true);else if(cmd==='prev')prev();else if(cmd==='toggle')playPause();
+  else if(cmd==='album'){const a=flowAlbums()[+arg];if(a)playList(a.songs,0)}
+  setTimeout(()=>{nativeNowPlaying(true);if(cvOpen)cvRenderNP(true)},120);
+};
+function carViewAuto(connected){if(settings.carView==='Off')return;if(connected&&!cvOpen){cvAutoOpened=true;openCarView('np')}else if(!connected&&cvOpen&&cvAutoOpened){cvAutoOpened=false;closeCarView()}}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});

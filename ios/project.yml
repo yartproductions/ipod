@@ -6,7 +6,7 @@ name: IPod
 options:
   bundleIdPrefix: com.yartproductions
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
 targets:
   IPod:
     type: application
@@ -15,7 +15,15 @@ targets:
       - path: IPodApp.swift
       - path: IPodWebView.swift
       - path: IPodAlarm.swift
+      - path: IPodShared.swift
+      - path: IPodLive.swift
       - path: Assets.xcassets
+    dependencies:
+      - target: IPodWidget
+    entitlements:
+      path: IPod.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.yartproductions.ipod]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yartproductions.ipod
@@ -39,3 +47,31 @@ targets:
         UIBackgroundModes: [audio]
         NSAlarmKitUsageDescription: The iPod uses alarms to wake you up with your music, even when your iPhone is locked or on Silent.
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
+  # CarPlay / Home Screen widgets (Now Playing record, Car Flow) and the Live Activity.
+  IPodWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: IPodWidget
+      - path: IPodShared.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yartproductions.ipod.widget
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+    entitlements:
+      path: IPodWidget/IPodWidget.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.yartproductions.ipod]
+    info:
+      path: IPodWidget/Info.plist
+      properties:
+        CFBundleDisplayName: iPod
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
