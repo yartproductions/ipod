@@ -156,6 +156,7 @@ struct IPodWebView: UIViewRepresentable {
                 NotificationCenter.default.addObserver(self, selector: #selector(batteryChanged(_:)),
                                                        name: name, object: nil)
             }
+            UIApplication.shared.applicationSupportsShakeToEdit = false   // shaking = Shake to Shuffle, no "Undo" alert
             volumeView.alpha = 0.01
             volumeView.isUserInteractionEnabled = false
             webView.addSubview(volumeView)
