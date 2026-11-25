@@ -1283,10 +1283,19 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)applyHDR()
 let VIS=7;
 const LANDSCAPE_MQ=matchMedia('(orientation: landscape) and (max-height: 640px)');
 // Measure the real viewport (iOS can report stale sizes for a moment after rotating).
+// While typing, the on-screen keyboard shrinks the visible height: keep the last size so the iPod doesn't
+// shrink (or flip to landscape) — the keyboard just slides over the bottom of the screen.
+let stableSize=null;
+const typing=()=>{const a=document.activeElement;return !!a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable)&&a.type!=='file'};
 function viewSize(){
   const vv=window.visualViewport,w=Math.round(vv?.width||innerWidth||document.documentElement.clientWidth),h=Math.round(vv?.height||innerHeight||document.documentElement.clientHeight);
+  if(typing()&&stableSize&&Math.abs(w-stableSize.w)<4&&h<stableSize.h)return stableSize;
+  if(!typing()||!stableSize)stableSize={w,h};
   return {w,h};
 }
+// keep the page from sliding up when a field is focused
+document.addEventListener('focusin',()=>{if(typing())setTimeout(()=>{try{window.scrollTo(0,0)}catch(e){}},60)});
+document.addEventListener('focusout',()=>setTimeout(()=>{if(!typing())window.ipodRefit?.()},80));
 const isLandscape=()=>{const {w,h}=viewSize();return settings.landscape!=='Off'&&w>h&&h<=640};
 let wasLandscape=null;
 function fit(){
