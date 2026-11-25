@@ -1591,7 +1591,7 @@ function resumeAudio(){
 function load(play){
   cancelCrossfade();
   const t=cur();if(!t)return;
-  if(nativeEligible(queue)){
+  if(nativeCan(t)){   // each song plays in whichever player holds its file; the two hand the queue back and forth
     if(audio!==nativeDeck){const old=audio;audio=nativeDeck;try{old.pause()}catch(e){}try{navigator.mediaSession.metadata=null}catch(e){}}
     if(play)lastListenedSong=null;
     nativeLoad(play);render();return;
@@ -3883,14 +3883,15 @@ const isStub=b=>!!(b&&!(b instanceof Blob)&&b.native);
 const nstoreH=()=>window.webkit?.messageHandlers?.ipodStore;
 const nstore=(op,o)=>nstoreH().postMessage(Object.assign({op},o||{}));
 const nativeSafeId=id=>(String(id).replace(/[^A-Za-z0-9_-]/g,'').slice(0,80)||'song');
-function nativeEligible(list){return NATIVE_PLAYER&&nativeInvLoaded&&list.length>0&&list.every(x=>x&&!x.deleted&&nativeIds.has(x.id))}
-function nativeTracks(){return queue.map(x=>({id:nativeSafeId(x.id),title:x.title||'',artist:x.artist||'',album:x.album||'',track:+x.track||0}))}
+function nativeCan(x){return !!(NATIVE_PLAYER&&nativeInvLoaded&&x&&!x.deleted&&nativeIds.has(x.id))}
+function nativeQueueSig(){return queue.map(x=>x.id+(nativeCan(x)?'':'~')).join('|')}
+function nativeTracks(){return queue.map(x=>({id:nativeSafeId(x.id),title:x.title||'',artist:x.artist||'',album:x.album||'',track:+x.track||0,...(nativeCan(x)?{}:{web:true})}))}
 function nativeConfig(force){
   const cfg={crossfade:settings.crossfade==='Smart'?0:cfSeconds(),smart:settings.crossfade==='Smart',repeat:settings.repeat||'Off',stopAfterCurrent:sleep.mode==='song',eq:eqGains()};
   const sig=JSON.stringify(cfg);if(!force&&sig===nativeCfgSig)return;nativeCfgSig=sig;nativePlayer('config',cfg);
 }
 function nativeLoad(play){
-  const song=cur(),sig=queue.map(x=>x.id).join('|');
+  const song=cur(),sig=nativeQueueSig();
   nativeDeck._load(song,play);
   nativeConfig(true);
   if(sig!==nativeSig){nativeSig=sig;nativePlayer('load',{tracks:nativeTracks(),index:qi,t:0,play})}
@@ -3899,6 +3900,8 @@ function nativeLoad(play){
 // the app reports ~4×/s: position, duration, playing, and which song (it moves on by itself, even when locked)
 window.ipodNativeState=st=>{
   const d=nativeDeck;if(audio!==d||!st)return;
+  // the app reached a song it doesn't hold yet: the page's own player carries on from there
+  if(typeof st.handoff==='number'){if(queue[st.handoff]){qi=st.handoff;nativeSig='';load(st.play!==false)}return}
   if(st.id&&nativeSafeId(cur()?.id||'')!==st.id){
     const i=queue[st.index]&&nativeSafeId(queue[st.index].id)===st.id?st.index:queue.findIndex(x=>nativeSafeId(x.id)===st.id);
     if(i>=0){qi=i;d.src=cur().url;d._d=NaN;d.readyState=0;render();try{nativeNowPlaying(true)}catch(e){}}
@@ -3912,7 +3915,7 @@ window.ipodNativeState=st=>{
   else if(!was&&d._paused)d.dispatchEvent(new Event('pause'));
   d.dispatchEvent(new Event('timeupdate'));
   // keep the app's copy of the queue and settings in step (shuffle on mid-song, repeat, sleep timer)
-  const sig=queue.map(x=>x.id).join('|');if(sig!==nativeSig&&queue.length&&nativeEligible(queue)){nativeSig=sig;nativePlayer('requeue',{tracks:nativeTracks(),index:qi})}
+  const sig=nativeQueueSig();if(sig!==nativeSig&&queue.length&&nativeCan(cur())){nativeSig=sig;nativePlayer('requeue',{tracks:nativeTracks(),index:qi})}
   nativeConfig(false);
 };
 // The bytes of a song whose file moved into the app (quiz clips, reading lyrics tags, ZIP export).

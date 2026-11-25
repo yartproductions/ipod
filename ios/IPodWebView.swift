@@ -164,7 +164,8 @@ struct IPodWebView: UIViewRepresentable {
                 ((b["tracks"] as? [[String: Any]]) ?? []).map {
                     IPodTrack(id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "",
                               artist: $0["artist"] as? String ?? "", album: $0["album"] as? String ?? "",
-                              track: ($0["track"] as? NSNumber)?.intValue ?? 0)
+                              track: ($0["track"] as? NSNumber)?.intValue ?? 0,
+                              local: ($0["web"] as? Bool) != true)
                 }
             }
             let index = (b["index"] as? NSNumber)?.intValue ?? 0
