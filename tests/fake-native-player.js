@@ -25,7 +25,7 @@
     case 'jump':P.index=m.index;P.t=0;P.playing=!!m.play;break;
     case 'play':P.playing=true;break;case 'pause':P.playing=false;break;case 'toggle':P.playing=!P.playing;break;
     case 'seek':P.t=m.t;break;case 'next':P.index=(P.index+1)%P.queue.length;P.t=0;break;case 'stop':P.queue=[];P.playing=false;break;
-    case 'config':P.repeat=m.repeat;P.crossfade=m.crossfade;break}
+    case 'config':P.repeat=m.repeat;P.crossfade=m.crossfade;P.smart=m.smart;P.eq=m.eq;break}
     setTimeout(()=>push(),0);return st()};
   window.webkit=window.webkit||{};window.webkit.messageHandlers=Object.assign(window.webkit.messageHandlers||{},{
     ipodStore:{postMessage:m=>store(m)},ipodPlayer:{postMessage:m=>player(m)}});

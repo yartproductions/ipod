@@ -70,10 +70,11 @@ def choose(pg, label):
         if label == 'Extras': return
     _choose(pg, label)
 def _choose(pg, label):
-    for _ in range(3):
+    for attempt in range(3):
         for _ in range(200):
             if sel(pg) == label: key(pg, 'Enter', wait=250); return
             before = selpos(pg); pg.keyboard.press('ArrowDown')
+            if attempt: pg.wait_for_timeout(90 * attempt)   # slower spins on retries, so wheel acceleration can't skip the row
             if selpos(pg) == before: break
         for _ in range(200): pg.keyboard.press('ArrowUp')
     raise AssertionError(f'could not reach {label!r}')

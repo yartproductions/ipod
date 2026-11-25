@@ -829,6 +829,15 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 #nbell.on{display:inline-block}
 .meta .stars,.mnp .meta .stars{font-size:10px;letter-spacing:1px;color:#e2a12b;margin-top:2px;line-height:1}
 .meta .stars span{color:rgba(128,128,128,.35)}
+.eqv{height:100%;display:flex;flex-direction:column;justify-content:center;padding:6px 8px 4px;color:#111}
+.eqbars{flex:1;display:flex;gap:3px;min-height:0}
+.eqb{flex:1;display:flex;flex-direction:column;align-items:center;min-width:0;border-radius:4px;padding:2px 0}
+.eqb.on{background:rgba(58,142,230,.14)}.eqb.grab{background:rgba(58,142,230,.3)}
+.eqb span{font-size:9px;height:12px;color:#444}.eqb small{font-size:8px;color:#666;height:11px}
+.eqt{position:relative;flex:1;width:4px;background:rgba(0,0,0,.12);border-radius:2px;margin:2px 0}
+.eqt i{position:absolute;left:0;right:0;background:#3a8ee6;border-radius:2px}
+.eqt b{position:absolute;left:-4px;width:12px;height:6px;border-radius:3px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+.eqv p{margin:3px 0 0;font-size:10px;color:#666;text-align:center}
 .rate{position:relative;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#111;text-align:center;padding:0 12px}
 .rate b{font-size:14px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rate span{font-size:11px;color:#666}
@@ -1254,7 +1263,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',carView:'Auto',carLiveMode:'In Car',carLyrics:'Off',resume:'On',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',carView:'Auto',carLiveMode:'In Car',carLyrics:'Off',resume:'On',boot:'On',wear:'Natural',ripples:'On',glare:'On',eq:'Off',eqCustom:[0,0,0,0,0,0,0,0,0,0]},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -1598,10 +1607,14 @@ function next(manual){if(!cur())return;
  else{audio.pause();audio.currentTime=0;render()}}
 function prev(){if(!cur())return;if(curTime()>3){seekTo(0);return}if(importedPlayback?.queue===queue)return advanceImported(-1,true);if(qi>0){qi--;load(true)}else seekTo(0)}
 function playPause(){if(!cur()){shuffleAll();return}audio.paused?resumeAudio():audio.pause()}
-const CROSSFADE_OPTIONS=[0,2,4,6,8,12];
+const CROSSFADE_OPTIONS=[0,2,4,6,8,12,'Smart'];
+/* Smart crossfade: blends where a song already fades out (iPhone app player), skips silence, and keeps albums gapless */
+function cfSeconds(){return settings.crossfade==='Smart'?6:(+settings.crossfade||0)}
+function cfLabel(){return settings.crossfade==='Smart'?'Smart':settings.crossfade?settings.crossfade+' sec':'Off'}
+function albumFlows(a,b){return !!(a&&b&&a.album&&a.album===b.album&&a.track>0&&b.track===a.track+1)}
 let nativeCarPlayRoute=false;
 function directCarPlayAudio(){return settings.carPlayMode||nativeCarPlayRoute}
-function crossfadeEnabled(){return audio!==nativeDeck&&!directCarPlayAudio()&&settings.crossfade>0}
+function crossfadeEnabled(){return audio!==nativeDeck&&!directCarPlayAudio()&&cfSeconds()>0}
 function setCarPlayRoute(connected){
   if(typeof connected!=='boolean'||nativeCarPlayRoute===connected)return;
   nativeCarPlayRoute=connected;
@@ -1652,11 +1665,12 @@ function crossfadeTarget(){
   return song?.url&&!song.deleted?{song,index,session}:null;
 }
 async function maybeCrossfade(){
-  const seconds=settings.crossfade,remaining=audio.duration-audio.currentTime;
+  const seconds=cfSeconds(),remaining=audio.duration-audio.currentTime;
   if(document.hidden||audio===backgroundDeck||!crossfadeEnabled()||fade||audio.paused||audio.seeking||fadeContext?.state!=='running'||deckGain.size!==2||
     !Number.isFinite(remaining)||remaining<=.25||remaining>Math.min(seconds,audio.duration/2))return;
   const target=crossfadeTarget();
   if(!target)return;
+  if(settings.crossfade==='Smart'&&albumFlows(cur(),target.song))return;   // albums play straight through
   const outgoing=audio,incoming=audio===mainDeck?spareDeck:mainDeck;
   const transition={outgoing,incoming,timer:null};fade=transition;
   setDeckGain(incoming,0);
@@ -2341,17 +2355,58 @@ function tornadoUsageView(){
   })();
   return view;
 }
+/* ---------- Equalizer: presets + a custom 10-band curve, played by the iPhone app's audio engine ---------- */
+const EQ_BANDS=['32','64','125','250','500','1K','2K','4K','8K','16K'];
+const EQ_PRESETS={
+  'Acoustic':[4,4,3,1,2,2,3,4,3,2],'Bass Booster':[6,5,4,2,1,0,0,0,0,0],'Bass Reducer':[-6,-5,-4,-2,-1,0,0,0,0,0],
+  'Classical':[4,3,2,1,-1,-1,0,2,3,4],'Dance':[4,6,5,0,2,3,5,4,3,0],'Deep':[5,4,2,1,3,2,1,-2,-4,-5],
+  'Electronic':[4,4,1,0,-2,2,1,1,4,5],'Hip-Hop':[5,4,1,3,-1,-1,1,-1,2,3],'Jazz':[4,3,1,2,-2,-2,0,1,3,4],
+  'Late Night':[-2,-1,0,1,2,2,1,0,-2,-3],'Loudness':[6,4,0,0,-2,0,-1,-5,5,1],'Lounge':[-3,-1,0,1,4,3,0,-2,2,1],
+  'Piano':[2,1,0,2,3,1,3,4,3,3],'Pop':[-2,-1,0,2,4,4,2,0,-1,-2],'R&B':[3,7,6,1,-2,-1,2,3,3,4],
+  'Rock':[5,4,3,1,-1,-1,1,2,3,4],'Small Speakers':[5,4,3,2,1,0,-1,-2,-3,-4],'Spoken Word':[-3,-1,0,1,4,5,5,4,2,0],
+  'Treble Booster':[0,0,0,0,0,1,2,4,5,6],'Treble Reducer':[0,0,0,0,0,-1,-2,-4,-5,-6],'Vocal Booster':[-2,-3,-3,1,4,4,3,1,0,-2]};
+function eqName(){return settings.eq==='Off'||!settings.eq?'Off':settings.eq}
+function eqGains(){
+  if(settings.eq==='Custom')return (settings.eqCustom||[]).slice(0,10).map(n=>+n||0);
+  return EQ_PRESETS[settings.eq]?EQ_PRESETS[settings.eq].slice():null;
+}
+function setEQ(name){settings.eq=name;saveSettings();if(typeof nativeConfig==='function')nativeConfig()}
+function eqMenu(){
+  const note=NATIVE_PLAYER?[]:[{label:'Plays in the iPhone app',val:'',action:()=>push(msgView('Equalizer','The equalizer runs in the iPhone app’s audio player. On the website your music plays as it is.'))}];
+  return list('Equalizer',()=>[...note,
+    {label:'Off',val:eqName()==='Off'?'✓':'',action:()=>{setEQ('Off');render()}},
+    {label:'Custom',val:settings.eq==='Custom'?'✓':'',chev:1,action:()=>{setEQ('Custom');push(eqCustomView())}},
+    ...Object.keys(EQ_PRESETS).map(k=>({label:k,val:settings.eq===k?'✓':'',action:()=>{setEQ(k);triggerHaptic('success');render()}}))]);
+}
+/* Spin to pick a band, Center to grab it, spin to raise or lower it, Center to let go. */
+function eqCustomView(){
+  if(!Array.isArray(settings.eqCustom)||settings.eqCustom.length!==10)settings.eqCustom=[0,0,0,0,0,0,0,0,0,0];
+  const g=settings.eqCustom;
+  const v={type:'custom',title:'Custom EQ',i:0,grab:false,
+    render(body){
+      body.innerHTML=`<div class="eqv"><div class="eqbars">${g.map((n,k)=>`<div class="eqb${k===v.i?' on':''}${k===v.i&&v.grab?' grab':''}"><span>${n>0?'+':''}${n}</span><div class="eqt"><i style="${n>=0?`bottom:50%;height:${n/12*50}%`:`top:50%;height:${-n/12*50}%`}"></i><b style="bottom:calc(${50+n/12*50}% - 3px)"></b></div><small>${EQ_BANDS[k]}</small></div>`).join('')}</div>
+      <p>${v.grab?'Spin to adjust · Center to set':'Spin to pick a band · Center to adjust'}</p></div>`},
+    input(btn,dir){
+      if(dir){
+        if(v.grab){const n=Math.max(-12,Math.min(12,g[v.i]+dir));if(n!==g[v.i]){g[v.i]=n;click();saveSettings();nativeConfig?.();render()}}
+        else{const i=Math.max(0,Math.min(9,v.i+dir));if(i!==v.i){v.i=i;click();render()}}
+        return}
+      if(btn==='select'){v.grab=!v.grab;triggerHaptic(v.grab?'light':'success');render()}
+    }};
+  return v;
+}
 function settingsMenu(){
   const tog=(k,opts)=>()=>{const i=opts.indexOf(settings[k]);settings[k]=opts[(i+1)%opts.length];saveSettings();if(k==='theme'||k==='style'||k==='appearance')applyTheme();if(k==='backlight')wake();render()};
   return list('Settings',()=>[
     {label:'Connect Stremio',icon:'play',chev:1,action:()=>window.ipodVideos?window.ipodVideos.settings():push(msgView('Videos Unavailable','Reload the iPod to load Videos.'))},
     {label:'Shuffle',icon:'shuffle',val:settings.shuffle?'Songs':'Off',action:tog('shuffle',[false,true])},
     {label:'Repeat',icon:'repeat',val:settings.repeat,action:tog('repeat',['Off','One','All'])},
-    {label:'Crossfade',val:settings.crossfade?settings.crossfade+' sec':'Off',action:()=>{
+    {label:'Crossfade',val:cfLabel(),action:()=>{
       settings.crossfade=CROSSFADE_OPTIONS[(CROSSFADE_OPTIONS.indexOf(settings.crossfade)+1)%CROSSFADE_OPTIONS.length];
       if(crossfadeEnabled())prepareCrossfade();else useDirectAudio();
-      saveSettings();render();
+      saveSettings();nativeConfig?.();render();
     }},
+    {label:'Equalizer',icon:'music',val:eqName(),chev:1,action:()=>push(eqMenu())},
     {label:'CarPlay Mode',val:nativeCarPlayRoute?'Auto':settings.carPlayMode?'On':'Off',action:()=>{
       if(nativeCarPlayRoute)return;
       settings.carPlayMode=!settings.carPlayMode;
@@ -3820,9 +3875,9 @@ const nstoreH=()=>window.webkit?.messageHandlers?.ipodStore;
 const nstore=(op,o)=>nstoreH().postMessage(Object.assign({op},o||{}));
 const nativeSafeId=id=>(String(id).replace(/[^A-Za-z0-9_-]/g,'').slice(0,80)||'song');
 function nativeEligible(list){return NATIVE_PLAYER&&nativeInvLoaded&&list.length>0&&list.every(x=>x&&!x.deleted&&nativeIds.has(x.id))}
-function nativeTracks(){return queue.map(x=>({id:nativeSafeId(x.id),title:x.title||'',artist:x.artist||'',album:x.album||''}))}
+function nativeTracks(){return queue.map(x=>({id:nativeSafeId(x.id),title:x.title||'',artist:x.artist||'',album:x.album||'',track:+x.track||0}))}
 function nativeConfig(force){
-  const cfg={crossfade:+settings.crossfade||0,repeat:settings.repeat||'Off',stopAfterCurrent:sleep.mode==='song'};
+  const cfg={crossfade:settings.crossfade==='Smart'?0:cfSeconds(),smart:settings.crossfade==='Smart',repeat:settings.repeat||'Off',stopAfterCurrent:sleep.mode==='song',eq:eqGains()};
   const sig=JSON.stringify(cfg);if(!force&&sig===nativeCfgSig)return;nativeCfgSig=sig;nativePlayer('config',cfg);
 }
 function nativeLoad(play){
