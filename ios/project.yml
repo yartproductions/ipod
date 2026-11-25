@@ -17,6 +17,8 @@ targets:
       - path: IPodAlarm.swift
       - path: IPodShared.swift
       - path: IPodLive.swift
+      - path: IPodMusicStore.swift
+      - path: IPodPlayer.swift
       - path: Assets.xcassets
     dependencies:
       - target: IPodWidget
@@ -33,6 +35,7 @@ targets:
         SWIFT_VERSION: "5.0"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 8A3K339ZC6
         GENERATE_INFOPLIST_FILE: NO
     info:
       path: Info.plist
@@ -64,6 +67,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.0"
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 8A3K339ZC6
         GENERATE_INFOPLIST_FILE: NO
     entitlements:
       path: IPodWidget/IPodWidget.entitlements

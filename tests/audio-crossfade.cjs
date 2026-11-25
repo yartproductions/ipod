@@ -6,7 +6,7 @@ const code=html.slice(html.indexOf('const CROSSFADE_OPTIONS='),html.indexOf('con
 const test=new Function('assert',code+`
   const makeDeck=()=>({duration:100,currentTime:0,playbackRate:1,paused:true,
     async play(){this.paused=false},pause(){this.paused=true},removeAttribute(){this.src=''},load(){}});
-  const mainDeck=makeDeck(),spareDeck=makeDeck(),backgroundDeck=makeDeck(),ramps=[];
+  const mainDeck=makeDeck(),spareDeck=makeDeck(),backgroundDeck=makeDeck(),nativeDeck=makeDeck(),ramps=[];
   const document={hidden:false};
   const resumeAudio=()=>audio.play();
   let audio=mainDeck,qi=0,importedPlayback=null;
