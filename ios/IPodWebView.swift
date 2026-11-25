@@ -59,6 +59,9 @@ struct IPodWebView: UIViewRepresentable {
         controller.add(context.coordinator, name: Coordinator.shakeHandlerName)
         controller.add(context.coordinator, name: Coordinator.tiltHandlerName)
         controller.add(context.coordinator, name: Coordinator.nowPlayingHandlerName)
+        // native song store + player: these reply to the page (postMessage returns a promise)
+        controller.addScriptMessageHandler(context.coordinator, contentWorld: .page, name: Coordinator.storeHandlerName)
+        controller.addScriptMessageHandler(context.coordinator, contentWorld: .page, name: Coordinator.playerHandlerName)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
@@ -96,11 +99,13 @@ struct IPodWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.shakeHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.tiltHandlerName)
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.nowPlayingHandlerName)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.storeHandlerName, contentWorld: .page)
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: Coordinator.playerHandlerName, contentWorld: .page)
         coordinator.setTilt(false)
         coordinator.stopMonitoringDevice()
     }
 
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKUIDelegate {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKScriptMessageHandlerWithReply, WKUIDelegate {
         static let handlerName = "ipodHaptics"
         static let batteryHandlerName = "ipodBattery"
         static let audioRouteHandlerName = "ipodAudioRoute"
@@ -111,6 +116,77 @@ struct IPodWebView: UIViewRepresentable {
         static let shakeHandlerName = "ipodShake"
         static let tiltHandlerName = "ipodTilt"
         static let nowPlayingHandlerName = "ipodNowPlaying"
+        static let storeHandlerName = "ipodStore"
+        static let playerHandlerName = "ipodPlayer"
+
+        /// Song store and native player. Each call answers the page's promise with a result or an error.
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
+                                   replyHandler: @escaping (Any?, String?) -> Void) {
+            guard isTrusted(message), let body = message.body as? [String: Any], let op = body["op"] as? String else {
+                replyHandler(nil, "denied"); return
+            }
+            if message.name == Self.storeHandlerName { handleStore(op, body, replyHandler) }
+            else if message.name == Self.playerHandlerName { handlePlayer(op, body, replyHandler) }
+            else { replyHandler(nil, "unknown") }
+        }
+
+        private func handleStore(_ op: String, _ b: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
+            let store = IPodMusicStore.shared
+            let id = b["id"] as? String ?? ""
+            do {
+                switch op {
+                case "inventory": reply(store.inventory(), nil)
+                case "begin":
+                    try store.begin(id: id, ext: b["ext"] as? String ?? "mp3",
+                                    size: (b["size"] as? NSNumber)?.intValue ?? -1, sha: b["sha"] as? String ?? "")
+                    reply(true, nil)
+                case "chunk": try store.chunk(id: id, base64: b["data"] as? String ?? ""); reply(true, nil)
+                case "end": reply(try store.end(id: id), nil)
+                case "verify":
+                    let size = (b["size"] as? NSNumber)?.intValue ?? -1, sha = b["sha"] as? String ?? ""
+                    Task { let r = await store.verify(id: id, size: size, sha: sha); await MainActor.run { reply(r, nil) } }
+                case "read":
+                    let r = store.read(id: id, offset: (b["offset"] as? NSNumber)?.intValue ?? 0, length: (b["length"] as? NSNumber)?.intValue ?? 0)
+                    reply(r, r == nil ? "unreadable" : nil)
+                case "art":
+                    let ok = store.saveArt(id: id, dataURL: b["data"] as? String ?? "")
+                    if ok { IPodPlayer.shared.artworkChanged(for: id) }
+                    reply(ok, nil)
+                case "delete": store.delete(id: id); reply(true, nil)
+                default: reply(nil, "unknown")
+                }
+            } catch { reply(nil, "\(error)") }
+        }
+
+        private func handlePlayer(_ op: String, _ b: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
+            let player = IPodPlayer.shared
+            func tracks() -> [IPodTrack] {
+                ((b["tracks"] as? [[String: Any]]) ?? []).map {
+                    IPodTrack(id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "",
+                              artist: $0["artist"] as? String ?? "", album: $0["album"] as? String ?? "")
+                }
+            }
+            let index = (b["index"] as? NSNumber)?.intValue ?? 0
+            switch op {
+            case "load": player.load(tracks(), index: index, at: (b["t"] as? NSNumber)?.doubleValue ?? 0, play: b["play"] as? Bool ?? false)
+            case "requeue": player.requeue(tracks(), index: index)
+            case "jump": player.jump(to: index, play: b["play"] as? Bool ?? true)
+            case "play": player.play()
+            case "pause": player.pause()
+            case "toggle": player.toggle()
+            case "seek": player.seek(to: (b["t"] as? NSNumber)?.doubleValue ?? 0)
+            case "next": player.next()
+            case "prev": player.previous()
+            case "stop": player.stop()
+            case "config":
+                if let c = b["crossfade"] as? NSNumber { player.crossfade = c.doubleValue }
+                if let r = b["repeat"] as? String { player.repeatMode = r }
+                if let s = b["stopAfterCurrent"] as? Bool { player.stopAfterCurrent = s }
+            case "state": break
+            default: reply(nil, "unknown"); return
+            }
+            reply(player.state(), nil)
+        }
         /// Screen Glare: how the phone is tilted, sent to the page ~20 times a second while it asks for it.
         private let motion = CMMotionManager()
         func setTilt(_ on: Bool) {
@@ -148,6 +224,12 @@ struct IPodWebView: UIViewRepresentable {
 
         func monitorDevice(in webView: WKWebView) {
             deviceWebView = webView
+            // the native player reports what it's doing to the page (which song, position, playing)
+            IPodPlayer.shared.onState = { [weak webView] state in
+                guard let webView, let data = try? JSONSerialization.data(withJSONObject: state),
+                      let json = String(data: data, encoding: .utf8) else { return }
+                webView.evaluateJavaScript("window.ipodNativeState && window.ipodNativeState(\(json))", completionHandler: nil)
+            }
             previousBatteryMonitoring = UIDevice.current.isBatteryMonitoringEnabled
             UIDevice.current.isBatteryMonitoringEnabled = true
             for name in [UIDevice.batteryLevelDidChangeNotification,
@@ -179,6 +261,17 @@ struct IPodWebView: UIViewRepresentable {
             let cmd = (note.userInfo?["cmd"] as? String) ?? ""
             let arg = (note.userInfo?["arg"] as? Int) ?? 0
             guard ["next", "prev", "toggle", "album"].contains(cmd) else { return }
+            // the native player handles these itself, even while the page is asleep in the background
+            if cmd != "album", IPodPlayer.shared.currentTrack != nil {
+                DispatchQueue.main.async {
+                    switch cmd {
+                    case "next": IPodPlayer.shared.next()
+                    case "prev": IPodPlayer.shared.previous()
+                    default: IPodPlayer.shared.toggle()
+                    }
+                }
+                return
+            }
             DispatchQueue.main.async { [weak self] in
                 self?.deviceWebView?.evaluateJavaScript("window.ipodRemote && window.ipodRemote('\(cmd)', \(arg))", completionHandler: nil)
             }

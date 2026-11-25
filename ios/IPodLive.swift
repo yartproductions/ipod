@@ -11,8 +11,21 @@ final class IPodLive {
     private var current = IPodNowPlaying.load() ?? IPodNowPlaying()
     private var lastActivityState: IPodActivityAttributes.ContentState?
 
+    private var lastLive = true
+
+    /// The native player moved to another song (possibly while the page is asleep): refresh the widget.
+    func nativeChanged(title: String, artist: String, album: String, playing: Bool, artFile: URL?) {
+        var body: [String: Any] = ["title": title, "artist": artist, "album": album, "playing": playing,
+                                   "tone": current.tone, "lyric": "", "live": lastLive]
+        if let artFile, let data = try? Data(contentsOf: artFile) {
+            body["art"] = "data:image/jpeg;base64," + data.base64EncodedString()
+        }
+        update(from: body)
+    }
+
     /// `body` is the message the page posts to `ipodNowPlaying`.
     func update(from body: [String: Any]) {
+        if let live = body["live"] as? Bool { lastLive = live }
         var next = current
         next.title = body["title"] as? String ?? ""
         next.artist = body["artist"] as? String ?? ""
