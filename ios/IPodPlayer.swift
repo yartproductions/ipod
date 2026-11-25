@@ -9,12 +9,23 @@ struct IPodTrack: Equatable {
     let title: String
     let artist: String
     let album: String
+    let track: Int
 }
 
-/// The iPod's native audio engine. Plays the songs stored by IPodMusicStore with AVPlayer, keeps the
-/// queue itself so it carries on with the screen locked or in CarPlay, crossfades with two players,
-/// always at exactly 1× speed, and owns the Lock Screen / CarPlay / headphone controls.
-/// Everything runs on the main thread.
+/// What the start and end of a song sound like, for gapless / smart crossfade.
+struct IPodSongShape {
+    var introSkip: Double = 0      // seconds of silence at the start
+    var end: Double = 0            // where the sound really ends (trailing silence trimmed), seconds
+    var outroStart: Double = 0     // where the song starts fading out by itself (0 = it doesn't)
+}
+
+/// The iPod's native audio engine (AVAudioEngine):
+/// - two player decks feeding a mixer → 10-band EQ → output; the next song is loaded ahead of time so
+///   songs change without a gap, and crossfades are volume ramps between the decks
+/// - Smart crossfade: skips silence, starts the blend where a song fades out by itself, and keeps albums gapless
+/// - the output is rewired when CarPlay / Bluetooth / headphones change the hardware format, so the speed never drifts
+/// - keeps its own queue, so it carries on with the screen locked or in CarPlay; owns the Lock Screen controls
+/// Everything runs on the main thread except the song analysis.
 final class IPodPlayer: NSObject {
     static let shared = IPodPlayer()
 
@@ -24,44 +35,119 @@ final class IPodPlayer: NSObject {
     private(set) var queue: [IPodTrack] = []
     private(set) var index = 0
     var repeatMode = "Off"          // Off | One | All
-    var crossfade: Double = 0       // seconds; 0 = straight cut (gapless-style)
+    var crossfade: Double = 0       // seconds; 0 = gapless cut
+    var smart = false               // Smart crossfade
     var stopAfterCurrent = false    // Sleep Timer "end of song"
 
-    private var current: AVPlayer?
-    private var incoming: AVPlayer?
-    private var incomingIndex = -1
-    private var timeObserver: Any?
-    private var observedPlayer: AVPlayer?
-    private var endObserver: NSObjectProtocol?
-    private var fadeTimer: Timer?
-    private var fadeStarted = Date()
-    private var fadeLength: Double = 0
+    // MARK: engine
+
+    private final class Deck {
+        let node = AVAudioPlayerNode()
+        var file: AVAudioFile?
+        var trackIndex = -1
+        var trackId = ""
+        var startFrame: AVAudioFramePosition = 0
+        var endFrame: AVAudioFramePosition = 0
+        var token = 0
+        var started = false          // node.play() has been called for this schedule
+        var queued = false           // set to start on the audio clock right as the other deck ends (gapless)
+        var heldPosition: Double = 0 // position while not rendering (paused / stopped)
+        var sampleRate: Double { file?.processingFormat.sampleRate ?? 44100 }
+        var duration: Double { file.map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0 }
+        var endTime: Double { Double(endFrame) / sampleRate }
+        func position() -> Double {
+            guard started, node.isPlaying, let nt = node.lastRenderTime, nt.isSampleTimeValid,
+                  let pt = node.playerTime(forNodeTime: nt) else { return heldPosition }
+            return min(duration, max(0, Double(startFrame + pt.sampleTime) / sampleRate))
+        }
+    }
+
+    private let engine = AVAudioEngine()
+    private let eq = AVAudioUnitEQ(numberOfBands: 10)
+    private let decks = [Deck(), Deck()]
+    private var active = 0
+    private var other: Int { 1 - active }
+    private var built = false
     private var wantsPlay = false
+    private var ticker: Timer?
+    private var fadeTimer: Timer?
+    private var fade: (from: Int, to: Int, started: Date, length: Double)?
+    private var shapes: [String: IPodSongShape] = [:]
+    private let analysisQueue = DispatchQueue(label: "ipod.analysis", qos: .utility)
     private var remoteReady = false
     private var art: (id: String, artwork: MPMediaItemArtwork?)?
-    private var lastInfoDuration: Double = 0
+    private var widgetKey = ""
+
+    static let eqFrequencies: [Float] = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
 
     private override init() {
         super.init()
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(interrupted(_:)), name: AVAudioSession.interruptionNotification, object: nil)
         nc.addObserver(self, selector: #selector(routeChanged(_:)), name: AVAudioSession.routeChangeNotification, object: nil)
+        nc.addObserver(self, selector: #selector(engineConfigChanged(_:)), name: .AVAudioEngineConfigurationChange, object: engine)
     }
 
-    var isPlaying: Bool { (current?.rate ?? 0) > 0 }
-    var elapsed: Double { let t = current.map { CMTimeGetSeconds($0.currentTime()) } ?? 0; return t.isFinite ? max(0, t) : 0 }
-    var duration: Double {
-        guard let d = current?.currentItem?.duration else { return 0 }
-        let s = CMTimeGetSeconds(d); return s.isFinite ? s : 0
+    private func buildEngine() {
+        guard !built else { return }
+        built = true
+        engine.attach(eq)
+        for d in decks { engine.attach(d.node) }
+        for (i, f) in Self.eqFrequencies.enumerated() {
+            let band = eq.bands[i]
+            band.filterType = i == 0 ? .lowShelf : (i == 9 ? .highShelf : .parametric)
+            band.frequency = f
+            band.bandwidth = 1.0
+            band.gain = 0
+            band.bypass = false
+        }
+        eq.bypass = true
+        wireOutput()
     }
-    var currentTrack: IPodTrack? { queue.indices.contains(index) ? queue[index] : nil }
+
+    /// mixer → EQ → speaker, in the hardware's current format (rewired when the output changes).
+    private func wireOutput() {
+        let mixer = engine.mainMixerNode
+        let format = engine.outputNode.inputFormat(forBus: 0)
+        engine.disconnectNodeOutput(mixer)
+        engine.disconnectNodeOutput(eq)
+        engine.connect(mixer, to: eq, format: format)
+        engine.connect(eq, to: engine.outputNode, format: format)
+    }
+
+    private func ensureRunning() {
+        buildEngine()
+        activateSession()
+        if !engine.isRunning {
+            engine.prepare()
+            try? engine.start()
+        }
+    }
+
+    // MARK: - Settings from the page
+
+    /// 10 gains in dB (−12…+12); nil or all zero = EQ off.
+    func setEQ(_ gains: [Double]?) {
+        buildEngine()
+        let g = (gains ?? []).prefix(10).map { Float(max(-12, min(12, $0))) }
+        let on = g.count == 10 && g.contains { abs($0) > 0.05 }
+        for i in 0..<10 { eq.bands[i].gain = on ? g[i] : 0 }
+        // headroom so boosts don't clip
+        eq.globalGain = on ? -max(0, (g.max() ?? 0)) * 0.6 : 0
+        eq.bypass = !on
+    }
 
     // MARK: - Commands from the page
 
-    /// Replace the queue and start at `index`.
+    var isPlaying: Bool { wantsPlay && decks[active].node.isPlaying }
+    var elapsed: Double { decks[active].file == nil ? 0 : decks[active].position() }
+    var duration: Double { decks[active].duration }
+    var currentTrack: IPodTrack? { queue.indices.contains(index) ? queue[index] : nil }
+
     func load(_ tracks: [IPodTrack], index i: Int, at t: Double, play: Bool) {
         setupRemoteCommands()
         queue = tracks
+        unloadDeck(decks[other])
         start(index: i, at: t, play: play)
     }
 
@@ -72,42 +158,51 @@ final class IPodPlayer: NSObject {
         }
         cancelFade()
         queue = tracks; index = i
+        decks[active].trackIndex = i
+        unloadDeck(decks[other])          // the preloaded "next" may have changed
         publish()
     }
 
     func jump(to i: Int, play: Bool) { start(index: i, at: 0, play: play) }
 
     func play() {
-        guard let p = current else { return }
-        activateSession()
+        guard decks[active].file != nil else { return }
+        ensureRunning()
         wantsPlay = true
-        p.playImmediately(atRate: 1)
-        incoming?.playImmediately(atRate: 1)
+        let d = decks[active]
+        d.node.play(); d.started = true
+        if let f = fade { decks[f.from].node.play() }
+        startTicker()
         updateNowPlaying(); publish()
     }
 
     func pause() {
         wantsPlay = false
         cancelFade()
-        current?.pause()
+        let d = decks[active]
+        d.heldPosition = d.position()
+        d.node.pause()
+        let o = decks[other]
+        if o.queued, let f = o.file { schedule(o, from: AVAudioFramePosition(o.heldPosition * f.processingFormat.sampleRate)) }
         updateNowPlaying(); publish()
     }
 
     func toggle() { isPlaying ? pause() : play() }
 
     func seek(to t: Double) {
-        guard let p = current, t.isFinite else { return }
+        let d = decks[active]
+        guard let f = d.file, t.isFinite else { return }
         cancelFade()
-        p.seek(to: CMTime(seconds: max(0, t), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-            self?.updateNowPlaying(); self?.publish()
-        }
+        unloadDeck(decks[other])
+        let frame = AVAudioFramePosition(max(0, min(t, d.duration - 0.05)) * f.processingFormat.sampleRate)
+        schedule(d, from: frame)
+        if wantsPlay { ensureRunning(); d.node.play(); d.started = true }
+        updateNowPlaying(); publish()
     }
 
-    /// Next / previous from the Lock Screen, CarPlay or headphones (the page sends its own jumps).
     func next() {
         guard !queue.isEmpty else { return }
-        let n = index + 1 < queue.count ? index + 1 : 0
-        start(index: n, at: 0, play: true)
+        start(index: index + 1 < queue.count ? index + 1 : 0, at: 0, play: true)
     }
 
     func previous() {
@@ -119,8 +214,9 @@ final class IPodPlayer: NSObject {
     func stop() {
         wantsPlay = false
         cancelFade()
-        teardown(current); current = nil
+        for d in decks { unloadDeck(d) }
         queue = []; index = 0
+        ticker?.invalidate(); ticker = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         publish()
     }
@@ -129,73 +225,78 @@ final class IPodPlayer: NSObject {
         ["id": currentTrack?.id ?? "", "index": index, "t": elapsed, "d": duration, "playing": isPlaying, "count": queue.count]
     }
 
-    // MARK: - Playing a song
+    // MARK: - Loading and scheduling
 
-    private func makePlayer(for t: IPodTrack) -> AVPlayer? {
-        guard let url = IPodMusicStore.shared.fileURL(for: t.id) else { return nil }
-        let item = AVPlayerItem(url: url)
-        item.audioTimePitchAlgorithm = .timeDomain
-        let p = AVPlayer(playerItem: item)
-        p.automaticallyWaitsToMinimizeStalling = false
-        p.actionAtItemEnd = .pause
-        return p
+    private func unloadDeck(_ d: Deck) {
+        d.token += 1
+        d.node.stop()
+        d.node.volume = 1
+        d.file = nil; d.trackIndex = -1; d.trackId = ""; d.started = false; d.queued = false; d.heldPosition = 0
+    }
+
+    /// Opens a song onto a deck and schedules it (not playing yet). Returns false if the file is missing or unreadable.
+    @discardableResult
+    private func prepare(_ d: Deck, index i: Int, at seconds: Double) -> Bool {
+        guard queue.indices.contains(i), let url = IPodMusicStore.shared.fileURL(for: queue[i].id),
+              let f = try? AVAudioFile(forReading: url) else { return false }
+        buildEngine()
+        d.token += 1
+        d.node.stop()
+        engine.disconnectNodeOutput(d.node)
+        engine.connect(d.node, to: engine.mainMixerNode, format: f.processingFormat)
+        d.file = f; d.trackIndex = i; d.trackId = queue[i].id
+        d.node.volume = 1
+        var from = seconds
+        if from <= 0, smart, let s = shapes[queue[i].id] { from = s.introSkip }
+        schedule(d, from: AVAudioFramePosition(from * f.processingFormat.sampleRate))
+        return true
+    }
+
+    private func schedule(_ d: Deck, from: AVAudioFramePosition) {
+        guard let f = d.file else { return }
+        d.token += 1
+        let token = d.token
+        d.node.stop()
+        d.started = false; d.queued = false
+        var end = f.length
+        if smart, let s = shapes[d.trackId], s.end > 0 {
+            end = min(f.length, AVAudioFramePosition(s.end * f.processingFormat.sampleRate))
+        }
+        let start = max(0, min(from, end - 1))
+        d.startFrame = start; d.endFrame = end
+        d.heldPosition = Double(start) / f.processingFormat.sampleRate
+        let count = AVAudioFrameCount(max(1, end - start))
+        // .dataRendered fires as the last audio leaves the deck, so the next song can start right behind it
+        d.node.scheduleSegment(f, startingFrame: start, frameCount: count, at: nil, completionCallbackType: .dataRendered) { [weak self, weak d] _ in
+            DispatchQueue.main.async {
+                guard let self, let d, d.token == token else { return }
+                self.deckFinished(d)
+            }
+        }
     }
 
     private func start(index i: Int, at t: Double, play: Bool) {
         cancelFade()
-        teardown(current); current = nil
         guard queue.indices.contains(i) else { publish(); return }
-        index = i
-        guard let p = makePlayer(for: queue[i]) else {
-            // The file is missing: skip it rather than stopping the music.
-            publish(extra: ["error": "missing", "missingId": queue[i].id])
-            if play, queue.count > 1, i + 1 < queue.count { start(index: i + 1, at: 0, play: true) }
-            return
+        if decks[other].trackIndex == i, decks[other].file != nil, t <= 0 {
+            // reuse the preloaded deck: it already holds this song
+            unloadDeck(decks[active]); active = other
+        } else {
+            unloadDeck(decks[other])
+            var j = i
+            while !prepare(decks[active], index: j, at: t) {
+                // the file is missing: skip it rather than stopping the music
+                publish(extra: ["error": "missing", "missingId": queue[j].id])
+                guard play, j + 1 < queue.count else { index = j; unloadDeck(decks[active]); publish(); return }
+                j += 1
+            }
         }
-        current = p
-        attach(p)
-        if t > 0 { p.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
+        index = decks[active].trackIndex
+        analyzeAhead()
         wantsPlay = play
-        if play { activateSession(); p.playImmediately(atRate: 1) }
-        lastInfoDuration = 0
+        if play { ensureRunning(); decks[active].node.play(); decks[active].started = true }
+        startTicker()
         updateNowPlaying(); publish()
-    }
-
-    private func attach(_ p: AVPlayer) {
-        detachObservers()
-        observedPlayer = p
-        timeObserver = p.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 4), queue: .main) { [weak self] _ in
-            self?.tick()
-        }
-        endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: p.currentItem, queue: .main) { [weak self] _ in
-            self?.trackEnded()
-        }
-    }
-
-    private func detachObservers() {
-        if let o = timeObserver, let p = observedPlayer { p.removeTimeObserver(o) }
-        timeObserver = nil; observedPlayer = nil
-        if let e = endObserver { NotificationCenter.default.removeObserver(e) }
-        endObserver = nil
-    }
-
-    private func teardown(_ p: AVPlayer?) {
-        guard let p else { return }
-        if p === observedPlayer { detachObservers() }
-        p.pause()
-        p.replaceCurrentItem(with: nil)
-    }
-
-    private func tick() {
-        // keep speed locked at 1× while playing
-        if wantsPlay, let p = current, p.rate > 0, abs(p.rate - 1) > 0.001 { p.rate = 1 }
-        let d = duration
-        if d > 0, abs(d - lastInfoDuration) > 0.5 { lastInfoDuration = d; updateNowPlaying() }
-        if crossfade > 0, incoming == nil, isPlaying, !stopAfterCurrent, repeatMode != "One", d > 0 {
-            let remaining = d - elapsed
-            if remaining > 0.3, remaining <= min(crossfade, d / 2) { beginFade(length: remaining) }
-        }
-        publish()
     }
 
     private func upcomingIndex() -> Int? {
@@ -203,60 +304,192 @@ final class IPodPlayer: NSObject {
         return repeatMode == "All" && !queue.isEmpty ? 0 : nil
     }
 
-    private func trackEnded() {
-        if incoming != nil { return }   // a crossfade already took over
+    /// A deck reached the end of its song.
+    private func deckFinished(_ d: Deck) {
+        guard d === decks[active], fade == nil else { return }   // a faded-out deck finishing: nothing to do
+        let up = upcomingIndex()
+        let handOff = !stopAfterCurrent && repeatMode != "One" && up != nil && decks[other].trackIndex == up
+        if decks[other].queued, !handOff { unloadDeck(decks[other]) }   // plans changed since it was queued
         if stopAfterCurrent {
             stopAfterCurrent = false; wantsPlay = false
+            d.heldPosition = d.endTime
             updateNowPlaying(); publish(extra: ["sleep": true]); return
         }
-        if repeatMode == "One" { seek(to: 0); current?.playImmediately(atRate: 1); return }
-        if let n = upcomingIndex() { start(index: n, at: 0, play: true) }
-        else { wantsPlay = false; updateNowPlaying(); publish(extra: ["ended": true]) }
+        if repeatMode == "One" { seek(to: smart ? (shapes[d.trackId]?.introSkip ?? 0) : 0); return }
+        guard let n = up else {
+            wantsPlay = false; d.heldPosition = d.endTime
+            updateNowPlaying(); publish(extra: ["ended": true]); return
+        }
+        let o = decks[other]
+        if o.trackIndex == n, o.file != nil, wantsPlay {
+            // gapless: the next song is already loaded (and usually already running on the audio clock)
+            if !o.queued { ensureRunning(); o.node.play() }
+            o.started = true; o.queued = false
+            unloadDeck(d)
+            active = other; index = n
+            analyzeAhead()
+            updateNowPlaying(); publish()
+        } else {
+            start(index: n, at: 0, play: wantsPlay)
+        }
     }
 
-    // MARK: - Crossfade (two players, volume ramps; AVPlayer volume is the player's own, not the system's)
+    // MARK: - Every quarter second: preload, crossfade, report
+
+    private func startTicker() {
+        guard ticker == nil else { return }
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.tick() }
+    }
+
+    private func tick() {
+        let d = decks[active]
+        guard d.file != nil else { return }
+        if isPlaying, fade == nil, let n = upcomingIndex(), repeatMode != "One", !stopAfterCurrent {
+            let remaining = d.endTime - d.position()
+            // load the next song well ahead so the change is instant
+            if remaining < 12, decks[other].trackIndex != n {
+                prepare(decks[other], index: n, at: 0)
+            }
+            let len = fadeLength(from: index, to: n)
+            if len == 0, remaining < 1.5 { queueGapless(after: d) }
+            if len > 0, remaining > 0.2, remaining <= len, decks[other].trackIndex == n, decks[other].file != nil {
+                beginFade(length: remaining)
+            }
+        }
+        publish()
+    }
+
+    /// Start the preloaded deck on the audio clock at the exact sample the current song ends — no gap, no overlap.
+    private func queueGapless(after d: Deck) {
+        let o = decks[other]
+        guard !o.queued, o.file != nil, o.trackIndex == upcomingIndex(), engine.isRunning,
+              let nt = d.node.lastRenderTime, nt.isSampleTimeValid, let pt = d.node.playerTime(forNodeTime: nt) else { return }
+        let left = Double(d.endFrame - (d.startFrame + pt.sampleTime)) / d.sampleRate
+        guard left > 0.05 else { return }
+        let when = AVAudioTime(sampleTime: nt.sampleTime + AVAudioFramePosition(left * nt.sampleRate), atRate: nt.sampleRate)
+        o.node.play(at: when)
+        o.queued = true
+    }
+
+    /// How long to blend song `a` into song `b` (0 = gapless).
+    private func fadeLength(from a: Int, to b: Int) -> Double {
+        guard queue.indices.contains(a), queue.indices.contains(b) else { return 0 }
+        if smart {
+            let x = queue[a], y = queue[b]
+            // albums play straight through, like the record
+            if !x.album.isEmpty, x.album == y.album, x.track > 0, y.track == x.track + 1 { return 0 }
+            if let s = shapes[x.id], s.outroStart > 0, s.end > s.outroStart {
+                return max(2, min(10, s.end - s.outroStart))     // start where it already fades out
+            }
+            return 5
+        }
+        return crossfade
+    }
 
     private func beginFade(length: Double) {
-        guard let n = upcomingIndex(), n != index, let p = makePlayer(for: queue[n]) else { return }
-        incoming = p; incomingIndex = n
-        fadeLength = max(0.3, length); fadeStarted = Date()
-        p.volume = 0
-        p.playImmediately(atRate: 1)
+        let from = active, to = other
+        let inc = decks[to]
+        inc.node.volume = 0
+        ensureRunning()
+        inc.node.play(); inc.started = true
+        fade = (from, to, Date(), max(0.3, length))
         fadeTimer?.invalidate()
-        fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in self?.fadeStep() }
+        fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { [weak self] _ in self?.fadeStep() }
+        // the new song counts as the current one from the start of the blend (Lock Screen, page)
+        active = to; index = inc.trackIndex
+        analyzeAhead()
+        updateNowPlaying(); publish()
     }
 
     private func fadeStep() {
-        guard let out = current, let inc = incoming else { cancelFade(); return }
-        let k = min(1, Date().timeIntervalSince(fadeStarted) / fadeLength)
-        // equal-power curve so the loudness stays even through the fade
-        out.volume = Float(cos(k * .pi / 2))
-        inc.volume = Float(sin(k * .pi / 2))
-        if k >= 1 { finishFade() }
-    }
-
-    private func finishFade() {
-        fadeTimer?.invalidate(); fadeTimer = nil
-        guard let inc = incoming else { return }
-        let old = current
-        detachObservers()
-        teardown(old)
-        current = inc; incoming = nil
-        index = incomingIndex; incomingIndex = -1
-        inc.volume = 1
-        attach(inc)
-        lastInfoDuration = 0
-        updateNowPlaying(); publish()
+        guard let f = fade else { fadeTimer?.invalidate(); fadeTimer = nil; return }
+        let k = min(1, Date().timeIntervalSince(f.started) / f.length)
+        // equal-power curve so the loudness stays even through the blend
+        decks[f.from].node.volume = Float(cos(k * .pi / 2))
+        decks[f.to].node.volume = Float(sin(k * .pi / 2))
+        if k >= 1 {
+            fadeTimer?.invalidate(); fadeTimer = nil
+            fade = nil
+            unloadDeck(decks[f.from])
+            decks[f.to].node.volume = 1
+        }
     }
 
     private func cancelFade() {
         fadeTimer?.invalidate(); fadeTimer = nil
-        if let inc = incoming { inc.pause(); inc.replaceCurrentItem(with: nil) }
-        incoming = nil; incomingIndex = -1
-        current?.volume = 1
+        guard let f = fade else { return }
+        fade = nil
+        unloadDeck(decks[f.from])
+        decks[f.to].node.volume = 1
     }
 
-    // MARK: - Audio session, interruptions, unplugging
+    // MARK: - Song shape analysis (silence, built-in fade-outs) for Smart crossfade
+
+    /// Analyse the current and next songs in the background.
+    private func analyzeAhead() {
+        guard smart else { return }
+        var ids: [String] = []
+        if let c = currentTrack { ids.append(c.id) }
+        if let n = upcomingIndex() { ids.append(queue[n].id) }
+        for id in ids where shapes[id] == nil {
+            guard let url = IPodMusicStore.shared.fileURL(for: id) else { continue }
+            analysisQueue.async { [weak self] in
+                let s = IPodPlayer.analyze(url: url)
+                DispatchQueue.main.async { self?.shapes[id] = s }
+            }
+        }
+    }
+
+    /// Reads the first 12 s and last 30 s of a song: leading silence, where the sound ends, and where it starts fading.
+    static func analyze(url: URL) -> IPodSongShape {
+        var shape = IPodSongShape()
+        guard let file = try? AVAudioFile(forReading: url) else { return shape }
+        let sr = file.processingFormat.sampleRate
+        let total = file.length
+        shape.end = Double(total) / sr
+        let window = AVAudioFrameCount(max(1, sr * 0.1))          // 100 ms
+        let silence: Float = 0.004                                 // about −48 dBFS
+        func rmsWindows(from: AVAudioFramePosition, frames: AVAudioFramePosition) -> [Float] {
+            guard frames > 0, let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: window) else { return [] }
+            var out: [Float] = []
+            file.framePosition = from
+            var left = frames
+            while left > 0 {
+                buf.frameLength = 0
+                let want = AVAudioFrameCount(min(AVAudioFramePosition(window), left))
+                guard (try? file.read(into: buf, frameCount: want)) != nil, buf.frameLength > 0,
+                      let ch = buf.floatChannelData else { break }
+                let n = Int(buf.frameLength), channels = Int(buf.format.channelCount)
+                var sum: Float = 0
+                for c in 0..<channels { let p = ch[c]; for k in 0..<n { sum += p[k] * p[k] } }
+                out.append(sqrt(sum / Float(max(1, n * channels))))
+                left -= AVAudioFramePosition(buf.frameLength)
+            }
+            return out
+        }
+        // leading silence
+        let head = rmsWindows(from: 0, frames: min(total, AVAudioFramePosition(sr * 12)))
+        if let first = head.firstIndex(where: { $0 > silence }) { shape.introSkip = max(0, Double(first) * 0.1 - 0.05) }
+        // the ending
+        let tailFrames = min(total, AVAudioFramePosition(sr * 30))
+        let tailStart = total - tailFrames
+        let tail = rmsWindows(from: tailStart, frames: tailFrames)
+        guard !tail.isEmpty else { return shape }
+        let t0 = Double(tailStart) / sr
+        if let lastSound = tail.lastIndex(where: { $0 > silence }) {
+            shape.end = min(Double(total) / sr, t0 + Double(lastSound + 1) * 0.1 + 0.05)
+            // the song's normal loudness near the end, then where it drops below half of it for good
+            let body = Array(tail[0...lastSound]).sorted()
+            let ref = body[Int(Double(body.count - 1) * 0.75)]
+            if ref > silence * 4, let lastLoud = tail[0...lastSound].lastIndex(where: { $0 >= ref * 0.5 }) {
+                let fadeStart = t0 + Double(lastLoud + 1) * 0.1
+                if shape.end - fadeStart >= 1.5 { shape.outroStart = fadeStart }
+            }
+        }
+        return shape
+    }
+
+    // MARK: - Audio session, interruptions, unplugging, output changes
 
     private func activateSession() {
         let s = AVAudioSession.sharedInstance()
@@ -267,11 +500,14 @@ final class IPodPlayer: NSObject {
     @objc private func interrupted(_ note: Notification) {
         guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        let opts = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt).map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if type == .began { self.cancelFade(); self.publish(); return }
-            let opts = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt).map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
-            if opts.contains(.shouldResume), self.wantsPlay { self.play() } else { self.updateNowPlaying(); self.publish() }
+            if type == .began {
+                let d = self.decks[self.active]; d.heldPosition = d.position()
+                self.cancelFade(); self.publish(); return
+            }
+            if opts.contains(.shouldResume), self.wantsPlay { self.resumeAfterRestart() } else { self.updateNowPlaying(); self.publish() }
         }
     }
 
@@ -280,6 +516,33 @@ final class IPodPlayer: NSObject {
               AVAudioSession.RouteChangeReason(rawValue: raw) == .oldDeviceUnavailable else { return }
         // headphones unplugged / Bluetooth gone: pause, like an iPod
         DispatchQueue.main.async { [weak self] in self?.pause() }
+    }
+
+    /// CarPlay, Bluetooth or headphones changed the hardware format and the engine stopped itself.
+    /// Rewire for the new format and carry on from the same spot (this is what keeps the speed right).
+    @objc private func engineConfigChanged(_ note: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.built else { return }
+            let d = self.decks[self.active]
+            d.heldPosition = d.position()
+            self.cancelFade()
+            self.wireOutput()
+            if self.wantsPlay { self.resumeAfterRestart() } else {
+                if d.file != nil { self.schedule(d, from: AVAudioFramePosition(d.heldPosition * d.sampleRate)) }
+                self.publish()
+            }
+        }
+    }
+
+    private func resumeAfterRestart() {
+        let d = decks[active]
+        guard d.file != nil else { return }
+        let at = d.position()
+        unloadDeck(decks[other])
+        schedule(d, from: AVAudioFramePosition(at * d.sampleRate))
+        ensureRunning()
+        d.node.play(); d.started = true
+        updateNowPlaying(); publish()
     }
 
     // MARK: - Lock Screen, Control Center, CarPlay, headphones
@@ -319,11 +582,12 @@ final class IPodPlayer: NSObject {
     }
 
     private func updateNowPlaying() {
-        guard let t = currentTrack, current != nil else { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; return }
+        guard let t = currentTrack, decks[active].file != nil else { MPNowPlayingInfoCenter.default().nowPlayingInfo = nil; return }
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: t.title,
             MPMediaItemPropertyArtist: t.artist,
             MPMediaItemPropertyAlbumTitle: t.album,
+            MPMediaItemPropertyPlaybackDuration: duration,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
@@ -331,21 +595,19 @@ final class IPodPlayer: NSObject {
             MPNowPlayingInfoPropertyPlaybackQueueCount: queue.count,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue
         ]
-        if duration > 0 { info[MPMediaItemPropertyPlaybackDuration] = duration }
         if let a = artwork(for: t.id) { info[MPMediaItemPropertyArtwork] = a }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
-    private var widgetKey = ""
     /// Tell the CarPlay widget / Live Activity when the song or play state changes.
     private func refreshWidget() {
         guard let t = currentTrack else { return }
         let key = "\(t.id)|\(isPlaying)"
         guard key != widgetKey else { return }
         widgetKey = key
-        let playing = isPlaying, art = IPodMusicStore.shared.artURL(for: t.id)
+        let playing = isPlaying, artFile = IPodMusicStore.shared.artURL(for: t.id)
         Task { @MainActor in
-            IPodLive.shared.nativeChanged(title: t.title, artist: t.artist, album: t.album, playing: playing, artFile: art)
+            IPodLive.shared.nativeChanged(title: t.title, artist: t.artist, album: t.album, playing: playing, artFile: artFile)
         }
     }
 

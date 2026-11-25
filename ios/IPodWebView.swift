@@ -163,7 +163,8 @@ struct IPodWebView: UIViewRepresentable {
             func tracks() -> [IPodTrack] {
                 ((b["tracks"] as? [[String: Any]]) ?? []).map {
                     IPodTrack(id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "",
-                              artist: $0["artist"] as? String ?? "", album: $0["album"] as? String ?? "")
+                              artist: $0["artist"] as? String ?? "", album: $0["album"] as? String ?? "",
+                              track: ($0["track"] as? NSNumber)?.intValue ?? 0)
                 }
             }
             let index = (b["index"] as? NSNumber)?.intValue ?? 0
@@ -182,6 +183,8 @@ struct IPodWebView: UIViewRepresentable {
                 if let c = b["crossfade"] as? NSNumber { player.crossfade = c.doubleValue }
                 if let r = b["repeat"] as? String { player.repeatMode = r }
                 if let s = b["stopAfterCurrent"] as? Bool { player.stopAfterCurrent = s }
+                if let s = b["smart"] as? Bool { player.smart = s }
+                if b["eq"] != nil { player.setEQ((b["eq"] as? [NSNumber])?.map { $0.doubleValue }) }
             case "state": break
             default: reply(nil, "unknown"); return
             }
