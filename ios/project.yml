@@ -17,6 +17,8 @@ targets:
       - path: IPodAlarm.swift
       - path: IPodShared.swift
       - path: IPodLive.swift
+      - path: IPodMusicStore.swift
+      - path: IPodPlayer.swift
       - path: Assets.xcassets
     dependencies:
       - target: IPodWidget

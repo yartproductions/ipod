@@ -1231,8 +1231,26 @@ const body=$('#body'), wheel=$('#wheel'), center=$('#center'), screenEl=$('#scre
 let audio=new Audio(); audio.preload='auto';
 const mainDeck=audio, spareDeck=new Audio(); spareDeck.preload='auto';
 const backgroundDeck=new Audio(); backgroundDeck.preload='auto';
+/* In the iPhone app the songs live in the app and are played by its own player (IPodPlayer.swift).
+   nativeDeck stands in for an <audio> element so the rest of the iPod works unchanged: play/pause/seek
+   are forwarded to the app, and the app reports position, song changes and play state back. */
+const NATIVE_PLAYER=!!window.webkit?.messageHandlers?.ipodPlayer&&!!window.webkit?.messageHandlers?.ipodStore;
+class NativeDeck extends EventTarget{
+  constructor(){super();this._t=0;this._d=NaN;this._paused=true;this.src='';this.preload='auto';this.playbackRate=1;this.readyState=0;this.seeking=false;this.volume=1;this.muted=false}
+  get paused(){return this._paused}
+  get currentTime(){return this._t}
+  set currentTime(v){if(!isFinite(v))return;this._t=v;nativePlayer('seek',{t:v})}
+  get duration(){return this._d}
+  play(){nativePlayer('play');if(this._paused){this._paused=false;this.dispatchEvent(new Event('play'));this.dispatchEvent(new Event('playing'))}return Promise.resolve()}
+  pause(){nativePlayer('pause');if(!this._paused){this._paused=true;this.dispatchEvent(new Event('pause'))}}
+  load(){}removeAttribute(){}setAttribute(){}canPlayType(){return 'maybe'}
+  _load(song,play){this.src=song?.url||'';this._t=0;this._d=NaN;this.readyState=0;const was=this._paused;this._paused=!play;
+    if(play&&was){this.dispatchEvent(new Event('play'));this.dispatchEvent(new Event('playing'))}else if(!play&&!was)this.dispatchEvent(new Event('pause'))}
+}
+const nativeDeck=new NativeDeck();
+function nativePlayer(op,o){if(!NATIVE_PLAYER)return Promise.resolve(null);try{return window.webkit.messageHandlers.ipodPlayer.postMessage(Object.assign({op},o||{})).catch(()=>null)}catch(e){return Promise.resolve(null)}}
 function onActiveAudio(event,handler){
-  for(const deck of [mainDeck,spareDeck,backgroundDeck])deck.addEventListener(event,e=>{if(deck===audio)handler(e)});
+  for(const deck of [mainDeck,spareDeck,backgroundDeck,nativeDeck])deck.addEventListener(event,e=>{if(deck===audio)handler(e)});
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -1483,7 +1501,7 @@ function artTone(url,cb){
 const FMT={'audio/mpeg':'MP3','audio/mp3':'MP3','audio/mp4':'AAC','audio/x-m4a':'AAC','audio/aac':'AAC','audio/flac':'FLAC','audio/x-flac':'FLAC','audio/wav':'WAV','audio/x-wav':'WAV','audio/ogg':'OGG'};
 const fmtOf=s=>FMT[(s&&(s.mimeType||(s.blob&&s.blob.type)))||'']||'AUDIO';
 const outputName=()=>/iPhone/.test(navigator.userAgent)?'iPhone':/iPad/.test(navigator.userAgent)?'iPad':/Android/.test(navigator.userAgent)?'This Phone':'This Device';
-function hydrate(r){return {...r,kind:'file',url:URL.createObjectURL(r.blob),artUrl:r.art?URL.createObjectURL(r.art):r.artworkUrl||null}}
+function hydrate(r){return {...r,kind:'file',url:r.blob instanceof Blob?URL.createObjectURL(r.blob):'native:'+r.id,artUrl:r.art?URL.createObjectURL(r.art):r.artworkUrl||null}}
 // ----- header status bar: replaces the screen title while a task runs (like iTunes' sync display) -----
 let hdrTask=null,hdrTaskTimer=null;
 function setHdrTask(label,pct,done){
@@ -1513,6 +1531,7 @@ async function addFiles(files){
   sortSongs();
   setHdrTask(failed?`Sync done · ${failed} failed`:'Sync Complete',1,true);
   if(settings.autoArt&&n)setTimeout(()=>findMissingArtwork(true),2400);
+  if(NATIVE_PLAYER&&n)setTimeout(runNativeMove,6000);
   const v=top();if(v&&v.type==='list'||v&&v.type==='flow')render();
 }
 function sortSongs(){songs.sort((a,b)=>a.title.localeCompare(b.title))}
@@ -1554,6 +1573,12 @@ function resumeAudio(){
 function load(play){
   cancelCrossfade();
   const t=cur();if(!t)return;
+  if(nativeEligible(queue)){
+    if(audio!==nativeDeck){const old=audio;audio=nativeDeck;try{old.pause()}catch(e){}try{navigator.mediaSession.metadata=null}catch(e){}}
+    if(play)lastListenedSong=null;
+    nativeLoad(play);render();return;
+  }
+  if(audio===nativeDeck){nativePlayer('stop');nativeSig='';audio=mainDeck}
   const deck=crossfadeEnabled()&&!document.hidden?mainDeck:backgroundDeck;
   if(audio!==deck&&(audio===backgroundDeck||deck===backgroundDeck)){
     const old=audio;audio=deck;old.pause();
@@ -1576,7 +1601,7 @@ function playPause(){if(!cur()){shuffleAll();return}audio.paused?resumeAudio():a
 const CROSSFADE_OPTIONS=[0,2,4,6,8,12];
 let nativeCarPlayRoute=false;
 function directCarPlayAudio(){return settings.carPlayMode||nativeCarPlayRoute}
-function crossfadeEnabled(){return !directCarPlayAudio()&&settings.crossfade>0}
+function crossfadeEnabled(){return audio!==nativeDeck&&!directCarPlayAudio()&&settings.crossfade>0}
 function setCarPlayRoute(connected){
   if(typeof connected!=='boolean'||nativeCarPlayRoute===connected)return;
   nativeCarPlayRoute=connected;
@@ -1661,6 +1686,7 @@ function stageDirectAudio(){
   }
 }
 function useDirectAudio(){
+  if(audio===nativeDeck)return;   // the app's own player already handles CarPlay
   cancelCrossfade();
   if(audio===backgroundDeck||!deckGain.has(audio)||!audio.src)return;
   const old=audio,playing=!old.paused,position=old.currentTime;
@@ -1691,11 +1717,11 @@ function playbackLogView(){
   return list('Playback Log',()=>playbackLog.slice(),{emptyText:'Play a song to record playback events.'});
 }
 function syncMediaPlaybackState(){
-  if(!('mediaSession' in navigator))return;
+  if(!('mediaSession' in navigator)||audio===nativeDeck)return;
   try{navigator.mediaSession.playbackState=audio.paused?'paused':'playing'}catch(e){}
 }
 function syncMediaPosition(){
-  if(!('mediaSession' in navigator)||!navigator.mediaSession.setPositionState)return;
+  if(!('mediaSession' in navigator)||!navigator.mediaSession.setPositionState||audio===nativeDeck)return;
   const duration=audio.duration,position=audio.currentTime;
   if(!Number.isFinite(duration)||duration<=0||!Number.isFinite(position))return;
   try{navigator.mediaSession.setPositionState({
@@ -1740,7 +1766,7 @@ function sessionMeta(t,art){
 }
 function currentSessionArt(t){try{return nowPlayingArt(t)}catch(e){return artFor(t)}}
 function setSession(){
-  if(!('mediaSession' in navigator))return;
+  if(!('mediaSession' in navigator)||audio===nativeDeck)return;   // the app sets the Lock Screen itself
   const t=cur();if(!t)return;
   const src=currentSessionArt(t),key=(t.id||t.title)+'|'+src;sessionArtKey=key;
   sessionMeta(t,sessionArtCache.get(src)||src);
@@ -2373,6 +2399,7 @@ function settingsMenu(){
     {label:'Landscape',val:settings.landscape,action:()=>{settings.landscape=settings.landscape==='Off'?'Auto':'Off';saveSettings();fit();render()}},
     {label:'Clock',icon:'clock',chev:1,action:go({type:'clock',title:'Clock'})},
     {label:'Backup & Restore',icon:'download',chev:1,action:go(backupMenu)},
+    ...(NATIVE_PLAYER?[{label:'iPhone App Player',icon:'music',chev:1,action:go(nativePlayerView)}]:[]),
     {label:'Feedback & Ideas',icon:'sparkle',chev:1,action:()=>window.ipodFeedback?window.ipodFeedback.open():push(msgView('Feedback Unavailable','Reload the iPod to load Feedback.'))},
     {label:'What’s New',icon:'sparkle',chev:1,action:()=>push(tourView())},
   {label:'About',icon:'info',chev:1,action:go(aboutView)},
@@ -2758,7 +2785,7 @@ function quizNext(v){
   v.q={ans,opts:shuffled(opts),sel:0,left:QUIZ_TIME,picked:null};
   if(!audio.paused)playPause();   // pause your music while the quiz plays
   if(quizAudio.src)URL.revokeObjectURL(quizAudio.src);
-  quizAudio.src=URL.createObjectURL(ans.blob);
+  realBlob(ans).then(b=>{if(v.q?.ans!==ans)return;if(quizAudio.src)URL.revokeObjectURL(quizAudio.src);quizAudio.src=URL.createObjectURL(b)}).catch(()=>{});
   quizAudio.onloadedmetadata=()=>{const d=quizAudio.duration||60;quizAudio.currentTime=Math.max(0,d*(.2+Math.random()*.4));quizAudio.play().catch(()=>{})};
   quizStop.t=setInterval(()=>{if(top()!==v||!v.q||v.q.picked!=null)return;v.q.left=Math.max(0,v.q.left-.1);
     const bar=$('#qtime');if(bar)bar.style.width=(v.q.left/QUIZ_TIME*100)+'%';if(v.q.left<=0)quizPick(v,-1)},100);
@@ -3350,7 +3377,7 @@ async function saveMusicExport(file){
   setTimeout(()=>URL.revokeObjectURL(link.href),60000);
 }
 function exportDownloadedMusic(){
-  const tracks=songs.filter(song=>!song.deleted&&song.blob instanceof Blob&&song.blob.size);
+  const tracks=songs.filter(song=>!song.deleted&&(song.blob instanceof Blob||isStub(song.blob))&&song.blob.size);
   if(!tracks.length){push(msgView('Export Music','There are no saved audio files on this device.'));return}
   const batches=musicExportBatches(tracks),stamp=new Date().toISOString().replace(/[:.]/g,'-');
   push(list('Export Music',batches.map((batch,part)=>({
@@ -3361,13 +3388,13 @@ function exportDownloadedMusic(){
       push(pending);
       try{
         const manifest={version:1,createdAt:stamp,batch:part+1,totalBatches:batches.length,tracks:[]};
-        const entries=batch.map((song,i)=>{
+        const entries=await Promise.all(batch.map(async(song,i)=>{
           const videoId=/^[A-Za-z0-9_-]{11}$/.test(song.sourceId||'')?song.sourceId:null;
           const path='audio/'+(i+1)+(videoId?'-'+videoId:'')+'.'+musicExportExtension(song);
           manifest.tracks.push({path,videoId,title:song.title||'',artist:song.artist||'',
             album:song.album||'',mimeType:song.blob.type,size:song.blob.size});
-          return {path,blob:song.blob};
-        });
+          return {path,blob:await realBlob(song)};
+        }));
         entries.unshift({path:'index.json',blob:new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'})});
         const zip=await musicExportZip(entries);
         if(top()!==pending)return;
@@ -3786,6 +3813,136 @@ onActiveAudio('pause',()=>savePlayback(true));onActiveAudio('play',()=>savePlayb
 onActiveAudio('loadedmetadata',()=>savePlayback(true));
 document.addEventListener('visibilitychange',()=>{if(document.hidden)savePlayback(true)});
 addEventListener('pagehide',()=>savePlayback(true));
+/* ---------- iPhone app player: songs live in the app, the app plays them (see NativeDeck above) ---------- */
+let nativeIds=new Set(),nativeSig='',nativeCfgSig='',nativeInvLoaded=false;
+const isStub=b=>!!(b&&!(b instanceof Blob)&&b.native);
+const nstoreH=()=>window.webkit?.messageHandlers?.ipodStore;
+const nstore=(op,o)=>nstoreH().postMessage(Object.assign({op},o||{}));
+const nativeSafeId=id=>(String(id).replace(/[^A-Za-z0-9_-]/g,'').slice(0,80)||'song');
+function nativeEligible(list){return NATIVE_PLAYER&&nativeInvLoaded&&list.length>0&&list.every(x=>x&&!x.deleted&&nativeIds.has(x.id))}
+function nativeTracks(){return queue.map(x=>({id:nativeSafeId(x.id),title:x.title||'',artist:x.artist||'',album:x.album||''}))}
+function nativeConfig(force){
+  const cfg={crossfade:+settings.crossfade||0,repeat:settings.repeat||'Off',stopAfterCurrent:sleep.mode==='song'};
+  const sig=JSON.stringify(cfg);if(!force&&sig===nativeCfgSig)return;nativeCfgSig=sig;nativePlayer('config',cfg);
+}
+function nativeLoad(play){
+  const song=cur(),sig=queue.map(x=>x.id).join('|');
+  nativeDeck._load(song,play);
+  nativeConfig(true);
+  if(sig!==nativeSig){nativeSig=sig;nativePlayer('load',{tracks:nativeTracks(),index:qi,t:0,play})}
+  else nativePlayer('jump',{index:qi,play});
+}
+// the app reports ~4×/s: position, duration, playing, and which song (it moves on by itself, even when locked)
+window.ipodNativeState=st=>{
+  const d=nativeDeck;if(audio!==d||!st)return;
+  if(st.id&&nativeSafeId(cur()?.id||'')!==st.id){
+    const i=queue[st.index]&&nativeSafeId(queue[st.index].id)===st.id?st.index:queue.findIndex(x=>nativeSafeId(x.id)===st.id);
+    if(i>=0){qi=i;d.src=cur().url;d._d=NaN;d.readyState=0;render();try{nativeNowPlaying(true)}catch(e){}}
+  }
+  if(st.sleep)sleepAtSongEnd();
+  const was=d._paused;
+  d._t=+st.t||0;
+  if(st.d>0&&!(Math.abs((d._d||0)-st.d)<.5)){const first=d.readyState<1;d._d=st.d;d.readyState=4;d.dispatchEvent(new Event('durationchange'));if(first)d.dispatchEvent(new Event('loadedmetadata'))}
+  d._paused=!st.playing;
+  if(was&&!d._paused){d.dispatchEvent(new Event('play'));d.dispatchEvent(new Event('playing'))}
+  else if(!was&&d._paused)d.dispatchEvent(new Event('pause'));
+  d.dispatchEvent(new Event('timeupdate'));
+  // keep the app's copy of the queue and settings in step (shuffle on mid-song, repeat, sleep timer)
+  const sig=queue.map(x=>x.id).join('|');if(sig!==nativeSig&&queue.length&&nativeEligible(queue)){nativeSig=sig;nativePlayer('requeue',{tracks:nativeTracks(),index:qi})}
+  nativeConfig(false);
+};
+// The bytes of a song whose file moved into the app (quiz clips, reading lyrics tags, ZIP export).
+async function realBlob(song){
+  if(song.blob instanceof Blob)return song.blob;
+  if(!isStub(song.blob)||!nstoreH())throw new Error('This song’s file isn’t available here.');
+  const parts=[],CH=2*1024*1024;
+  for(let o=0;o<song.blob.size;o+=CH){const b=await nstore('read',{id:nativeSafeId(song.id),offset:o,length:CH});parts.push(Uint8Array.from(atob(b),c=>c.charCodeAt(0)))}
+  return new Blob(parts,{type:song.blob.type||'audio/mpeg'});
+}
+// --- moving songs into the app: copy → check every byte (SHA-256) and that it plays → only then remove the old copy
+const nativeMove={running:false,done:0,total:0,failed:0,unsupported:0,missing:0,lastError:''};
+function hex(buf){return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('')}
+function b64(u8){let out='';for(let i=0;i<u8.length;i+=0x8000)out+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(out)}
+function audioExt(type,h){
+  const t=String(type||'').toLowerCase();
+  if(h[0]===0x49&&h[1]===0x44&&h[2]===0x33)return 'mp3';                       // ID3
+  if(h[0]===0xff&&(h[1]&0xe0)===0xe0&&!/aac/.test(t))return 'mp3';            // MPEG frame
+  if(h[4]===0x66&&h[5]===0x74&&h[6]===0x79&&h[7]===0x70)return 'm4a';          // ftyp
+  if(h[0]===0x52&&h[1]===0x49&&h[2]===0x46&&h[3]===0x46)return 'wav';          // RIFF
+  if(h[0]===0x66&&h[1]===0x4c&&h[2]===0x61&&h[3]===0x43)return 'flac';         // fLaC
+  if(h[0]===0x46&&h[1]===0x4f&&h[2]===0x52&&h[3]===0x4d)return 'aiff';         // FORM
+  if(h[0]===0x4f&&h[1]===0x67&&h[2]===0x67&&h[3]===0x53)return null;            // Ogg: Apple's player can't play it, keep it here
+  if(/mpeg|mp3/.test(t))return 'mp3';if(/mp4|m4a|aac/.test(t))return 'm4a';if(/wav/.test(t))return 'wav';if(/flac/.test(t))return 'flac';
+  return null;
+}
+async function nativeInventory(){
+  if(!nstoreH())return;
+  try{const inv=await nstore('inventory')||{};const have=new Set(Object.keys(inv));
+    nativeIds=new Set(songs.filter(x=>have.has(nativeSafeId(x.id))).map(x=>x.id));nativeInvLoaded=true;
+    nativeMove.missing=songs.filter(x=>isStub(x.blob)&&!nativeIds.has(x.id)).length;
+  }catch(e){nativeMove.lastError=String(e&&e.message||e)}
+}
+async function nativeMoveOne(song){
+  const blob=song.blob;if(!(blob instanceof Blob)||!blob.size)return 'skip';
+  const buf=await blob.arrayBuffer(),u8=new Uint8Array(buf);
+  const ext=audioExt(blob.type,u8.subarray(0,16));if(!ext)return 'unsupported';
+  const id=nativeSafeId(song.id),sha=hex(await crypto.subtle.digest('SHA-256',buf));
+  await nstore('begin',{id,ext,size:u8.length,sha});
+  const CH=512*1024;for(let o=0;o<u8.length;o+=CH)await nstore('chunk',{id,data:b64(u8.subarray(o,Math.min(u8.length,o+CH)))});
+  const end=await nstore('end',{id});if(!end||!end.ok)throw new Error('The copy didn’t match ('+(end&&end.reason||'?')+')');
+  const ver=await nstore('verify',{id,size:u8.length,sha});if(!ver||!ver.ok)throw new Error('The copy can’t be played ('+(ver&&ver.reason||'?')+')');
+  try{const art=await new Promise(res=>smallJpeg(artFor(song),320,res));if(art)await nstore('art',{id,data:art})}catch(e){}
+  // the app has a checked, playable copy: now (and only now) the old copy is removed
+  const stub={native:true,size:u8.length,type:blob.type||('audio/'+ext),sha};
+  const rec=songRecord(song);rec.blob=stub;await dbPut(rec);
+  const old=song.url;
+  for(const x of [song,...queue.filter(q=>q!==song&&q.id===song.id)]){x.blob=stub;x.url='native:'+song.id}
+  nativeIds.add(song.id);
+  if(old&&old.startsWith('blob:'))setTimeout(()=>{try{URL.revokeObjectURL(old)}catch(e){}},60000);
+  return 'moved';
+}
+async function runNativeMove(){
+  if(!nstoreH()||nativeMove.running)return;
+  nativeMove.running=true;
+  try{
+    await nativeInventory();
+    const seen=new Map();
+    const todo=songs.filter(x=>!x.deleted&&x.blob instanceof Blob&&x.blob.size&&!nativeIds.has(x.id)&&!x._noNative);
+    nativeMove.total=todo.length;nativeMove.done=0;nativeMove.failed=0;
+    if(todo.length)setHdrTask('Moving songs into the app…',0);
+    for(const song of todo){
+      // never swap the file under a song the web player is playing right now
+      if(audio!==nativeDeck&&cur()?.id===song.id&&!audio.paused){nativeMove.done++;continue}
+      const sid=nativeSafeId(song.id);if(seen.has(sid)&&seen.get(sid)!==song.id){song._noNative=true;nativeMove.done++;continue}seen.set(sid,song.id);
+      let res;
+      for(let attempt=0;attempt<2;attempt++){try{res=await nativeMoveOne(song);break}catch(e){res='failed';nativeMove.lastError=String(e&&e.message||e)}}
+      if(res==='unsupported'){song._noNative=true;nativeMove.unsupported++}
+      if(res==='failed')nativeMove.failed++;
+      nativeMove.done++;
+      if(nativeMove.done%3===0||nativeMove.done===nativeMove.total)setHdrTask(`Moving songs into the app · ${nativeMove.done} of ${nativeMove.total}`,nativeMove.done/nativeMove.total);
+      if(top()?.title==='iPhone App Player')render();
+    }
+    if(todo.length)setHdrTask(nativeMove.failed?`Moved songs · ${nativeMove.failed} to retry later`:'All songs are in the app',1,true);
+  }finally{nativeMove.running=false;if(top()?.title==='iPhone App Player')render()}
+}
+// keep the Lock Screen / CarPlay cover in step when a song's artwork changes
+let nativeCoverKey='';
+setInterval(()=>{if(audio!==nativeDeck)return;const x=cur();if(!x)return;const a=artFor(x),k=x.id+'|'+a;if(k===nativeCoverKey)return;nativeCoverKey=k;
+  smallJpeg(a,320,d=>{if(d)nstore('art',{id:nativeSafeId(x.id),data:d}).catch(()=>{})})},2000);
+function nativePlayerView(){
+  return list('iPhone App Player',()=>{
+    const inApp=songs.filter(x=>!x.deleted&&nativeIds.has(x.id)).length,all=songs.filter(x=>!x.deleted&&(x.blob instanceof Blob||isStub(x.blob))).length;
+    return [
+      {label:'Player',val:audio===nativeDeck?'iPhone app':'Web (this queue)'},
+      {label:'Songs in the App',val:inApp+' of '+all},
+      ...(nativeMove.running?[{label:'Moving…',val:nativeMove.done+' of '+nativeMove.total}]:[]),
+      ...(nativeMove.failed?[{label:'To Retry',val:String(nativeMove.failed)}]:[]),
+      ...(nativeMove.unsupported?[{label:'Stay in Web Player',val:nativeMove.unsupported+' (format)'}]:[]),
+      ...(nativeMove.missing?[{label:'⚠︎ Missing Files',val:String(nativeMove.missing)}]:[]),
+      {label:'Move Songs Now',action:()=>{runNativeMove();render()}},
+      {label:'About',chev:1,action:()=>push(msgView('iPhone App Player','Your songs are copied into the iPod app and played by Apple’s own player: steady speed, crossfade and gapless in the car and on the Lock Screen, and it keeps going when the phone is locked. Each song is checked byte for byte, and that it plays, before the old copy is removed.'))}];
+  });
+}
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -5241,6 +5398,7 @@ async function deleteSong(s){
   const lib=songs.find(x=>x.id===s.id)||s;
   await dbDelete(lib.id);
   lib.deleted=true;songs=songs.filter(x=>x.id!==lib.id);
+  if(nstoreH()&&nativeIds.has(lib.id)){nativeIds.delete(lib.id);nstore('delete',{id:nativeSafeId(lib.id)}).catch(()=>{})}
   const wasCur=cur()&&cur().id===lib.id;
   const before=queue.slice(0,Math.max(0,qi)).filter(x=>x.id===lib.id).length;
   queue=queue.filter(x=>x.id!==lib.id);
@@ -5418,7 +5576,7 @@ async function fetchOnlineLyrics(s){
 async function populateLyrics(s){
   if(s._lyricsLoading)return s._lyricsLoading;
   s._lyricsLoading=(async()=>{
-    if(s.lyrics==null&&s.blob)try{s.lyrics=await readLyrics(s.blob)}catch(e){s.lyrics=''}
+    if(s.lyrics==null&&s.blob)try{s.lyrics=await readLyrics(await realBlob(s))}catch(e){s.lyrics=''}
     if(s.lyrics)return {text:s.lyrics,lines:[],source:'Embedded'};
     return await fetchOnlineLyrics(s);
   })().finally(()=>{s._lyricsLoading=null});
@@ -6059,7 +6217,7 @@ async function initUpdates(){
 }
 /* ---------- boot ---------- */
 stack=[mainMenu()];render();wake();initUpdates();
-dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}try{restorePlayback()}catch(e){console.warn(e)}});
+dbAll().then(async rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}if(NATIVE_PLAYER)await nativeInventory();try{restorePlayback()}catch(e){console.warn(e)}if(NATIVE_PLAYER)setTimeout(runNativeMove,4000)});
 // Explicitly hand the optional Friends module only the player functions it needs.
 onActiveAudio('play',()=>{if(window.ipodVideos?.playing)audio.pause()});
 window.ipodVideoBridge=Object.freeze({list,push,pop,replaceTop,top,msgView,loadingView,inputView,
