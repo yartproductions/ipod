@@ -1618,7 +1618,9 @@ function prev(){if(!cur())return;if(curTime()>3){seekTo(0);return}if(importedPla
 function playPause(){if(!cur()){shuffleAll();return}audio.paused?resumeAudio():audio.pause()}
 const CROSSFADE_OPTIONS=[0,2,4,6,8,12,'Smart'];
 /* Smart crossfade: blends where a song already fades out (iPhone app player), skips silence, and keeps albums gapless */
-function cfSeconds(){return settings.crossfade==='Smart'?6:(+settings.crossfade||0)}
+let mixQueue=null;   // a queue started with "Crossfade Mix" blends with Smart crossfade, whatever the setting
+function cfMode(){return mixQueue&&mixQueue===queue?'Smart':settings.crossfade}
+function cfSeconds(){const m=cfMode();return m==='Smart'?6:(+m||0)}
 function cfLabel(){return settings.crossfade==='Smart'?'Smart':settings.crossfade?settings.crossfade+' sec':'Off'}
 function albumFlows(a,b){return !!(a&&b&&a.album&&a.album===b.album&&a.track>0&&b.track===a.track+1)}
 let nativeCarPlayRoute=false;
@@ -1679,7 +1681,7 @@ async function maybeCrossfade(){
     !Number.isFinite(remaining)||remaining<=.25||remaining>Math.min(seconds,audio.duration/2))return;
   const target=crossfadeTarget();
   if(!target)return;
-  if(settings.crossfade==='Smart'&&albumFlows(cur(),target.song))return;   // albums play straight through
+  if(cfMode()==='Smart'&&albumFlows(cur(),target.song))return;   // albums play straight through
   const outgoing=audio,incoming=audio===mainDeck?spareDeck:mainDeck;
   const transition={outgoing,incoming,timer:null};fade=transition;
   setDeckGain(incoming,0);
@@ -3886,7 +3888,7 @@ const nativeSafeId=id=>(String(id).replace(/[^A-Za-z0-9_-]/g,'').slice(0,80)||'s
 function nativeEligible(list){return NATIVE_PLAYER&&nativeInvLoaded&&list.length>0&&list.every(x=>x&&!x.deleted&&nativeIds.has(x.id))}
 function nativeTracks(){return queue.map(x=>({id:nativeSafeId(x.id),title:x.title||'',artist:x.artist||'',album:x.album||'',track:+x.track||0}))}
 function nativeConfig(force){
-  const cfg={crossfade:settings.crossfade==='Smart'?0:cfSeconds(),smart:settings.crossfade==='Smart',repeat:settings.repeat||'Off',stopAfterCurrent:sleep.mode==='song',eq:eqGains()};
+  const cfg={crossfade:cfMode()==='Smart'?0:cfSeconds(),smart:cfMode()==='Smart',repeat:settings.repeat||'Off',stopAfterCurrent:sleep.mode==='song',eq:eqGains()};
   const sig=JSON.stringify(cfg);if(!force&&sig===nativeCfgSig)return;nativeCfgSig=sig;nativePlayer('config',cfg);
 }
 function nativeLoad(play){
@@ -5934,6 +5936,38 @@ function queueTrack(track,playNext){
   triggerHaptic('success');
   return true;
 }
+/* Hold Center on an album or playlist in a Flow: play the whole thing — straight, as a crossfaded mix, shuffled, or queued. */
+function flowCollection(v){
+  if(v?.type!=='flow'||v.songList||v.recommendItems||v.opening)return null;
+  const card=v.albums?.[v.sel];if(!card)return null;
+  const list=(card.collection?card.collection():card.songs||[]).filter(s=>s&&!s.deleted);
+  return list.length?{name:card.album||'',songs:list}:null;
+}
+function playCollection(c,how){
+  const ss=how==='shuffle'?shuffled(c.songs):settings.shuffle?c.songs.slice():albumSort(c.songs);
+  playList(ss,0);
+  mixQueue=how==='mix'?queue:null;
+  if(how==='mix'){if(crossfadeEnabled())prepareCrossfade();nativeConfig(true);setHdrTask('Crossfade Mix · '+c.name,1,true)}
+}
+function queueCollection(c){
+  if(!cur()||importedPlayback?.queue===queue){playCollection(c,'play');return}
+  queue.push(...albumSort(c.songs));setSession();
+  setHdrTask(`Added ${c.songs.length} song${c.songs.length===1?'':'s'} to Queue`,1,true);triggerHaptic('success');
+}
+function openCollectionRing(c){
+  const ic=d=>`<svg viewBox="0 0 20 20">${d}</svg>`,n=c.songs.length+(c.songs.length===1?' song':' songs');
+  openSheet('queue-ring',c.name,'',[
+    {label:'Play All',short:'Play All',hint:n+' in order',run:()=>playCollection(c,'play'),
+      icon:ic('<path d="M7 5.5v9l7-4.5z" fill="currentColor"/><circle cx="10" cy="10" r="8"/>')},
+    {label:'Crossfade Mix',short:'Mix',hint:n+', blended with Smart crossfade',run:()=>playCollection(c,'mix'),
+      icon:ic('<circle cx="7.2" cy="10" r="5"/><circle cx="12.8" cy="10" r="5"/>')},
+    {label:'Shuffle',short:'Shuffle',hint:n+' in random order',run:()=>playCollection(c,'shuffle'),
+      icon:ic('<path d="M3 6h3l8 8h3M3 14h3l8-8h3"/><path d="M15 4l2 2-2 2M15 12l2 2-2 2"/>')},
+    {label:'Add to Queue',short:'Add to Queue',hint:cur()?n+' after what’s queued':'Nothing playing: plays now',run:()=>queueCollection(c),
+      icon:ic('<path d="M3 5h9M3 10h9M3 15h6"/><path d="M15 12v6M12 15h6"/>')}
+  ]);
+  sheet.hub=c.name;radialHub();
+}
 function openQueueRing(track){
   const canQueue=!!(track?.song||track?.video);
   const add=playNext=>{
@@ -6016,17 +6050,19 @@ function beginCenterPress(id){
   const useCurrent=radial||view.type==='now'||!(highlighted?.song||highlighted?.video);
   const track=useCurrent?{song:cur()}:highlighted;
   const canHold=!window.ipodVideos?.playing&&!holdOn&&(!sheet||radial)&&view.type!=='input';
-  const canFavorite=canHold&&!!(track?.song||track?.video);
+  const coll=canHold&&!sheet?flowCollection(view):null;   // an album / playlist cover in a Flow
+  const canFavorite=canHold&&!coll&&!!(track?.song||track?.video);
   const state={id,view,track,selected:view.sel,sheet,current:useCurrent,
     started:performance.now(),long:false,ringTimer:null,favoriteTimer:null,frame:null};
   centerPress=state;
   center.classList.add('down');
   if(canFavorite)center.classList.add('favorite-holding');
-  if(canHold&&(cur()||canFavorite)){
+  if(canHold&&(cur()||canFavorite||coll)){
     state.ringTimer=setTimeout(()=>{
       if(!centerSelectionStillActive(state))return;
       state.long=true;
-      if(!sheet&&cur()){
+      if(coll){openCollectionRing(coll);state.sheet=sheet}
+      else if(!sheet&&cur()){
         openQueueRing(view.type==='now'?null:highlighted);
         state.sheet=sheet;
       }
@@ -6213,7 +6249,7 @@ function radialHub(){
   const b=sheet?.buttons[sheet.sel],hub=$('#sheetBtns .rhub');if(!b||!hub)return;
   hub.classList.remove('favorite-holding');
   hub.style.removeProperty('--hold-angle');
-  hub.querySelector('i').textContent='Playback';
+  hub.querySelector('i').textContent=sheet.hub||'Playback';
   hub.querySelector('b').textContent=b.label;
   hub.querySelector('span').textContent=b.disabled?'Not available for this song':(b.hint||'Hold Center to favorite');
 }
