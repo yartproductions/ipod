@@ -5,7 +5,7 @@ const html=fs.readFileSync(require.resolve('../index.html'),'utf8');
 const source=html.slice(html.indexOf('let centerPress=null'),html.indexOf("addEventListener('keydown',e=>{",html.indexOf('let centerPress=null')));
 const run=new Function('assert',`
  const events=new Map(),timers=new Map(),frames=new Map(),pulses=[],selections=[];
- let now=0,id=0,sheet=null,holdOn=false,saved=0;
+ let now=0,id=0,sheet=null,holdOn=false,saved=0;const flowCollection=()=>null;
  const classes=new Set();
  const node=()=>({textContent:'',classList:{add(){},remove(){}},style:{setProperty(){},removeProperty(){}}});
  const center={...node(),classList:{add:name=>classes.add(name),remove:name=>classes.delete(name),
