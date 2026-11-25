@@ -18,7 +18,7 @@ with sync_playwright() as p:
               viewport={'width': 390, 'height': 844}, service_workers='block')
         ctx.route('https://**', lambda r: r.abort())
         pg = ctx.new_page(); pg.on('pageerror', lambda e: errors.append(str(e)))
-        pg.add_init_script("if(!localStorage.getItem('ipod.settings'))localStorage.setItem('ipod.settings',JSON.stringify({autoArt:false}))")
+        pg.add_init_script("if(!localStorage.getItem('ipod.settings'))localStorage.setItem('ipod.settings',JSON.stringify({autoArt:false,accel:false}))")
         pg.add_init_script(FAKE)
         return ctx, pg
     ctx, pg = open_app()
@@ -54,6 +54,24 @@ with sync_playwright() as p:
     C.home(pg); C.choose(pg, 'Settings'); C.choose(pg, 'iPhone App Player'); pg.wait_for_timeout(300)
     rows = C.all_rows(pg)
     check('Settings shows the iPhone App Player status', any('Songs in the App' in r for r in rows) and '5 of 5' in pg.inner_text('#body'), pg.inner_text('#body'))
+    # Equalizer + Smart crossfade reach the app's player
+    C.home(pg); C.choose(pg, 'Settings'); C.choose(pg, 'Equalizer'); C.choose(pg, 'Rock'); pg.wait_for_timeout(300)
+    check('choosing an EQ preset sends its curve to the app', pg.evaluate("window.__native.player.eq") == [5,4,3,1,-1,-1,1,2,3,4], pg.evaluate("window.__native.player.eq"))
+    C.choose(pg, 'Custom'); pg.wait_for_timeout(200)
+    check('Custom opens the 10-band editor', pg.locator('.eqb').count() == 10)
+    pg.keyboard.press('ArrowDown'); pg.keyboard.press('Enter'); pg.wait_for_timeout(100)
+    for _ in range(3): pg.keyboard.press('ArrowDown'); pg.wait_for_timeout(40)
+    pg.wait_for_timeout(300)
+    eq = pg.evaluate("window.__native.player.eq")
+    check('spinning a grabbed band changes that band only', eq and eq[1] != 0 and abs(eq[1]) == 3 and all(x == 0 for i, x in enumerate(eq) if i != 1), eq)
+    C.home(pg); C.choose(pg, 'Settings'); C.choose(pg, 'Equalizer'); C.choose(pg, 'Off'); pg.wait_for_timeout(300)
+    check('EQ Off turns it off in the app', pg.evaluate("window.__native.player.eq") is None)
+    C.home(pg); C.choose(pg, 'Settings')
+    for _ in range(7):
+        if 'Smart' in pg.inner_text('#body'): break
+        C.choose(pg, 'Crossfade'); pg.wait_for_timeout(100)
+    check('Crossfade has a Smart setting, sent to the app', pg.evaluate("window.__native.player.smart") is True and pg.evaluate("window.__native.player.crossfade") == 0)
+    check('the app gets track numbers for gapless albums', pg.evaluate("window.__native.player.queue.every(x=>typeof x.track==='number')"))
     ctx.close()
     # reopen: everything plays from the app, nothing to move again
     ctx, pg = open_app(); pg.goto(url); pg.wait_for_timeout(3500)
