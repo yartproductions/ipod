@@ -10,6 +10,7 @@ struct IPodTrack: Equatable {
     let artist: String
     let album: String
     let track: Int
+    var local: Bool = true      // false = this song is still played by the web page (not moved into the app yet)
 }
 
 /// What the start and end of a song sound like, for gapless / smart crossfade.
@@ -278,6 +279,7 @@ final class IPodPlayer: NSObject {
     private func start(index i: Int, at t: Double, play: Bool) {
         cancelFade()
         guard queue.indices.contains(i) else { publish(); return }
+        guard queue[i].local else { handOff(i, play: play); return }
         if decks[other].trackIndex == i, decks[other].file != nil, t <= 0 {
             // reuse the preloaded deck: it already holds this song
             unloadDeck(decks[active]); active = other
@@ -299,6 +301,17 @@ final class IPodPlayer: NSObject {
         updateNowPlaying(); publish()
     }
 
+    /// The next song isn't in the app yet: stop here and let the page's own player take over from that song.
+    private func handOff(_ i: Int, play: Bool) {
+        wantsPlay = false
+        for d in decks { unloadDeck(d) }
+        index = i
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        var s = state()
+        s["handoff"] = i; s["play"] = play
+        onState?(s)
+    }
+
     private func upcomingIndex() -> Int? {
         if index + 1 < queue.count { return index + 1 }
         return repeatMode == "All" && !queue.isEmpty ? 0 : nil
@@ -308,8 +321,8 @@ final class IPodPlayer: NSObject {
     private func deckFinished(_ d: Deck) {
         guard d === decks[active], fade == nil else { return }   // a faded-out deck finishing: nothing to do
         let up = upcomingIndex()
-        let handOff = !stopAfterCurrent && repeatMode != "One" && up != nil && decks[other].trackIndex == up
-        if decks[other].queued, !handOff { unloadDeck(decks[other]) }   // plans changed since it was queued
+        let continues = !stopAfterCurrent && repeatMode != "One" && up != nil && decks[other].trackIndex == up
+        if decks[other].queued, !continues { unloadDeck(decks[other]) }   // plans changed since it was queued
         if stopAfterCurrent {
             stopAfterCurrent = false; wantsPlay = false
             d.heldPosition = d.endTime
@@ -320,6 +333,7 @@ final class IPodPlayer: NSObject {
             wantsPlay = false; d.heldPosition = d.endTime
             updateNowPlaying(); publish(extra: ["ended": true]); return
         }
+        guard queue[n].local else { handOff(n, play: wantsPlay); return }
         let o = decks[other]
         if o.trackIndex == n, o.file != nil, wantsPlay {
             // gapless: the next song is already loaded (and usually already running on the audio clock)
@@ -344,7 +358,7 @@ final class IPodPlayer: NSObject {
     private func tick() {
         let d = decks[active]
         guard d.file != nil else { return }
-        if isPlaying, fade == nil, let n = upcomingIndex(), repeatMode != "One", !stopAfterCurrent {
+        if isPlaying, fade == nil, let n = upcomingIndex(), queue[n].local, repeatMode != "One", !stopAfterCurrent {
             let remaining = d.endTime - d.position()
             // load the next song well ahead so the change is instant
             if remaining < 12, decks[other].trackIndex != n {

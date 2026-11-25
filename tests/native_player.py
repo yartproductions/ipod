@@ -86,5 +86,27 @@ with sync_playwright() as p:
     recs = pg.evaluate("""new Promise(r=>{const q=indexedDB.open('ipod');q.onsuccess=()=>{const g=q.result.transaction('songs').objectStore('songs').getAll();g.onsuccess=()=>r(g.result.map(x=>x.blob instanceof Blob))}})""")
     check('a copy that doesn’t match byte for byte is rejected, and the old copy is kept', recs == [True] and pg.evaluate("window.__native.files.size") == 0, (recs, pg.evaluate("window.__native.files.size")))
     ctx.close()
+    # an album with one song still on the web side plays straight through, handing over both ways
+    prof = tempfile.mkdtemp()
+    ctx, pg = open_app(); pg.goto(url); pg.wait_for_timeout(1200)
+    pg.evaluate("window.__native._seen=0")
+    pg.add_init_script("")
+    pg.evaluate("""(()=>{const N=window.__native;const orig=window.webkit.messageHandlers.ipodStore.postMessage;
+      window.webkit.messageHandlers.ipodStore.postMessage=m=>{if(m.op==='begin'&&++N._seen===3)N.refuse=m.id;return orig(m)}})()""")
+    pg.set_input_files('#file', sorted(str(f) for f in C.FIX.glob('album-*.mp3'))); pg.wait_for_timeout(3500); C.wait_sync(pg)
+    pg.wait_for_function("window.__native.files.size>=4", timeout=30000); pg.wait_for_timeout(9000)
+    webs = pg.evaluate("""new Promise(r=>{const q=indexedDB.open('ipod');q.onsuccess=()=>{const g=q.result.transaction('songs').objectStore('songs').getAll();g.onsuccess=()=>r(g.result.filter(x=>x.blob instanceof Blob).map(x=>x.title))}})""")
+    check('setup: one album song stays on the web side', len(webs) == 1, webs)
+    C.home(pg); C.choose(pg, 'Music'); C.choose(pg, 'Offline Music'); C.choose(pg, 'Songs')
+    pg.keyboard.press('Enter'); pg.wait_for_timeout(500)
+    names = pg.evaluate("""new Promise(r=>{const q=indexedDB.open('ipod');q.onsuccess=()=>{const g=q.result.transaction('songs').objectStore('songs').getAll();g.onsuccess=()=>r(g.result.map(x=>x.title))}})""")
+    titles = []
+    for _ in range(80):
+        body = pg.inner_text('#body'); t = next((n for n in names if n in body), '')
+        if t and (not titles or titles[-1] != t): titles.append(t)
+        pg.wait_for_timeout(250)
+    check('playing from a list keeps going through every song', len(titles) >= 4, titles)
+    check('…handing the web-only song to the page and back to the app', pg.evaluate("window.__native.handoffs||0") >= 1 and webs and webs[0] in titles and titles.index(webs[0]) < len(titles) - 1, (titles, pg.evaluate("window.__native.handoffs")))
+    ctx.close()
     check('no page errors', not errors, errors)
 srv.shutdown(); print(f'\n{sum(ok)}/{len(ok)} passed'); sys.exit(0 if all(ok) else 1)
