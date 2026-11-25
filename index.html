@@ -1236,7 +1236,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',carView:'Auto',carLiveMode:'In Car',carLyrics:'Off',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',carView:'Auto',carLiveMode:'In Car',carLyrics:'Off',resume:'On',boot:'On',wear:'Natural',ripples:'On',glare:'On'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -3630,6 +3630,7 @@ function lookFeelMenu(){
     {label:'Boot Animation',val:settings.boot,action:cyc('boot',['On','Off'],()=>{if(settings.boot==='On'){ls.set('ipod.boot.force',true);bootAnim();ls.set('ipod.boot.force',false)}})},
     {label:'Wear & Scratches',val:settings.wear,action:cyc('wear',['Natural','Heavy','Off'])},
     {label:'Polish iPod',val:settings.wear==='Off'?'':Math.round(wearLevel()*100)+'% worn',action:()=>polishIPod()},
+    {label:'Resume Where You Left Off',val:settings.resume,action:cyc('resume',['On','Off'])},
     {label:'Car View on CarPlay',val:settings.carView,action:cyc('carView',['Auto','Off'])},
     {label:'Lyrics Live Activity',val:settings.carLiveMode,action:cyc('carLiveMode',['In Car','Always','Off'],()=>nativeNowPlaying(true))},
     {label:'Touch Ripples',val:settings.ripples,action:cyc('ripples',['On','Off'])},
@@ -3753,6 +3754,38 @@ window.ipodRemote=(cmd,arg)=>{
   setTimeout(()=>{nativeNowPlaying(true);if(cvOpen)cvRenderNP(true)},120);
 };
 function carViewAuto(connected){if(settings.carView==='Off')return;if(connected&&!cvOpen){cvAutoOpened=true;openCarView('np')}else if(!connected&&cvOpen&&cvAutoOpened){cvAutoOpened=false;closeCarView()}}
+/* ---------- Resume where you left off: the queue, the song and the exact second survive closing the app ---------- */
+let resumeReady=false,resumeLastSave=0;
+function savePlayback(force){
+  if(!resumeReady||settings.resume==='Off')return;
+  const now=Date.now();if(!force&&now-resumeLastSave<4000)return;resumeLastSave=now;
+  const s=cur();if(!s||!s.id){return}
+  const ids=queue.map(x=>x&&x.id).filter(Boolean);
+  if(!ids.includes(s.id))return;
+  // keep at most ~1500 songs around the current one so the saved queue stays small
+  let start=0,list=ids;if(ids.length>1500){start=Math.max(0,qi-500);list=ids.slice(start,start+1500)}
+  const t=curTime()||0,d=dur()||0;
+  ls.set('ipod.resume',{ids:list,qi:Math.max(0,list.indexOf(s.id)),id:s.id,t:(d&&d-t<3)?0:Math.round(t*10)/10,playing:!audio.paused,at:now,shuffle:!!settings.shuffle,repeat:settings.repeat});
+}
+function restorePlayback(){
+  resumeReady=true;
+  if(settings.resume==='Off'||cur())return;
+  const r=ls.get('ipod.resume',null);if(!r||!Array.isArray(r.ids)||!r.ids.length)return;
+  if(Date.now()-(r.at||0)>60*864e5)return;                       // older than two months: start fresh
+  const by=new Map(songs.filter(x=>!x.deleted&&x.url).map(x=>[x.id,x]));
+  const q=r.ids.map(id=>by.get(id)).filter(Boolean);if(!q.length)return;
+  let i=q.findIndex(x=>x.id===r.id);if(i<0)i=Math.min(q.length-1,Math.max(0,r.qi||0));
+  queue=q;qi=i;load(false);
+  const t=+r.t||0;
+  if(t>1){const seek=()=>{try{audio.currentTime=Math.min(t,(audio.duration||t+1)-1)}catch(e){}syncMediaPosition();render()};
+    if(audio.readyState>=1)seek();else audio.addEventListener('loadedmetadata',seek,{once:true})}
+  setHdrTask('Resumed · '+(q[i].title||'')+(t>1?' at '+fmt(t):''),1,true);
+}
+onActiveAudio('timeupdate',()=>savePlayback(false));
+onActiveAudio('pause',()=>savePlayback(true));onActiveAudio('play',()=>savePlayback(true));
+onActiveAudio('loadedmetadata',()=>savePlayback(true));
+document.addEventListener('visibilitychange',()=>{if(document.hidden)savePlayback(true)});
+addEventListener('pagehide',()=>savePlayback(true));
 const msgView=(t,m)=>({type:'msg',title:t,msg:m});
 const loadingView=t=>({type:'loading',title:t});
 const inputView=(t,ph,onSubmit,value='')=>({type:'input',title:t,ph,onSubmit,value});
@@ -6026,7 +6059,7 @@ async function initUpdates(){
 }
 /* ---------- boot ---------- */
 stack=[mainMenu()];render();wake();initUpdates();
-dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}});
+dbAll().then(rs=>{if(rs.length){songs=rs.map(hydrate);sortSongs();render()}try{restorePlayback()}catch(e){console.warn(e)}});
 // Explicitly hand the optional Friends module only the player functions it needs.
 onActiveAudio('play',()=>{if(window.ipodVideos?.playing)audio.pause()});
 window.ipodVideoBridge=Object.freeze({list,push,pop,replaceTop,top,msgView,loadingView,inputView,
