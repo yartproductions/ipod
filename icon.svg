@@ -1,21 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
- <defs>
-  <radialGradient id="bg" cx="50%" cy="30%" r="80%"><stop offset="0" stop-color="#16201a"/><stop offset="1" stop-color="#050706"/></radialGradient>
-  <radialGradient id="ring" cx="50%" cy="35%" r="65%"><stop offset="0" stop-color="#1f8a4c"/><stop offset=".7" stop-color="#0e4f2b"/><stop offset="1" stop-color="#08311b"/></radialGradient>
-  <linearGradient id="red" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff5a4e"/><stop offset="1" stop-color="#c3121e"/></linearGradient>
-  <radialGradient id="hub" cx="50%" cy="30%" r="70%"><stop offset="0" stop-color="#1c211e"/><stop offset="1" stop-color="#050605"/></radialGradient>
-  <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="20"/></filter>
-  <filter id="sh"><feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000" flood-opacity=".7"/></filter>
- </defs>
- <rect width="1024" height="1024" fill="url(#bg)"/>
- <g transform="translate(512 512)">
-  <circle r="350" fill="url(#ring)" filter="url(#sh)"/>
-  <g fill="none" stroke="#000" stroke-opacity=".18" stroke-width="3"><circle r="320"/><circle r="290"/><circle r="260"/><circle r="230"/><circle r="200"/></g>
-  <path d="M 247.5 -247.5 A 350 350 0 0 1 247.5 247.5 L 120.2 120.2 A 170 170 0 0 0 120.2 -120.2 Z" fill="url(#red)" filter="url(#glow)" opacity=".7"/>
-  <path d="M 247.5 -247.5 A 350 350 0 0 1 247.5 247.5 L 120.2 120.2 A 170 170 0 0 0 120.2 -120.2 Z" fill="url(#red)"/>
-  <circle r="350" fill="none" stroke="#7dffb0" stroke-opacity=".18" stroke-width="4"/>
-  <circle r="168" fill="url(#hub)"/>
-  <circle r="168" fill="none" stroke="#2bd174" stroke-opacity=".35" stroke-width="4"/>
-  <g fill="#36e07f"><rect x="-58" y="-18" width="22" height="58" rx="11"/><rect x="-22" y="-56" width="22" height="96" rx="11"/><rect x="14" y="-34" width="22" height="74" rx="11"/><rect x="50" y="-4" width="22" height="44" rx="11"/></g>
- </g>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1fd1b2"/><stop offset=".55" stop-color="#2b7cf0"/><stop offset="1" stop-color="#5a2ee0"/></linearGradient>
+<radialGradient id="sh" cx=".3" cy=".2" r=".9"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<rect width="1024" height="1024" fill="url(#sh)"/>
+<circle cx="512" cy="512" r="330" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="70"/>
+<path d="M512 182a330 330 0 0 1 300 194" fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="70" stroke-linecap="round"/>
+<g fill="#fff">
+<path d="M420 360l230-52v270a70 56 0 1 1-40-50V378l-150 34v226a70 56 0 1 1-40-50z"/>
+</g>
 </svg>
