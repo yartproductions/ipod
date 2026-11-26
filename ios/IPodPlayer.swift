@@ -114,6 +114,11 @@ final class IPodPlayer: NSObject {
         engine.disconnectNodeOutput(eq)
         engine.connect(mixer, to: eq, format: format)
         engine.connect(eq, to: engine.outputNode, format: format)
+        for d in decks {
+            guard let f = d.file else { continue }
+            engine.disconnectNodeOutput(d.node)
+            engine.connect(d.node, to: mixer, format: f.processingFormat)
+        }
     }
 
     private func ensureRunning() {
@@ -121,7 +126,7 @@ final class IPodPlayer: NSObject {
         activateSession()
         if !engine.isRunning {
             engine.prepare()
-            try? engine.start()
+            do { try engine.start() } catch { NSLog("IPodPlayer: engine start failed: \(error)") }
         }
     }
 
@@ -171,8 +176,8 @@ final class IPodPlayer: NSObject {
         ensureRunning()
         wantsPlay = true
         let d = decks[active]
-        d.node.play(); d.started = true
-        if let f = fade { decks[f.from].node.play() }
+        d.started = startNode(d)
+        if let f = fade { _ = startNode(decks[f.from]) }
         startTicker()
         updateNowPlaying(); publish()
     }
@@ -197,7 +202,7 @@ final class IPodPlayer: NSObject {
         unloadDeck(decks[other])
         let frame = AVAudioFramePosition(max(0, min(t, d.duration - 0.05)) * f.processingFormat.sampleRate)
         schedule(d, from: frame)
-        if wantsPlay { ensureRunning(); d.node.play(); d.started = true }
+        if wantsPlay { d.started = startNode(d) }
         updateNowPlaying(); publish()
     }
 
@@ -296,7 +301,7 @@ final class IPodPlayer: NSObject {
         index = decks[active].trackIndex
         analyzeAhead()
         wantsPlay = play
-        if play { ensureRunning(); decks[active].node.play(); decks[active].started = true }
+        if play { decks[active].started = startNode(decks[active]) }
         startTicker()
         updateNowPlaying(); publish()
     }
@@ -337,8 +342,7 @@ final class IPodPlayer: NSObject {
         let o = decks[other]
         if o.trackIndex == n, o.file != nil, wantsPlay {
             // gapless: the next song is already loaded (and usually already running on the audio clock)
-            if !o.queued { ensureRunning(); o.node.play() }
-            o.started = true; o.queued = false
+            o.started = o.queued || startNode(o); o.queued = false
             unloadDeck(d)
             active = other; index = n
             analyzeAhead()
@@ -381,8 +385,7 @@ final class IPodPlayer: NSObject {
         let left = Double(d.endFrame - (d.startFrame + pt.sampleTime)) / d.sampleRate
         guard left > 0.05 else { return }
         let when = AVAudioTime(sampleTime: nt.sampleTime + AVAudioFramePosition(left * nt.sampleRate), atRate: nt.sampleRate)
-        o.node.play(at: when)
-        o.queued = true
+        o.queued = startNode(o, at: when)
     }
 
     /// How long to blend song `a` into song `b` (0 = gapless).
@@ -405,7 +408,7 @@ final class IPodPlayer: NSObject {
         let inc = decks[to]
         inc.node.volume = 0
         ensureRunning()
-        inc.node.play(); inc.started = true
+        inc.started = startNode(inc)
         fade = (from, to, Date(), max(0.3, length))
         fadeTimer?.invalidate()
         fadeTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { [weak self] _ in self?.fadeStep() }
@@ -542,6 +545,7 @@ final class IPodPlayer: NSObject {
             self.cancelFade()
             self.wireOutput()
             if self.wantsPlay { self.resumeAfterRestart() } else {
+                self.unloadDeck(self.decks[self.other])     // its schedule didn't survive the rewiring; it reloads ahead of time
                 if d.file != nil { self.schedule(d, from: AVAudioFramePosition(d.heldPosition * d.sampleRate)) }
                 self.publish()
             }
@@ -554,9 +558,36 @@ final class IPodPlayer: NSObject {
         let at = d.position()
         unloadDeck(decks[other])
         schedule(d, from: AVAudioFramePosition(at * d.sampleRate))
-        ensureRunning()
-        d.node.play(); d.started = true
+        d.started = startNode(d)
         updateNowPlaying(); publish()
+    }
+
+    /// Starts a deck only when it is wired up and the engine is really running. iOS kills the app outright if a
+    /// player starts while disconnected or with the engine stopped (as happens for a moment when CarPlay,
+    /// Bluetooth or headphones change the output), so if it isn't ready yet, try again shortly instead.
+    @discardableResult
+    private func startNode(_ d: Deck, at when: AVAudioTime? = nil) -> Bool {
+        guard let f = d.file else { return false }
+        if engine.outputConnectionPoints(for: d.node, outputBus: 0).isEmpty {
+            engine.connect(d.node, to: engine.mainMixerNode, format: f.processingFormat)
+        }
+        ensureRunning()
+        guard engine.isRunning, !engine.outputConnectionPoints(for: d.node, outputBus: 0).isEmpty else {
+            retryStart(); return false
+        }
+        if let when { d.node.play(at: when) } else { d.node.play() }
+        startRetries = 0
+        return true
+    }
+
+    private var startRetries = 0
+    private func retryStart() {
+        guard startRetries < 8 else { startRetries = 0; wantsPlay = false; updateNowPlaying(); publish(); return }
+        startRetries += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self, self.wantsPlay, !self.decks[self.active].started else { return }
+            self.resumeAfterRestart()
+        }
     }
 
     // MARK: - Lock Screen, Control Center, CarPlay, headphones
