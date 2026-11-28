@@ -9,7 +9,7 @@
   const push=(x)=>{try{window.ipodNativeState&&window.ipodNativeState(Object.assign(st(),x||{}))}catch(e){console.error(e)}};
   // like IPodPlayer.handOff: a song still on the web side goes back to the page
   const go=(i,play)=>{P.index=i;P.t=0;if(P.queue[i]?.web){P.playing=false;window.__native.handoffs=(window.__native.handoffs||0)+1;push({handoff:i,play});return false}P.playing=play;return true};
-  const startTimer=()=>{clearInterval(P.timer);P.timer=setInterval(()=>{if(P.playing){P.t+=.25;if(P.t>=P.d){if(P.index+1<P.queue.length){if(!go(P.index+1,true))return}else{P.playing=false}}}push()},250)};
+  const startTimer=()=>{clearInterval(P.timer);P.timer=setInterval(()=>{if(P.playing){P.t+=.25;if(P.t>=P.d){if(P.index+1<P.queue.length){if(!go(P.index+1,true))return}else{P.playing=false;return push({ended:true})}}}push()},250)};
   const store=async m=>{const id=m.id;log.push(m.op);switch(m.op){
     case 'inventory':{const o={};for(const [k,v] of files)o[k]={size:v.length,art:art.has(k)};return o}
     case 'begin':uploads.set(id,{parts:[],ext:m.ext,size:m.size,sha:m.sha});return true;

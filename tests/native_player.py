@@ -107,6 +107,15 @@ with sync_playwright() as p:
         pg.wait_for_timeout(250)
     check('playing from a list keeps going through every song', len(titles) >= 4, titles)
     check('…handing the web-only song to the page and back to the app', pg.evaluate("window.__native.handoffs||0") >= 1 and webs and webs[0] in titles and titles.index(webs[0]) < len(titles) - 1, (titles, pg.evaluate("window.__native.handoffs")))
+    # a playlist whose next track still has to be fetched: when the app finishes the song, the page moves on
+    pg.evaluate("""(()=>{window.__asked=[];const f=window.fetch;window.fetch=(u,...a)=>{window.__asked.push(String(u&&u.url||u)+' '+String(a[0]&&a[0].body||''));return f(u,...a)}})()""")
+    pg.evaluate("""new Promise(r=>{const q=indexedDB.open('ipod');q.onsuccess=()=>{const g=q.result.transaction('songs').objectStore('songs').getAll();g.onsuccess=()=>{
+      const s=g.result.find(x=>!(x.blob instanceof Blob));window.ipodPlaylistImportBridge.playImported([{song:{id:s.id}},{video:{id:'nextTrackV1',title:'Next Up'}}],0);r()}}})""")
+    pg.wait_for_timeout(600)
+    check('setup: the playlist song plays in the app', pg.evaluate("window.__native.player.playing") is True)
+    pg.wait_for_timeout(3500)
+    # (offline here, so fetching it fails: that message only appears once the page really moved on to it)
+    check('when the app finishes it, the page goes on to the next playlist track', 'Audio Unavailable' in pg.inner_text('#screen'), pg.inner_text('#screen')[:120])
     ctx.close()
     check('no page errors', not errors, errors)
 srv.shutdown(); print(f'\n{sum(ok)}/{len(ok)} passed'); sys.exit(0 if all(ok) else 1)
