@@ -1253,7 +1253,7 @@ class NativeDeck extends EventTarget{
   play(){nativePlayer('play');if(this._paused){this._paused=false;this.dispatchEvent(new Event('play'));this.dispatchEvent(new Event('playing'))}return Promise.resolve()}
   pause(){nativePlayer('pause');if(!this._paused){this._paused=true;this.dispatchEvent(new Event('pause'))}}
   load(){}removeAttribute(){}setAttribute(){}canPlayType(){return 'maybe'}
-  _load(song,play){this.src=song?.url||'';this._t=0;this._d=NaN;this.readyState=0;const was=this._paused;this._paused=!play;
+  _load(song,play){this.src=song?.url||'';this._endedSent=false;this._t=0;this._d=NaN;this.readyState=0;const was=this._paused;this._paused=!play;
     if(play&&was){this.dispatchEvent(new Event('play'));this.dispatchEvent(new Event('playing'))}else if(!play&&!was)this.dispatchEvent(new Event('pause'))}
 }
 const nativeDeck=new NativeDeck();
@@ -1263,7 +1263,7 @@ function onActiveAudio(event,handler){
 }
 let songs=[], queue=[], qi=-1, stack=[], scrub=false, volTimer=null, voTimer=null;
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',carView:'Auto',carLiveMode:'In Car',carLyrics:'Off',resume:'On',boot:'On',wear:'Natural',ripples:'On',glare:'On',eq:'Off',eqCustom:[0,0,0,0,0,0,0,0,0,0]},ls.get('ipod.settings',{}));
+let settings=Object.assign({clicker:true,haptics:true,shuffle:false,repeat:'Off',crossfade:0,carPlayMode:false,theme:'Silver',ytKey:'',musicOnly:true,showYouTube:false,hapticStrength:'Strong',hapticFeel:'Crisp',backlight:'20 sec',accel:true,style:'Classic',appearance:'Light',split:'Album Art',menuStyle:'List',npStyle:'Standard',autoArt:true,artworkMode:'Strict',lyricaUrl:'https://ipod-lyrica-api.onrender.com',searchOnline:false,landscape:'Auto',brightScreen:'On',shakeShuffle:'Off',holdPos:'Bottom',lockScreen:'On',lockStyle:'Glass',lcdLyrics:'Off',carView:'Auto',carLiveMode:'In Car',carLyrics:'Off',resume:'On',boot:'On',wear:'Natural',ripples:'On',glare:'On',eq:'Off',eqCustom:[0,0,0,0,0,0,0,0,0,0],autoplay:'On'},ls.get('ipod.settings',{}));
 if(!settings.lyricaUrl)settings.lyricaUrl='https://ipod-lyrica-api.onrender.com';
 if(settings.split===true)settings.split='Album Art';if(settings.split===false)settings.split='Off';
 const saveSettings=()=>ls.set('ipod.settings',settings);
@@ -1588,9 +1588,23 @@ function resumeAudio(){
   // iOS may block autoplay after a navigation/interrupt; user can tap Play again.
   if(e&&e.name!=='AbortError')console.warn('iPod playback needs user interaction:',e);
 })}
+/* Autoplay: when the last song of a list starts, line up more so the music doesn't just stop —
+   the rest of its album, then the same artist, then the rest of the library (added ahead of time, so
+   the iPhone app carries on by itself even with the screen locked). */
+function autoplayMore(){
+  if(settings.autoplay==='Off'||settings.repeat!=='Off'||importedPlayback?.queue===queue||qi!==queue.length-1)return;
+  const last=cur();if(!last||isYT(last))return;
+  const inQ=new Set(queue.map(x=>x.id)),pool=songs.filter(x=>!x.deleted&&!inQ.has(x.id)&&!isYT(x));if(!pool.length)return;
+  const album=last.album?albumSort(pool.filter(x=>x.album===last.album)).filter(x=>!(last.track>0)||!(x.track>0)||x.track>last.track):[];
+  const artist=shuffled(pool.filter(x=>last.artist&&x.artist===last.artist&&!album.includes(x)));
+  const rest=shuffled(pool.filter(x=>!album.includes(x)&&!artist.includes(x)));
+  const more=[...album,...artist,...rest].slice(0,20);
+  if(more.length){queue.push(...more);try{setSession()}catch(e){}}
+}
 function load(play){
   cancelCrossfade();
   const t=cur();if(!t)return;
+  autoplayMore();
   if(nativeCan(t)){   // each song plays in whichever player holds its file; the two hand the queue back and forth
     if(audio!==nativeDeck){const old=audio;audio=nativeDeck;try{old.pause()}catch(e){}try{navigator.mediaSession.metadata=null}catch(e){}}
     if(play)lastListenedSong=null;
@@ -1754,6 +1768,16 @@ function syncMediaPosition(){
   })}catch(e){}
 }
 onActiveAudio('ended',()=>{if(sleepAtSongEnd())return;next(false)});
+// a song that won't load (damaged file, missing download) is skipped instead of stopping the whole list
+let audioErrors=0;
+onActiveAudio('error',()=>{
+  if(audio===nativeDeck||!cur()||!audio.getAttribute('src'))return;
+  const bad=cur();
+  if(++audioErrors>Math.min(queue.length,5)){audioErrors=0;setHdrTask('Can’t play these songs',1,true);render();return}
+  setHdrTask('Skipped “'+(bad.title||'song')+'” (couldn’t play)',1,true);
+  setTimeout(()=>{if(cur()===bad)next(false)},600);
+});
+onActiveAudio('playing',()=>{audioErrors=0});
 ['play','pause','playing','waiting'].forEach(e=>onActiveAudio(e,()=>{
   renderHdr();syncMediaPlaybackState();
 }));
@@ -2051,6 +2075,10 @@ function playImported(tracks,index,cover=null){
  const selected=tracks[index],playable=tracks.filter(t=>t.song||t.video);
  const session={cover,tracks:playable,index:playable.indexOf(selected),queue:null,pending:false,prefetched:false};
  if(session.index<0)return;
+ // every track is already in the library: play it as one normal queue, so it carries on by itself
+ // (gapless/crossfade, and in the iPhone app even with the screen locked or in CarPlay)
+ const local=playable.map(importedTrackSong);
+ if(local.every(x=>x&&!x.deleted)){playList(local,session.index);return}
  importedPlayback=session;
  startImported(session,session.index,{open:true});
 }
@@ -2418,6 +2446,7 @@ function settingsMenu(){
       saveSettings();nativeConfig?.();render();
     }},
     {label:'Equalizer',icon:'music',val:eqName(),chev:1,action:()=>push(eqMenu())},
+    {label:'Autoplay',val:settings.autoplay==='Off'?'Off':'On',action:()=>{settings.autoplay=settings.autoplay==='Off'?'On':'Off';saveSettings();autoplayMore();render()}},
     {label:'CarPlay Mode',val:nativeCarPlayRoute?'Auto':settings.carPlayMode?'On':'Off',action:()=>{
       if(nativeCarPlayRoute)return;
       settings.carPlayMode=!settings.carPlayMode;
@@ -3909,6 +3938,9 @@ window.ipodNativeState=st=>{
     if(i>=0){qi=i;d.src=cur().url;d._d=NaN;d.readyState=0;render();try{nativeNowPlaying(true)}catch(e){}}
   }
   if(st.sleep)sleepAtSongEnd();
+  // the app's queue ran out: the page decides what's next (playlists with tracks still to fetch, Repeat…)
+  else if(st.ended&&!d._endedSent){d._endedSent=true;d._paused=true;d.dispatchEvent(new Event('pause'));d.dispatchEvent(new Event('ended'));return}
+  if(st.playing)d._endedSent=false;
   const was=d._paused;
   d._t=+st.t||0;
   if(st.d>0&&!(Math.abs((d._d||0)-st.d)<.5)){const first=d.readyState<1;d._d=st.d;d.readyState=4;d.dispatchEvent(new Event('durationchange'));if(first)d.dispatchEvent(new Event('loadedmetadata'))}

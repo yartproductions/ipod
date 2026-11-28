@@ -4,8 +4,9 @@ const fs=require('node:fs');
 const html=fs.readFileSync(require.resolve('../index.html'),'utf8');
 const start=html.indexOf('let importedPlayback=null;');
 const end=html.indexOf("onActiveAudio('timeupdate',prefetchImported)",start);
-const {play,prefetch,advance,current,audio,downloads}=new Function(html.slice(start,end)+`
- const downloads=[],songs=[{id:'local',url:'blob:local'}],settings={repeat:'Off'};
+const {play,playLocal,played,prefetch,advance,current,audio,downloads}=new Function(html.slice(start,end)+`
+ const downloads=[],songs=[{id:'local',url:'blob:local'},{id:'b',url:'blob:b'},{id:'c',url:'blob:c'}],settings={repeat:'Off'};
+ let playedList=null;const playList=(ss,i)=>{playedList=[ss.map(x=>x.id),i]};
  const audio={currentTime:0,duration:200,paused:false,src:'',addEventListener(){}};
  let queue=[],qi=-1,latestPlayRequest=0;
  const dur=()=>audio.duration,curTime=()=>audio.currentTime,seekTo=t=>{audio.currentTime=t};
@@ -16,10 +17,14 @@ const {play,prefetch,advance,current,audio,downloads}=new Function(html.slice(st
   const song={id:video.id,sourceId:video.id,url:'blob:'+video.id};
   songs.push(song);return song;
  };
- return {play:()=>playImported([{song:songs[0]},{video:{id:'second'}},{video:{id:'third'}}],0),
+ return {playLocal:()=>playImported([{song:songs[0]},{song:songs[1]},{song:songs[2]}],1),played:()=>playedList,play:()=>playImported([{song:songs[0]},{video:{id:'second'}},{video:{id:'third'}}],0),
   prefetch:prefetchImported,advance:()=>advanceImported(1,false),current:()=>queue[qi].id,audio,downloads};
 `)();
+playLocal();
+assert.deepEqual(played(),[['local','b','c'],1]);
+console.log('PASS a playlist whose songs are all in the library plays as one continuous queue');
 play();
+assert.equal(played()[1],1);
 audio.currentTime=99;
 prefetch();
 assert.deepEqual(downloads,[]);
