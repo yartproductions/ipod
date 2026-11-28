@@ -829,6 +829,26 @@ canvas.game{position:absolute;top:20px;left:0;width:270px;height:190px;display:b
 #nbell.on{display:inline-block}
 .meta .stars,.mnp .meta .stars{font-size:10px;letter-spacing:1px;color:#e2a12b;margin-top:2px;line-height:1}
 .meta .stars span{color:rgba(128,128,128,.35)}
+/* Groups */
+.ggrid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding:4px 5px 0}
+.gw{height:27px;display:flex;align-items:center;justify-content:center;border-radius:5px;background:#e8e6df;color:#222;font:700 10px/1 -apple-system,Helvetica,sans-serif;letter-spacing:.2px;text-align:center;overflow:hidden;padding:0 2px;transition:background .12s}
+.gw.sm{font-size:8.5px}.gw.on{background:#5a5a62;color:#fff}.gw.cur{box-shadow:0 0 0 2px #3a8ee6}
+.gsolved{grid-column:1/-1;height:27px;border-radius:5px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#222;font:9px/1.15 -apple-system,Helvetica,sans-serif}
+.gsolved b{font-size:9.5px;text-transform:uppercase}.gsolved span{font-size:8.5px;opacity:.85}
+.gfoot{text-align:center;font:10px -apple-system,Helvetica,sans-serif;color:#555;padding:5px 0 3px}.gfoot i{font-style:normal;letter-spacing:2px;color:#5a5a62}
+/* Domino */
+.dwrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:5px 4px 3px;box-sizing:border-box}
+.dbd{position:relative;flex:none}
+.dc{position:absolute;box-sizing:border-box;border:1px solid rgba(255,255,255,.85)}.dc.bad{box-shadow:inset 0 0 0 2px #e0403a}
+.dl{position:absolute;z-index:3;font:800 8px/1 -apple-system,Helvetica,sans-serif;color:#222;background:rgba(255,255,255,.85);border-radius:3px;padding:1px 2px;pointer-events:none}
+.dd{position:absolute;z-index:2;display:flex;flex-direction:column;background:#fbfaf6;border-radius:5px;box-shadow:0 1px 2px rgba(0,0,0,.45);overflow:hidden}
+.dd.h{flex-direction:row}.dd>.dp{flex:1}.dd>.dp+.dp{border-top:1px solid #bbb}.dd.h>.dp+.dp{border-top:0;border-left:1px solid #bbb}
+.dp{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:14%;box-sizing:border-box}
+.dp i{display:block;margin:auto;width:66%;height:66%;border-radius:50%}.dp i.o{background:#222}
+.dcur{position:absolute;z-index:4;box-sizing:border-box;border:2px solid #3a8ee6;border-radius:4px;pointer-events:none}.dcur.pick{border-style:dashed}
+.dtray{display:flex;gap:5px;max-width:100%;overflow-x:auto;scrollbar-width:none;padding:3px}.dtray span{font:10px -apple-system,Helvetica;color:#666}
+.dd.mini{position:relative;flex:none;width:40px;height:20px;border-radius:4px}.dd.mini .dp{padding:10%}.dd.mini.sel{box-shadow:0 0 0 2px #3a8ee6}
+.dmsg{font:600 10px -apple-system,Helvetica,sans-serif;color:#333;padding:3px}
 .eqv{height:100%;display:flex;flex-direction:column;justify-content:center;padding:6px 8px 4px;color:#111}
 .eqbars{flex:1;display:flex;gap:3px;min-height:0}
 .eqb{flex:1;display:flex;flex-direction:column;align-items:center;min-width:0;border-radius:4px;padding:2px 0}
@@ -2511,6 +2531,8 @@ function extrasMenu(){return list('Games',()=>[
   {label:'Brick',chev:1,action:go(()=>({type:'brick',title:'Brick',g:null}))},
   {label:'Bubbles',chev:1,action:go(()=>({type:'bubbles',title:'Bubbles',g:null}))},
   {label:'Music Quiz',chev:1,action:go(quizView)},
+  {label:'Groups',chev:1,action:()=>window.ipodGames&&push(window.ipodGames.groupsMenu())},
+  {label:'Domino',chev:1,action:()=>window.ipodGames&&push(window.ipodGames.dominoMenu())},
   {label:'Achievements',chev:1,val:Object.keys(ach.unlocked).length+'/'+ACHIEVEMENTS.length,action:go(achievementsMenu)}])}
 
 /* ---------- Clock ---------- */
@@ -6381,6 +6403,7 @@ window.ipodSharedBridge=Object.freeze({songs:()=>songs,cur,playList,shuffled,pus
 window.ipodFeedbackBridge=Object.freeze({screenName:()=>top()?.title||'',songCount:()=>songs.filter(x=>!x.deleted).length,
   push,pop,list,msgView,inputView,loadingView,replaceTop,render,toast:t=>setHdrTask(t,1,true),haptic:k=>triggerHaptic(k)});
 window.ipodTrackMatchBridge=Object.freeze({list,go,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,videoSearchItems,playYT});
+window.ipodGamesBridge=Object.freeze({list,push,pop,top,render,msgView,click,haptic:k=>triggerHaptic(k)});
 window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,loadingView,inputView,ytApi,settings,saveSettings,playYT,playList,playImported,enqueueYT,render,openPlaylistFlow,genArt,artFor,isYoutubeThumbnail,getSongs:()=>songs});
 })();
 </script>
@@ -6392,5 +6415,6 @@ window.ipodPlaylistImportBridge=Object.freeze({list,push,replaceTop,top,msgView,
 <script src="./feedback.js" defer></script>
 <script src="./track-match.js" defer></script>
 <script src="./playlist-import.js" defer></script>
+<script src="./games.js" defer></script>
 </body>
 </html>
