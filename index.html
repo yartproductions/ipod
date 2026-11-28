@@ -281,6 +281,35 @@ html.landscape .fnp.lyrics-flow .stage{left:24%}
 @keyframes vinylSpin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){#np.vinyl-enter .vinyl-disc,.vinyl-record{animation:none}}
 .np:not(.lyrics-on) .vinyl-jacket{--disc-peek:17%}
+/* Wind the record to loop: a gold ring fills as you wind, then the loop arrow whirls on (or unwinds off). */
+.vinyl-jacket{touch-action:none}
+.vinyl-jacket .vinyl-disc{pointer-events:auto}
+.vinyl-fx{position:absolute;inset:3%;z-index:3;pointer-events:none;transform:translateX(var(--disc-peek,24%))}
+#np.vinyl-enter .vinyl-fx{animation:vinylSlide 1.65s var(--vinyl-delay,.15s) cubic-bezier(.22,.75,.25,1) both}
+.vinyl-fx svg{position:absolute;inset:-7%;width:114%;height:114%;overflow:visible}
+.vinyl-fx .chg{fill:none;stroke:#ffd27a;stroke-width:2.6;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:calc(100 - var(--charge,0) * 100);
+  opacity:0;transition:opacity .25s,stroke .2s;filter:drop-shadow(0 0 2px #ffb84d);transform:rotate(-90deg);transform-origin:50px 50px}
+.vinyl-wind .vinyl-fx .chg{opacity:1}
+.vinyl-ready .vinyl-fx .chg{stroke:#fff6d0;filter:drop-shadow(0 0 5px #ffc94d) drop-shadow(0 0 9px #ff9f2e)}
+.vinyl-wind .vinyl-record,.vinyl-whirl .vinyl-record{box-shadow:0 0 0 1px #45424a,0 4px 11px #0009,0 0 calc(var(--charge,0) * 14px) calc(var(--charge,0) * 2px) #ffbf4d99}
+.vinyl-fx .lr{opacity:0;transform-origin:50px 50px;fill:none;stroke:#ffd27a;stroke-width:3.2;stroke-linecap:round}
+.vinyl-fx .lr polygon{fill:#ffd27a;stroke:none}
+.vinyl-fx .lr .slash{stroke:#ff6b5e;stroke-dasharray:100;stroke-dashoffset:100}
+.fx-on .vinyl-fx .lr{animation:loopOn 1.35s cubic-bezier(.2,.8,.2,1) var(--fx-delay,0s);filter:drop-shadow(0 0 4px #ffb84d)}
+.fx-on .vinyl-fx .lr .slash{display:none}
+@keyframes loopOn{0%{opacity:0;transform:rotate(-260deg) scale(.55)}30%{opacity:1}72%{opacity:1;transform:rotate(30deg) scale(1.04)}100%{opacity:0;transform:rotate(55deg) scale(1.16)}}
+.fx-off .vinyl-fx .lr{animation:loopOff 1.25s ease-in var(--fx-delay,0s);stroke:#c9c4bb}
+.fx-off .vinyl-fx .lr polygon{fill:#c9c4bb}
+.fx-off .vinyl-fx .lr circle{animation:loopUnwind 1.25s ease-in var(--fx-delay,0s) forwards}
+.fx-off .vinyl-fx .lr .slash{animation:loopSlash .35s calc(var(--fx-delay,0s) + .1s) ease-out forwards}
+@keyframes loopOff{0%{opacity:1;transform:rotate(0) scale(1.05)}45%{opacity:1}100%{opacity:0;transform:rotate(-200deg) scale(.6)}}
+@keyframes loopUnwind{to{stroke-dasharray:0 100}}
+@keyframes loopSlash{to{stroke-dashoffset:0}}
+.vinyl-badge{position:absolute;right:-3%;top:50%;width:17px;height:17px;margin-top:-8.5px;border-radius:50%;display:grid;place-items:center;
+  background:radial-gradient(circle at 35% 30%,#ffe7a6,#d89a2e);box-shadow:0 1px 4px #0008,0 0 6px #ffb84d88;opacity:0;transform:scale(.3);transition:opacity .3s,transform .4s cubic-bezier(.3,1.6,.5,1)}
+.vinyl-badge svg{width:11px;height:11px;fill:none;stroke:#3a2508;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+#np.vinyl-loop .vinyl-badge{opacity:1;transform:scale(1)}
+@media(prefers-reduced-motion:reduce){.fx-on .vinyl-fx .lr,.fx-off .vinyl-fx .lr{animation-duration:.01s}}
 .mnp .modern-jacket{position:absolute;left:14px;top:36px;width:72px;height:72px;--disc-peek:26%}
 .mnp .modern-jacket .sleeve{position:absolute;inset:0;border-radius:5px;background-position:center;background-size:cover;box-shadow:0 3px 12px #0008}
 .np.lyrics-np .refl{display:none}
@@ -4312,7 +4341,9 @@ function render(){
   const nowPlaying=$('#np');
   if(nowPlaying&&shownNowTrack){
     nowPlaying.classList.toggle('vinyl-spinning',isPlaying());
-    nowPlaying.style.setProperty('--vinyl-spin-delay',-(curTime()%3.6)+'s');
+    nowPlaying.style.setProperty('--vinyl-spin-delay',-vinylPhase()+'s');
+    nowPlaying.classList.toggle('vinyl-loop',settings.repeat==='One');
+    if(vinylFx)vinylFxApply();
     const now=performance.now();
     if(!wasNowPlaying||previousTrack?.track!==shownNowTrack.track||previousTrack?.index!==shownNowTrack.index||
         previousTrack?.session!==shownNowTrack.session)vinylStartedAt=now;
@@ -5049,8 +5080,103 @@ function vinylDisc(song){
     <text><textPath href="#record-title-path">${label} ◆</textPath></text>
     <text><textPath href="#record-title-path" startOffset="33%">${label} ◆</textPath></text>
     <text><textPath href="#record-title-path" startOffset="66%">${label} ◆</textPath></text>
-  </svg></div></div>`;
+  </svg></div></div><div class="vinyl-fx" aria-hidden="true"><svg viewBox="0 0 100 100"><circle class="chg" cx="50" cy="50" r="48" pathLength="100"/>
+    <g class="lr"><circle cx="50" cy="50" r="46" pathLength="100" stroke-dasharray="80 20"/><polygon points="69.9,8.1 64.6,1.7 61.9,10.2"/><path class="slash" d="M24 76L76 24" pathLength="100"/></g></svg>
+    <div class="vinyl-badge"><svg viewBox="0 0 12 12"><path d="M2.5 5.2A3.6 3.6 0 018.8 3.4M9.5 6.8A3.6 3.6 0 013.2 8.6"/><path d="M8.9 1.4v2.3H6.6M3.1 10.6V8.3h2.3"/></svg></div></div>`;
 }
+/* Wind the record to loop the song. Put a finger on the record and drag around it: the record follows, and a
+   gold ring fills as it charges. Let go once the ring is full and the record whirls off your finger, then
+   settles back to its normal spin while the loop arrow animates on (Repeat One) or unwinds off. */
+let vinylPhaseOff=0,vinylWind=null,vinylSwallowClick=0,vinylFx=null,vinylFxT=0;
+const VINYL_FULL=330;                                             // degrees of winding for a full charge
+function vinylPhase(){return(((curTime()+vinylPhaseOff)%3.6)+3.6)%3.6}
+function vinylAngle(rec){
+  const m=getComputedStyle(rec).transform;if(!m||m==='none')return 0;
+  const v=m.match(/matrix\(([^)]+)\)/)?.[1].split(',').map(Number);return v?Math.atan2(v[1],v[0])*180/Math.PI:0;
+}
+function vinylLoopToggle(){
+  const on=settings.repeat!=='One';
+  if(on){settings.repeatBeforeLoop=settings.repeat;settings.repeat='One'}
+  else settings.repeat=settings.repeatBeforeLoop&&settings.repeatBeforeLoop!=='One'?settings.repeatBeforeLoop:'Off';
+  saveSettings();if(typeof nativeConfig==='function')nativeConfig();
+  return on;
+}
+// The loop animation lives on whichever record is on screen, so a redraw mid-animation picks it up where it was.
+function vinylFxApply(){
+  const j=$('#np .vinyl-jacket');if(!j)return;
+  j.classList.remove('fx-on','fx-off');
+  if(!vinylFx)return;const el=performance.now()-vinylFx.at;if(el>=1400){vinylFx=null;return}
+  j.style.setProperty('--fx-delay',-el+'ms');void j.offsetWidth;j.classList.add(vinylFx.on?'fx-on':'fx-off');
+}
+function vinylLoopFx(jacket,on){
+  $('#np')?.classList.toggle('vinyl-loop',on);
+  vinylFx={on,at:performance.now()};vinylFxApply();
+  clearTimeout(vinylFxT);vinylFxT=setTimeout(()=>{vinylFx=null;vinylFxApply()},1400);
+  if(typeof npToast==='function')npToast(on?'Loop On · this song repeats':'Loop Off');
+  triggerHaptic(on?'success':'impact');
+}
+function vinylWhirl(jacket,rec,angle,v0){
+  // v0 in degrees/second; ease toward the normal spin (100°/s while playing, still while paused)
+  const target=isPlaying()?100:0,t0=performance.now();let last=t0;
+  jacket.classList.add('vinyl-whirl');rec.style.animation='none';
+  const step=now=>{
+    if(!rec.isConnected){                                         // the screen redrew: carry on with the new record
+      rec=$('#np .vinyl-record');jacket=rec?.closest('.vinyl-jacket');if(!rec)return;
+      jacket.classList.add('vinyl-whirl');rec.style.animation='none';
+    }
+    const dt=(now-last)/1000;last=now;
+    const v=target+(v0-target)*Math.exp(-(now-t0)/520);angle+=v*dt;
+    rec.style.transform=`rotate(${angle}deg)`;
+    jacket.style.setProperty('--charge',Math.max(0,Math.min(1,Math.abs(v-target)/900)));
+    if(Math.abs(v-target)>4&&now-t0<4000){requestAnimationFrame(step);return}
+    vinylPhaseOff=((angle/100-curTime())%3.6+3.6)%3.6;          // hand back to the CSS spin at this exact angle
+    $('#np')?.style.setProperty('--vinyl-spin-delay',-vinylPhase()+'s');
+    rec.style.animation='';rec.style.transform='';jacket.style.removeProperty('--charge');jacket.classList.remove('vinyl-whirl');
+  };
+  requestAnimationFrame(step);
+}
+screenEl.addEventListener('pointerdown',e=>{
+  if(holdOn||e.button>0)return;
+  const jacket=e.target.closest?.('#np .vinyl-jacket'),rec=jacket?.querySelector('.vinyl-record');if(!rec)return;
+  const r=rec.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+  vinylWind={id:e.pointerId,jacket,rec,cx,cy,last:Math.atan2(e.clientY-cy,e.clientX-cx),acc:0,base:0,on:false,v:0,t:performance.now(),tick:0,ready:false};
+});
+screenEl.addEventListener('pointermove',e=>{
+  const w=vinylWind;if(!w||e.pointerId!==w.id)return;
+  if(Math.hypot(e.clientX-w.cx,e.clientY-w.cy)<6)return;           // too close to the spindle to read an angle
+  const a=Math.atan2(e.clientY-w.cy,e.clientX-w.cx);let d=(a-w.last)*180/Math.PI;w.last=a;
+  if(d>180)d-=360;if(d<-180)d+=360;
+  const now=performance.now(),dt=Math.max(1,now-w.t);w.t=now;
+  w.v=w.v*.6+(d/dt*1000)*.4;w.acc+=d;
+  if(!w.on){
+    if(Math.abs(w.acc)<22)return;                                 // a tap or a small nudge isn't a wind
+    w.on=true;w.base=vinylAngle(w.rec);try{screenEl.setPointerCapture(w.id)}catch(_){}
+    w.jacket.classList.add('vinyl-wind');w.rec.style.animation='none';
+  }
+  e.preventDefault();
+  const charge=Math.min(1,Math.abs(w.acc)/VINYL_FULL);
+  w.rec.style.transform=`rotate(${w.base+w.acc}deg)`;w.jacket.style.setProperty('--charge',charge);
+  const notch=Math.floor(Math.abs(w.acc)/60);if(notch>w.tick&&charge<1){w.tick=notch;triggerHaptic('selection')}
+  if(charge>=1&&!w.ready){w.ready=true;w.jacket.classList.add('vinyl-ready');triggerHaptic('impact')}
+},{passive:false});
+function vinylRelease(e){
+  const w=vinylWind;if(!w||e.pointerId!==w.id)return;vinylWind=null;
+  if(!w.on)return;
+  vinylSwallowClick=performance.now();
+  w.jacket.classList.remove('vinyl-wind','vinyl-ready');
+  const angle=w.base+w.acc,dir=Math.sign(w.v)||Math.sign(w.acc)||1;
+  if(w.ready){
+    // fling: the faster you let go, the faster it whirls — never less than a good spin
+    const v0=dir*Math.min(2600,Math.max(900,Math.abs(w.v)*1.15));
+    vinylWhirl(w.jacket,w.rec,angle,v0);vinylLoopFx(w.jacket,vinylLoopToggle());
+  }else{
+    vinylWhirl(w.jacket,w.rec,angle,w.v*.5);                       // not wound enough: it just drifts back
+    if(typeof npToast==='function')npToast('Wind it a full turn to loop');
+  }
+}
+screenEl.addEventListener('pointerup',vinylRelease);
+screenEl.addEventListener('pointercancel',vinylRelease);
+screenEl.addEventListener('click',e=>{if(performance.now()-vinylSwallowClick<400&&e.target.closest?.('#np')){e.stopPropagation();e.preventDefault()}},true);
 function renderNowFlow(direction=0){
   const reduced=direction&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const s=cur(),from=!reduced&&flowNpQi!=null&&Math.abs(flowNpQi-qi)<=4?flowNpQi:qi;
